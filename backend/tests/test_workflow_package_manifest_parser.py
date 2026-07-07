@@ -247,10 +247,8 @@ def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
         "outputSchema",
         "capabilityProfiles",
         "mcpServers",
-        "memory",
     }
     assert agents[0]["modelConnection"] == "tradingagents_primary_model"
-    assert agents[0]["memory"] is None
     assert capability_profiles[0]["toolKeys"] == ["signaldeck.finance.market_data.quote_lookup"]
     assert mcp_servers[0] == {
         "key": "research_context",
@@ -837,6 +835,16 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
             ),
             "spec.skills",
             "spec.skills is not supported in workflow package manifests",
+            True,
+        ),
+        (
+            _valid_package_manifest_source().replace(
+                "  capabilityProfiles:\n",
+                "  memory:\n    retrieval:\n      enabled: true\n  capabilityProfiles:\n",
+                1,
+            ),
+            "spec.memory",
+            "Extra inputs are not permitted",
             True,
         ),
         (

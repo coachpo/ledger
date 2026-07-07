@@ -19,11 +19,11 @@ _DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
 _EXPECTED_DEMO_HASHES = {
     "tradingagents_advisory_research": (
         "c58db1b4bb8e66dcd95b479e238dda0d5a2f894d03c8986c0787f6638c31dc62",
-        "31d873e55180536aa501fc7b77d47e2ac2c42f489e8214a19748aacb3553b96a",
+        "73dc336ac6dc58ab610529ca748d351ea30281e4054f3bfe3eb1fe1498a7e416",
     ),
     "digital_oracle_researcher": (
         "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
-        "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
+        "aaa4f5349ce48dafe2b49ea7f5891f6536995f85d74a3030bed07e473aaa3d84",
     ),
 }
 
@@ -201,13 +201,6 @@ def test_compile_valid_package_manifest_roundtrips_current_contract() -> None:
                     "slot": "decision",
                     "wiring": {"ticker": {"from": "input", "path": "ticker"}},
                     "optional": False,
-                    "memoryPolicy": {
-                        "enabled": False,
-                        "retrieval": None,
-                        "writes": None,
-                        "policy": None,
-                        "checkpoints": None,
-                    },
                 }
             ],
         }

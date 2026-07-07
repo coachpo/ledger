@@ -5,7 +5,7 @@
 ## OVERVIEW
 `app/extensions/` owns first-party extension registration, private registrar wiring, and extension-owned composition roots. The current statically resident bundled extensions are Finance Workspace and Digital Oracle Runtime.
 
-`signaldeck.finance` owns preserved finance `/api/v1` routers, finance provider factories, finance service gates/grants/dependency records, finance runtime tool specs/executors, split runtime modules for market data/positions/reports, report lookup, and historical agent-memory report readers. Its public runtime tool keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`.
+`signaldeck.finance` owns preserved finance `/api/v1` routers, finance provider factories, finance service gates/grants/dependency records, finance runtime tool specs/executors, split runtime modules for market data/positions/reports, and report lookup. Its public runtime tool keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`.
 
 `signaldeck.digital_oracle` owns only `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup` in this upgrade.
 
@@ -26,7 +26,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
 
 ## CHILD DOCS
-- `signaldeck_finance/AGENTS.md` — statically resident `signaldeck.finance` ownership, route registrations, provider factories, service gates/grants, split runtime modules, report lookup, and historical agent-memory report readers
+- `signaldeck_finance/AGENTS.md` — statically resident `signaldeck.finance` ownership, route registrations, provider factories, service gates/grants, split runtime modules, report lookup
 - `signaldeck_digital_oracle/AGENTS.md` — statically resident `signaldeck.digital_oracle` tool-only runtime ownership
 
 ## WHERE TO LOOK

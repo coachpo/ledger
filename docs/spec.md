@@ -30,7 +30,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
 - `backend/app/api/router.py` composes preserved `/api/v1` finance routes behind extension gates.
-- `backend/app/api/platform_router.py` mounts `/api/memory`, `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
+- `backend/app/api/platform_router.py` mounts `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
 - `backend/app/extensions/signaldeck_finance/` contributes current finance/product/provider routes, finance tools, hooks, and registrars as `signaldeck.finance`.
 - `backend/app/extensions/signaldeck_digital_oracle/` contributes only Digital Oracle runtime tools as `signaldeck.digital_oracle`; Digital Oracle has no route or nav surface, and it adds no API routers, frontend routes, provider bundles, or lifecycle hooks in this upgrade.
 - `backend/app/api/dependencies.py` is the service composition root.
@@ -40,7 +40,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 ## Frontend Architecture
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
-- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Runs, and Memory. Tools are linked through package authoring metadata, not a standalone route.
+- `frontend/src/routes.ts` defines flat routes for dashboard, portfolios, templates, reports, Workflow Packages, Scheduled Tasks, Model Connections, Extensions, and Runs. Tools are linked through package authoring metadata, not a standalone route.
 - `frontend/src/components/layout.tsx` owns sidebar labels, breadcrumbs, and the app shell.
 - `frontend/src/extensions/runtime-helpers.ts` assembles finance routes/nav from extension state and filters package-authoring tools across bundled frontend extensions; `ExtensionRead` is the slim `{key,label,enabled}` contract.
 - API helpers live under `frontend/src/lib/api/`; wire types live under `frontend/src/lib/types/`; query keys live in `frontend/src/lib/query-keys.ts`.
@@ -61,7 +61,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 | Templates          | `GET/POST /api/v1/templates`, `GET/PATCH/DELETE /api/v1/templates/{templateId}`, `POST /api/v1/templates/compile`, `GET/POST /api/v1/templates/{templateId}/compile`, `GET /api/v1/templates/placeholders` |
 | Reports            | `GET/POST /api/v1/reports`, `POST /api/v1/reports/compile/{templateId}`, `POST /api/v1/reports/upload`, `GET/PATCH/DELETE /api/v1/reports/{slug}`, `GET /api/v1/reports/{slug}/download`                   |
 
-Template/report series use runtime inputs plus report metadata tags to resolve placeholders such as `reports.by_tag(inputs.analysis_tag).latest.content`. Report `source` values are `compiled`, `uploaded`, `external`, and `agent`; `external` is reserved for true external user/API reports. Historical agent-memory reports are report-domain records, not the canonical memory substrate.
+Template/report series use runtime inputs plus report metadata tags to resolve placeholders such as `reports.by_tag(inputs.analysis_tag).latest.content`. Report `source` values are `compiled`, `uploaded`, `external`, and `agent`; `external` is reserved for true external user/API reports. Agent-origin reports are report-domain records.
 
 ## Agent-Platform API
 
@@ -74,7 +74,6 @@ Template/report series use runtime inputs plus report metadata tags to resolve p
 | Model connections            | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test`, `POST /api/model-connections/{connectionId}/capability-probe`              |
 | Extensions                   | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}`                                                                                                                                                                         |
 | Tools                        | `GET /api/tools`                                                                                                                                                                                                                      |
-| Memory                       | `GET /api/memory/proposals`, `POST /api/memory/proposals/{proposalId}/actions/approve`, `POST /api/memory/proposals/{proposalId}/actions/reject`, `GET /api/memory/audit-events`, `GET /api/memory/quarantine` |
 | Runs                         | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...`, `POST /api/runs/{runId}/forks`                      |
 
 Live package reads and writes do not include status. Package persistence stores dependency keys as artifact references; readiness endpoints evaluate those refs against live model connections, extension state, and package secret bindings. Deleting a package deletes its owned runs.
@@ -116,9 +115,9 @@ Package secret bindings are package-local encrypted values, not manifest/export 
 
 - Finance tools appear only while the `signaldeck.finance` toggle is enabled.
 - Digital Oracle tools appear only while the `signaldeck.digital_oracle` toggle is enabled.
-- Workflow memory is platform-core middleware declared by Workflow Package YAML, not a server-declared runtime tool.
+- There is no server-declared memory tool surface.
 
-Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and Finance Workspace report lookup. `signaldeck.digital_oracle` owns the Digital Oracle tools `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup`; their tool keys are canonical owner-qualified contracts and their OpenAI function names are mechanical forms derived from those keys. Workflow memory uses declarative `spec.memory` middleware, not a server-declared runtime tool.
+Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, positions, and Finance Workspace report lookup. `signaldeck.digital_oracle` owns the Digital Oracle tools `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup`; their tool keys are canonical owner-qualified contracts and their OpenAI function names are mechanical forms derived from those keys.
 
 `signaldeck.finance.indicators.lookup` is the Finance-owned technical-analysis tool under the unchanged public key and OpenAI function name. It accepts one symbol, explicit `currentDate`, `startDate`, and `endDate`, bounded `rowLimit`, and an `indicators[]` selection list. Supported selection types are `sma`, `ema`, `rsi`, `macd`, `bollinger_bands`, `atr`, and `vwma`; moving averages, RSI, ATR, and VWMA use `window`, MACD uses `fastWindow`, `slowWindow`, and `signalWindow`, and Bollinger bands use `window` plus optional `standardDeviations`. Results keep the existing `rows[].values[]` pattern with `close` plus deterministic names such as `sma_20`, `ema_20`, `rsi_14`, `macd_12_26_9`, `macd_signal_12_26_9`, `macd_histogram_12_26_9`, `bollinger_upper_20_2`, `bollinger_middle_20_2`, `bollinger_lower_20_2`, `atr_14`, and `vwma_20`. Unavailable values serialize as `value: null` with `nullReason` of `warmup`, `insufficient_history`, or `provider_gap`; raw provider payloads are not exposed.
 
@@ -158,27 +157,11 @@ Scheduled inputs are JSON object templates, not scripts. The allowed placeholder
 
 The launch surface is `/workflow-packages/:packageId/run`, labeled `Launch Workflow Package`. It reads launch metadata, runs preflight, posts selected workflow key plus `parameters`, creates a durable queued run, and polls backend-owned progress/queue state while the explicit scheduler worker materializes due Scheduled Tasks and claims queued runs.
 
-Run detail includes `steps`, agent `invocations`, `operationInvocations`, `workflowMemoryEvidence`, `extensionDependencies`, `graphMetadata.modelGateway.failureTaxonomy`, bounded `toolCallRetries`, live-execution `providerRetries` when a transient provider retry happened, and `packageProvenance`. `toolCallRetries` records model-feedback correction for typed tool-call argument failures. `providerRetries` records provider create-call retries only, omits metadata on first-attempt success and first non-retryable failure, and includes `terminalOutcome` only for `succeededAfterRetry` or `exhausted`. Run package provenance carries sanitized `resolvedModelConnections` from `ModelConnectionRuntimeProfile` with protocol profile, model id, sanitized endpoint identity, backend-derived capabilities, policies, probe cache TTL, timeout, and `hasApiKey`; it never includes raw API keys, headers, or provider payloads.
+Run detail includes `steps`, agent `invocations`, `operationInvocations`, `extensionDependencies`, `graphMetadata.modelGateway.failureTaxonomy`, bounded `toolCallRetries`, live-execution `providerRetries` when a transient provider retry happened, and `packageProvenance`. `toolCallRetries` records model-feedback correction for typed tool-call argument failures. `providerRetries` records provider create-call retries only, omits metadata on first-attempt success and first non-retryable failure, and includes `terminalOutcome` only for `succeededAfterRetry` or `exhausted`. Run package provenance carries sanitized `resolvedModelConnections` from `ModelConnectionRuntimeProfile` with protocol profile, model id, sanitized endpoint identity, backend-derived capabilities, policies, probe cache TTL, timeout, and `hasApiKey`; it never includes raw API keys, headers, or provider payloads.
 
 Run progress uses `unit`, `terminalCount`, `totalCount`, and `percent`, with terminal runs reporting `percent: 100`. Queue explanations are nullable backend read models that explain serial package-lane blocking or worker capacity.
 
 Rerun is the root-parameter descendant flow. Fork is the invocation-input descendant flow keyed by `sourceInvocationId`; it persists `run_forks`, copies upstream context, and treats `resumeStepIndex` as the execution boundary rather than the editable target.
-
-## Core Memory Contract
-
-SignalDeck memory is platform-core workflow-runtime middleware for Workflow Package runs in a trusted single-user local/private deployment. Packages opt in through declarative `spec.memory`, workflow memory, agent memory, or step memory blocks. If memory is omitted, retrieval, proposals, and checkpoints stay disabled.
-
-The memory manifest contract has four blocks. `retrieval` accepts `enabled`, `namespaces`, `maxItems`, `relevanceThreshold`, and `includeKinds`. `writes` accepts `proposals`, `allowedKinds`, `defaultDecision`, and `autoCommitKinds`; commit defaults require non-empty safe auto-commit kinds that are included in `allowedKinds` and limited to `fact`, `observation`, and `preference`. `policy` accepts `secrets`, `sensitiveData`, `expirationDays`, `unauthorized`, and `consolidation`. `checkpoints` accepts `enabled` and `retention`.
-
-Memory context is injected only as labelled non-authoritative model input reference data. It cannot override system, developer, or package instructions, and memory item content never belongs in model instructions. Retrieval filters by scope and lifecycle before ranking and excludes deleted, superseded, expired, unauthorized, quarantined, and review-pending records.
-
-Agents do not write memory directly. When `writes.proposals` is enabled, agents emit structured `memoryProposals` in their output. The proposal service stages proposals, and the workflow memory policy service is the only activation path. Secret detector hits reject or quarantine before activation; sensitive detector hits require review or quarantine and cannot auto-commit.
-
-`/api/memory` is retained as trusted platform-core review infrastructure for proposals, approve/reject actions, audit-event reads, and quarantine reads. It is not a direct runtime write/lookup API, not a finance route, not public multi-user CRUD, and not an authorization surface. Finance report history and `signaldeck.finance.reports.lookup` remain report-domain behavior, not canonical workflow memory.
-
-Checkpoints are run-local recovery/state artifacts governed by `checkpoints.enabled` and `retention`. They use separate checkpoint persistence and evidence from long-term memory items, proposals, decisions, audit events, revisions, quarantine, and consolidation records.
-
-Run detail exposes `workflowMemoryEvidence` sourced from middleware metadata, proposals, decisions, quarantine, audit events, active items, and checkpoints. Model-visible memory outputs must not expose report identity, download URLs, raw markdown, arbitrary attributes, runtime tags, chunks, embeddings, vector scores, or old tool-call audit links.
 
 ## Runtime Input Semantics
 
@@ -201,6 +184,8 @@ Unsupported help and schema mechanisms include YAML comments, `comment`, `x-sign
 Workflow Packages are the only live platform authoring root. Removed global authoring routes include `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, and `/workflows*`. They are not aliases or redirects.
 
 Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, global Digital Oracle skills, `/api/skills`, and `/skills*` are not live product surfaces.
+
+Workflow-memory governance is not a live product surface. `spec.memory`, workflow/agent/step memory blocks, `/api/memory/*`, workflow checkpoints, direct memory runtime tools, and `workflowMemoryEvidence` are removed rather than aliased or redirected.
 
 ## CI And Verification
 

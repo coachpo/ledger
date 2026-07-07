@@ -777,7 +777,6 @@ def test_finance_shared_service_ownership_map_classifies_task_5_services() -> No
         "TextTemplateService",
         "ReportService",
         "TemplateCompilerService",
-        "MemoryReportService",
     }
     ownership_by_service = {
         entry.service_name: entry for entry in FINANCE_SHARED_SERVICE_OWNERSHIP_MAP
@@ -791,7 +790,6 @@ def test_finance_shared_service_ownership_map_classifies_task_5_services() -> No
             "balance_service",
             "csv_import_service",
             "market_data_service",
-            "memory_report_service",
             "portfolio_service",
             "position_service",
             "report_service",

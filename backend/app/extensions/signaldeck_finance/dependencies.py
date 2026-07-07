@@ -14,7 +14,6 @@ from app.extensions.signaldeck_finance.service_gate import (
     BALANCE_SERVICE_SURFACE,
     CSV_IMPORT_SERVICE_SURFACE,
     MARKET_DATA_SERVICE_SURFACE,
-    MEMORY_REPORT_SERVICE_SURFACE,
     PORTFOLIO_SERVICE_SURFACE,
     POSITION_SERVICE_SURFACE,
     REPORT_SERVICE_SURFACE,
@@ -120,13 +119,6 @@ FINANCE_SHARED_SERVICE_OWNERSHIP_MAP: tuple[FinanceSharedServiceOwnership, ...] 
         "app.extensions.signaldeck_finance.services.template_compiler_service",
         "move-now",
         TEMPLATE_COMPILER_SURFACE,
-        _FINANCE_OWNED_SERVICE_RATIONALE,
-    ),
-    FinanceSharedServiceOwnership(
-        "MemoryReportService",
-        "app.extensions.signaldeck_finance.services.memory_report_service",
-        "move-now",
-        MEMORY_REPORT_SERVICE_SURFACE,
         _FINANCE_OWNED_SERVICE_RATIONALE,
     ),
 )

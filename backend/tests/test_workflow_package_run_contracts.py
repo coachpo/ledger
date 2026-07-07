@@ -25,7 +25,6 @@ from app.extensions.signaldeck_digital_oracle.runtime_types import (
 )
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
-from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
@@ -835,49 +834,6 @@ def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifa
         session.add_all([rerun_descendant, fork_descendant])
         session.flush()
 
-        session.add_all(
-            [
-                Report(
-                    name="direct_queued_memory",
-                    slug="direct_queued_memory",
-                    source="agent",
-                    content="queued memory",
-                    metadata_={
-                        "analysis": {
-                            "reviewType": "agent_memory",
-                            "versionGroup": "agent_memory/v1",
-                            "runId": direct_queued.id,
-                        }
-                    },
-                ),
-                Report(
-                    name="direct_running_memory",
-                    slug="direct_running_memory",
-                    source="agent",
-                    content="running memory",
-                    metadata_={
-                        "analysis": {
-                            "reviewType": "agent_memory",
-                            "versionGroup": "agent_memory/v1",
-                            "runId": direct_running.id,
-                        }
-                    },
-                ),
-                Report(
-                    name="descendant_memory",
-                    slug="descendant_memory",
-                    source="agent",
-                    content="descendant memory",
-                    metadata_={
-                        "analysis": {
-                            "reviewType": "agent_memory",
-                            "versionGroup": "agent_memory/v1",
-                            "runId": rerun_descendant.id,
-                        }
-                    },
-                ),
-            ]
-        )
         session.commit()
         direct_queued_id = direct_queued.id
         direct_running_id = direct_running.id
@@ -891,7 +847,6 @@ def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifa
         detached_direct_running = session.get(Run, direct_running_id)
         detached_rerun_descendant = session.get(Run, rerun_descendant_id)
         detached_fork_descendant = session.get(Run, fork_descendant_id)
-        remaining_slugs = {report.slug for report in session.query(Report).all()}
         remaining_fire_count = (
             session.query(WorkflowPackageScheduleFire)
             .filter(WorkflowPackageScheduleFire.schedule_id == schedule.id)
@@ -916,11 +871,6 @@ def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifa
         assert direct_running_deleted_at == preserved_deleted_at
         assert detached_rerun_descendant.schedule_provenance is None
         assert detached_fork_descendant.schedule_provenance is None
-        assert remaining_slugs == {
-            "descendant_memory",
-            "direct_queued_memory",
-            "direct_running_memory",
-        }
         assert remaining_fire_count == 0
 
 
@@ -1853,7 +1803,7 @@ def test_rerun_uses_run_snapshot_after_current_package_mutation(
         assert rerun.workflow_package_snapshot.launch_parameters == {"ticker": "AAPL"}
 
 
-def test_package_deletion_deletes_owned_runs_and_agent_memory_reports(
+def test_package_deletion_deletes_owned_runs(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -1886,11 +1836,6 @@ def test_package_deletion_deletes_owned_runs_and_agent_memory_reports(
     )
     assert fork_response.status_code == 201, fork_response.json()
     fork_id = int(fork_response.json()["id"])
-    memory_slugs = {
-        run_id: f"agent_memory_deleted_owned_run_{run_id}",
-        fork_id: f"agent_memory_deleted_owned_run_{fork_id}",
-    }
-
     with session_factory() as session:
         source_run = session.get(Run, run_id)
         fork_run = session.get(Run, fork_id)
@@ -1901,18 +1846,6 @@ def test_package_deletion_deletes_owned_runs_and_agent_memory_reports(
         assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0
         fork_run.status = "running"
-        for owned_run_id, slug in memory_slugs.items():
-            session.add(
-                Report(
-                    name=f"Agent Memory Deleted Owned Run {owned_run_id}",
-                    slug=slug,
-                    source="agent",
-                    content="# Agent memory",
-                    metadata_={
-                        "analysis": {"reviewType": "agent_memory", "runId": owned_run_id},
-                    },
-                )
-            )
         session.commit()
 
     deleted = client.delete(f"/api/workflow-packages/{package_id}")
@@ -1934,7 +1867,6 @@ def test_package_deletion_deletes_owned_runs_and_agent_memory_reports(
             .count()
             == 0
         )
-        assert session.query(Report).filter(Report.slug.in_(memory_slugs.values())).count() == 0
 
 
 def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_readiness(

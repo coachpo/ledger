@@ -25,7 +25,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## CONVENTIONS
 - Public tool metadata is intentionally small: `key`, `displayName`, and `description`.
 - Public tool keys are canonical `signaldeck.<owner>.<tool_collection>.<tool>` strings only. Live extension-owned keys include `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`.
-- Known tools include bundled extension contributions; Workflow Package memory is declarative package middleware, not public tool metadata.
+- Known tools include bundled extension contributions.
 - Disabled extensions hide their server-declared tools from registered-tool lists while still allowing known-tool dependency analysis where explicitly needed.
 - Capability profile validation reports field-indexed details for unknown, duplicate, or disabled tool keys.
 - Keep schema/output formatting in `app/schemas/tool.py`; the catalog should not hand-build camelCase API payloads.

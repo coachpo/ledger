@@ -458,139 +458,6 @@ class RunListRead(CamelModel):
     items: list[RunListItemRead]
 
 
-class RunWorkflowMemoryInjectionRead(CamelModel):
-    run_agent_invocation_id: int
-    run_step_id: int
-    step_index: int = Field(ge=1)
-    slot: str
-    agent_key: str
-    invocation_id: str | None = None
-    scope: dict[str, Any]
-    policy_snapshot: dict[str, Any] = Field(default_factory=dict)
-    context_item_ids: list[str] = Field(default_factory=list)
-    checkpoint_ids: list[str] = Field(default_factory=list)
-    safety_scan: dict[str, Any] = Field(default_factory=dict)
-    ranking: dict[str, Any] = Field(default_factory=dict)
-    completion: dict[str, int] | None = None
-
-
-class RunWorkflowMemoryProposalEvidenceRead(CamelModel):
-    proposal_id: str
-    run_id: int | None = None
-    invocation_id: str | None = None
-    package_key: str
-    workflow_key: str
-    agent_key: str
-    step_id: str
-    namespace: str
-    kind: str
-    status: str
-    reason: str | None = None
-    source_output_path: str | None = None
-    detectors: dict[str, Any] = Field(default_factory=dict)
-    active_memory_ids: list[str] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
-
-    @field_validator("created_at", "updated_at")
-    @classmethod
-    def validate_timestamps(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class RunWorkflowMemoryDecisionEvidenceRead(CamelModel):
-    decision_id: str
-    proposal_id: str
-    decision: str
-    reason_code: str
-    reason: str | None = None
-    policy_snapshot: dict[str, Any] = Field(default_factory=dict)
-    decided_by: str
-    created_at: datetime
-
-    @field_validator("created_at")
-    @classmethod
-    def validate_created_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class RunWorkflowMemoryQuarantineEvidenceRead(CamelModel):
-    quarantine_id: int
-    proposal_id: str | None = None
-    memory_id: str | None = None
-    run_id: int | None = None
-    invocation_id: str | None = None
-    package_key: str | None = None
-    workflow_key: str | None = None
-    agent_key: str | None = None
-    step_id: str | None = None
-    namespace: str | None = None
-    kind: str | None = None
-    evidence: dict[str, Any] = Field(default_factory=dict)
-    reason_code: str
-    reason: str | None = None
-    detectors: dict[str, Any] = Field(default_factory=dict)
-    resolved_at: datetime | None = None
-    created_at: datetime
-
-    @field_validator("resolved_at", "created_at")
-    @classmethod
-    def validate_timestamps(cls, value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        return ensure_timezone(value)
-
-
-class RunWorkflowMemoryCheckpointEvidenceRead(CamelModel):
-    checkpoint_id: str
-    checkpoint_type: str
-    sequence: int = Field(ge=1)
-    run_id: int
-    package_key: str
-    workflow_key: str
-    agent_key: str | None = None
-    step_id: str | None = None
-    invocation_id: str | None = None
-    state: dict[str, Any] = Field(default_factory=dict)
-    retention: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
-
-    @field_validator("created_at")
-    @classmethod
-    def validate_created_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class RunWorkflowMemoryAuditEventEvidenceRead(CamelModel):
-    audit_event_id: int
-    event_type: str
-    target_type: str
-    target_id: str
-    run_id: int | None = None
-    invocation_id: str | None = None
-    package_key: str
-    workflow_key: str
-    agent_key: str | None = None
-    step_id: str | None = None
-    event: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime
-
-    @field_validator("created_at")
-    @classmethod
-    def validate_created_at(cls, value: datetime) -> datetime:
-        return ensure_timezone(value)
-
-
-class RunWorkflowMemoryEvidenceRead(CamelModel):
-    injections: list[RunWorkflowMemoryInjectionRead] = Field(default_factory=list)
-    proposals: list[RunWorkflowMemoryProposalEvidenceRead] = Field(default_factory=list)
-    decisions: list[RunWorkflowMemoryDecisionEvidenceRead] = Field(default_factory=list)
-    quarantines: list[RunWorkflowMemoryQuarantineEvidenceRead] = Field(default_factory=list)
-    checkpoints: list[RunWorkflowMemoryCheckpointEvidenceRead] = Field(default_factory=list)
-    audit_events: list[RunWorkflowMemoryAuditEventEvidenceRead] = Field(default_factory=list)
-
-
 class RunPackageLocalResourceRefsRead(CamelModel):
     agents: list[str] = Field(default_factory=list)
     output_schemas: list[str] = Field(default_factory=list)
@@ -683,9 +550,6 @@ class RunRead(CamelModel):
     created_at: datetime
     updated_at: datetime
     steps: list[RunStepRead] = Field(default_factory=list)
-    workflow_memory_evidence: RunWorkflowMemoryEvidenceRead = Field(
-        default_factory=RunWorkflowMemoryEvidenceRead
-    )
     extension_dependencies: list[RunExtensionDependencyRead] = Field(default_factory=list)
     package_provenance: RunPackageProvenanceRead | None = None
 
@@ -780,11 +644,4 @@ __all__ = [
     "RunStepRead",
     "RunStepStatus",
     "RunTargetKind",
-    "RunWorkflowMemoryAuditEventEvidenceRead",
-    "RunWorkflowMemoryCheckpointEvidenceRead",
-    "RunWorkflowMemoryDecisionEvidenceRead",
-    "RunWorkflowMemoryEvidenceRead",
-    "RunWorkflowMemoryInjectionRead",
-    "RunWorkflowMemoryProposalEvidenceRead",
-    "RunWorkflowMemoryQuarantineEvidenceRead",
 ]

@@ -24,6 +24,12 @@ def test_workflow_package_routes_are_registered(app) -> None:
     } <= route_paths
 
 
+def test_memory_review_api_is_not_registered(client: TestClient) -> None:
+    response = client.get("/api/memory/proposals")
+
+    assert response.status_code == 404
+
+
 def test_workflow_package_openapi_exposes_current_package_shapes(client: TestClient) -> None:
     openapi = cast(dict[str, object], client.get("/openapi.json").json())
     components = cast(dict[str, object], openapi["components"])
@@ -79,10 +85,12 @@ def test_workflow_package_openapi_exposes_current_package_shapes(client: TestCli
         dict[str, object],
         schemas["RunPackageProvenanceRead"]["properties"],
     )
+    run_properties = cast(dict[str, object], schemas["RunRead"]["properties"])
     current_package_properties = cast(
         dict[str, object],
         schemas["RunCurrentPackageAuditRead"]["properties"],
     )
+    assert "workflowMemoryEvidence" not in run_properties
     assert "workflowPackageStatus" in provenance_properties
     assert "currentPackage" in provenance_properties
     assert {

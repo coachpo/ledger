@@ -24,12 +24,7 @@ from app.services.execution_plan import (
     PackageExecutionStep,
     PackageExecutionWorkflow,
     PackageLocalOutputSchemaSpec,
-    PackageMemoryCheckpointPolicy,
-    PackageMemoryDetectorPolicy,
-    PackageMemoryRetrievalPolicy,
-    PackageMemoryWritePolicy,
     PackagePrivateMcpConfig,
-    PackageResolvedMemoryPolicy,
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,
     PackageRuntimeOperationSpec,
@@ -262,7 +257,6 @@ class PackageExecutionPlanBuilder:
                     agents=package_agents,
                     operations=package_operations,
                     graph_metadata=step.graph_metadata,
-                    memory_policy=step.memory_policy,
                 )
             )
             steps[-1] = ExecutionPlanStep(
@@ -271,7 +265,6 @@ class PackageExecutionPlanBuilder:
                 operations=step.operations,
                 graph_metadata=step.graph_metadata,
                 package_step=package_steps[-1],
-                memory_policy=step.memory_policy,
             )
 
         final_output = self._build_final_output_selector(output_spec)
@@ -284,7 +277,6 @@ class PackageExecutionPlanBuilder:
             steps=tuple(package_steps),
             final_output=final_output,
             compiled_graph=deepcopy(compiled_graph),
-            memory_policy=self._build_memory_policy(workflow.get("memoryPolicy")),
         )
         target_id = self.ownership.package_id if self.ownership is not None else _PACKAGE_TARGET_ID
         target_key = self.ownership.package_key if self.ownership is not None else workflow_key
@@ -300,7 +292,6 @@ class PackageExecutionPlanBuilder:
             final_output=final_output,
             package_workflow=package_workflow,
             package_ownership=self.ownership,
-            memory_policy=package_workflow.memory_policy,
         )
 
     def _build_runtime_agent_specs(self) -> dict[str, PackageRuntimeAgentSpec]:
@@ -342,7 +333,6 @@ class PackageExecutionPlanBuilder:
                 output_schema=output_schema,
                 capability_profiles=capability_profiles,
                 mcp_servers=mcp_servers,
-                memory_policy=self._build_memory_policy(raw_agent.get("memoryPolicy")),
             )
         return agents
 
@@ -438,7 +428,6 @@ class PackageExecutionPlanBuilder:
             agents=agents,
             operations=operations,
             graph_metadata=self._build_step_graph_metadata(agents, operations),
-            memory_policy=self._build_step_memory_policy(agents),
         )
 
     def _build_step_agent(
@@ -476,77 +465,6 @@ class PackageExecutionPlanBuilder:
             optional=bool(raw_agent.get("optional", False)),
             graph_metadata=graph_metadata_by_step_slot.get((step_index, slot)),
             package_runtime_agent=runtime_agent,
-            memory_policy=self._build_memory_policy(raw_agent.get("memoryPolicy")),
-        )
-
-    @staticmethod
-    def _build_step_memory_policy(
-        agents: tuple[ExecutionPlanAgent, ...],
-    ) -> PackageResolvedMemoryPolicy:
-        if not agents:
-            return PackageResolvedMemoryPolicy()
-        return agents[0].memory_policy
-
-    @classmethod
-    def _build_memory_policy(cls, value: object) -> PackageResolvedMemoryPolicy:
-        if not isinstance(value, dict) or not bool(value.get("enabled", False)):
-            return PackageResolvedMemoryPolicy()
-        return PackageResolvedMemoryPolicy(
-            enabled=True,
-            retrieval=cls._build_memory_retrieval(value.get("retrieval")),
-            writes=cls._build_memory_writes(value.get("writes")),
-            policy=cls._build_memory_detector_policy(value.get("policy")),
-            checkpoints=cls._build_memory_checkpoints(value.get("checkpoints")),
-        )
-
-    @staticmethod
-    def _build_memory_retrieval(value: object) -> PackageMemoryRetrievalPolicy | None:
-        if not isinstance(value, dict):
-            return None
-        return PackageMemoryRetrievalPolicy(
-            enabled=bool(value.get("enabled", False)),
-            namespaces=tuple(str(item) for item in value.get("namespaces") or []),
-            max_items=int(value.get("maxItems") or 0),
-            relevance_threshold=(
-                None
-                if value.get("relevanceThreshold") is None
-                else float(value["relevanceThreshold"])
-            ),
-            include_kinds=tuple(str(item) for item in value.get("includeKinds") or []),
-        )
-
-    @staticmethod
-    def _build_memory_writes(value: object) -> PackageMemoryWritePolicy | None:
-        if not isinstance(value, dict):
-            return None
-        return PackageMemoryWritePolicy(
-            proposals=bool(value.get("proposals", False)),
-            allowed_kinds=tuple(str(item) for item in value.get("allowedKinds") or []),
-            default_decision=cast(Any, value.get("defaultDecision") or "review"),
-            auto_commit_kinds=tuple(str(item) for item in value.get("autoCommitKinds") or []),
-        )
-
-    @staticmethod
-    def _build_memory_detector_policy(value: object) -> PackageMemoryDetectorPolicy | None:
-        if not isinstance(value, dict):
-            return None
-        return PackageMemoryDetectorPolicy(
-            secrets=cast(Any, value.get("secrets") or "quarantine"),
-            sensitive_data=cast(Any, value.get("sensitiveData") or "review"),
-            expiration_days=(
-                None if value.get("expirationDays") is None else int(value["expirationDays"])
-            ),
-            unauthorized=cast(Any, value.get("unauthorized") or "reject"),
-            consolidation=cast(Any, value.get("consolidation") or "disabled"),
-        )
-
-    @staticmethod
-    def _build_memory_checkpoints(value: object) -> PackageMemoryCheckpointPolicy | None:
-        if not isinstance(value, dict):
-            return None
-        return PackageMemoryCheckpointPolicy(
-            enabled=bool(value.get("enabled", False)),
-            retention=cast(Any, value.get("retention") or "none"),
         )
 
     def _build_step_operation(

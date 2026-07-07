@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.models.model_connection import ModelConnection
-from app.models.report import Report
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_fork import RunFork
@@ -1074,7 +1073,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "updatedAt",
             "extensionDependencies",
             "steps",
-            "workflowMemoryEvidence",
             "scheduleProvenance",
             "packageProvenance",
         }
@@ -1665,23 +1663,7 @@ def _build_deletable_run(
     return run
 
 
-def _build_run_memory_report(run_id: int, *, slug: str, source: str = "agent") -> Report:
-    return Report(
-        name=slug,
-        slug=slug,
-        source=source,
-        content="memory",
-        metadata_={
-            "analysis": {
-                "reviewType": "agent_memory",
-                "versionGroup": "agent_memory/v1",
-                "runId": run_id,
-            }
-        },
-    )
-
-
-def test_run_delete_cascades_steps_invocations_and_agent_memory_reports(
+def test_run_delete_cascades_steps_and_invocations(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
@@ -1712,17 +1694,7 @@ def test_run_delete_cascades_steps_invocations_and_agent_memory_reports(
             output_origin="executed",
             tokens=11,
         )
-        retained = _build_run_memory_report(run.id + 100, slug="retained_memory")
-        external = _build_run_memory_report(run.id, slug="external_memory", source="external")
-        non_memory = Report(
-            name="agent_non_memory",
-            slug="agent_non_memory",
-            source="agent",
-            content="not memory",
-            metadata_={"analysis": {"reviewType": "other", "runId": run.id}},
-        )
-        owned = _build_run_memory_report(run.id, slug="owned_memory")
-        session.add_all([invocation, owned, retained, external, non_memory])
+        session.add(invocation)
         session.commit()
         run_id = run.id
         step_id = step.id
@@ -1734,8 +1706,6 @@ def test_run_delete_cascades_steps_invocations_and_agent_memory_reports(
         assert session.get(Run, run_id) is None
         assert session.get(RunStep, step_id) is None
         assert session.get(RunAgentInvocation, invocation_id) is None
-        remaining_slugs = {report.slug for report in session.query(Report).all()}
-        assert remaining_slugs == {"retained_memory", "external_memory", "agent_non_memory"}
 
 
 def test_lineage_set_null_on_run_delete(session_factory: sessionmaker[Session]) -> None:
@@ -1767,8 +1737,6 @@ def test_delete_run_route_returns_204_then_404(
     with session_factory() as session:
         run = _build_deletable_run(target_id=9201, target_key="route_delete")
         session.add(run)
-        session.flush()
-        session.add(_build_run_memory_report(run.id, slug="route_owned_memory"))
         session.commit()
         run_id = run.id
 
@@ -1778,6 +1746,3 @@ def test_delete_run_route_returns_204_then_404(
 
     second = client.delete(f"/api/runs/{run_id}")
     assert second.status_code == 404, second.json()
-
-    with session_factory() as session:
-        assert session.query(Report).filter_by(slug="route_owned_memory").one_or_none() is None

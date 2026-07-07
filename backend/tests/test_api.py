@@ -2109,7 +2109,7 @@ def test_report_create_external_json(client: TestClient) -> None:
     assert get_response.json()["source"] == "external"
 
 
-def test_report_external_non_memory_update_and_delete_remains_allowed(
+def test_report_external_non_agent_update_and_delete_remains_allowed(
     client: TestClient,
 ) -> None:
     create_response = client.post(
@@ -2309,10 +2309,10 @@ def test_report_source_filter_accepts_agent(
 
     agent_report_id = insert_report_row(
         session_factory,
-        name="Agent Memory Report",
-        slug="agent_memory_report",
+        name="Agent Review Report",
+        slug="agent_review_report",
         source="agent",
-        content="# Agent Memory",
+        content="# Agent Review",
         metadata={
             "createdBy": {
                 "type": "agent",
@@ -2321,8 +2321,8 @@ def test_report_source_filter_accepts_agent(
                 "agentVersion": 1,
             },
             "analysis": {
-                "reviewType": "agent_memory",
-                "versionGroup": "agent_memory/v1",
+                "reviewType": "agent_review",
+                "versionGroup": "agent_review/v1",
                 "runId": 101,
                 "agentKey": "analyst",
                 "agentVersion": 1,
@@ -2392,7 +2392,7 @@ def test_report_read_schema_explicitly_owns_created_by_metadata(
         name="Explicit CreatedBy Read Contract",
         slug="explicit_created_by_read_contract",
         source="agent",
-        content="# Agent Memory",
+        content="# Agent Review",
         metadata={
             "createdBy": {
                 "type": "agent",
@@ -2404,8 +2404,8 @@ def test_report_read_schema_explicitly_owns_created_by_metadata(
                 "traceId": "trace-explicit-created-by",
             },
             "analysis": {
-                "reviewType": "agent_memory",
-                "versionGroup": "agent_memory/v1",
+                "reviewType": "agent_review",
+                "versionGroup": "agent_review/v1",
             },
             "unmodeledExtensionField": "preserved",
         },
@@ -2426,8 +2426,8 @@ def test_report_read_schema_explicitly_owns_created_by_metadata(
         "traceId": "trace-explicit-created-by",
     }
     assert payload["metadata"]["analysis"] == {
-        "reviewType": "agent_memory",
-        "versionGroup": "agent_memory/v1",
+        "reviewType": "agent_review",
+        "versionGroup": "agent_review/v1",
     }
     assert payload["metadata"]["unmodeledExtensionField"] == "preserved"
 
@@ -2447,10 +2447,10 @@ def test_report_source_filter_external_excludes_agent_reports(
     external_report = external_response.json()
     agent_report_id = insert_report_row(
         session_factory,
-        name="Agent Memory External Exclusion",
-        slug="agent_memory_external_exclusion",
+        name="Agent Review External Exclusion",
+        slug="agent_review_external_exclusion",
         source="agent",
-        content="# Agent Memory",
+        content="# Agent Review",
         metadata={
             "createdBy": {
                 "type": "agent",
@@ -2459,8 +2459,8 @@ def test_report_source_filter_external_excludes_agent_reports(
                 "agentVersion": 1,
             },
             "analysis": {
-                "reviewType": "agent_memory",
-                "versionGroup": "agent_memory/v1",
+                "reviewType": "agent_review",
+                "versionGroup": "agent_review/v1",
                 "runId": 202,
                 "agentKey": "analyst",
                 "agentVersion": 1,

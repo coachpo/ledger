@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers route modules and dependency wiring in `app/api/`.
 
 ## OVERVIEW
-`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services. The live app mounts preserved `/api/v1` finance routes through `signaldeck.finance` registrations plus current `/api/*` platform routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs.
+`app/api/` owns FastAPI `APIRouter` modules, request/response contracts, dependency wiring, and translation from service-layer errors into HTTP responses. Routers stay thin and delegate business rules to services. The live app mounts preserved `/api/v1` finance routes through `signaldeck.finance` registrations plus current `/api/*` platform routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs.
 
 Extension model: statically resident `signaldeck.finance` registrations.
 
@@ -23,7 +23,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Task | Location | Notes |
 |---|---|---|
 | Router composition | `router.py`, `platform_router.py`, `../main.py` | `router.py` includes `signaldeck.finance` `/api/v1` registrations, `platform_router.py` composes `/api/*`, and `main.py` mounts both |
-| Service construction | `dependencies.py` | request-scoped session plus finance extension, extension state, memory, model-connection, tool-catalog, workflow-package, schedule, and run service factories |
+| Service construction | `dependencies.py` | request-scoped session plus finance extension, extension state, model-connection, tool-catalog, workflow-package, schedule, and run service factories |
 | Portfolio routes | `portfolios.py` | portfolio CRUD |
 | Balance routes | `balances.py` | portfolio-scoped balance CRUD |
 | Position routes | `positions.py` | portfolio-scoped position CRUD, symbol lookup, CSV preview, and CSV commit imports |
@@ -31,7 +31,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
-| Platform routes | `workflow_packages.py`, `schedules.py`, `model_connections.py`, `extensions.py`, `memory.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs, including rerun/fork endpoints under Runs |
+| Platform routes | `workflow_packages.py`, `schedules.py`, `model_connections.py`, `extensions.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs, including rerun/fork endpoints under Runs |
 | Finance route registrations | `../extensions/signaldeck_finance/api_routers.py` | extension-gated `/api/v1` registration list for preserved finance routes |
 | Retired global authoring APIs | `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/api/v1/templates/seed`, `/api/v1/orchestration/*`, `/api/v2/*` | not live route modules; do not recreate them as compatibility aliases |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |
@@ -46,7 +46,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
 - Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
-- Workflow Package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Memory, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
+- Workflow Package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 - Scheduled Task routes expose package-first automation only: list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now. They delegate recurrence, template rendering, idempotency, run materialization, and schedule-owned cleanup to services.
 - Legacy global authoring route modules plus `/api/v1/templates/seed`, `/api/v1/orchestration/*`, and `/api/v2/*` are not live API modules. Do not recreate them, remount them, document them as live, or treat them as compatibility aliases.
 - Do not change runtime tool keys or OpenAI function names here.
@@ -71,5 +71,5 @@ uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extensio
 
 ## NOTES
 - `router.py` mounts the live `/api/v1` finance routers returned by `signaldeck_finance.api_routers.register()`.
-- `platform_router.py` mounts the live `/api/*` routers for workflow packages, schedules, model connections, extensions, memory, tools, and runs.
-- `dependencies.py` constructs services with a shared request `Session` and wires finance extension services, extension state, memory service, model-connection service, tool catalog, workflow package services, schedule services, and run service into the live API.
+- `platform_router.py` mounts the live `/api/*` routers for workflow packages, schedules, model connections, extensions, tools, and runs.
+- `dependencies.py` constructs services with a shared request `Session` and wires finance extension services, extension state service, model-connection service, tool catalog, workflow package services, schedule services, and run service into the live API.

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds backend business workflows plus stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, `ExtensionService` owns statically resident extension state/filtering, finance services keep the `signaldeck.finance` product flows intact, and platform services own Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, memory, and Runs.
+`app/services/` holds backend business workflows plus stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, `ExtensionService` owns statically resident extension state/filtering, finance services keep the `signaldeck.finance` product flows intact, and platform services own Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -29,7 +29,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Template placeholder resolution | `template_compiler_service.py` | `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, and report re-compilation |
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
-| Workflow memory workflows | workflow memory context service, `workflow_memory_middleware.py`, `workflow_memory_policy_service.py`, `workflow_memory_proposal_service.py`, `workflow_memory_detection.py`, `workflow_checkpoint_service.py` | declarative `spec.memory` policy resolution, non-authoritative context packs, proposal staging, detector review/quarantine, policy-only activation, checkpoints, and run evidence |
 | Quote/social provider contracts | `quote_provider.py`, `social_sentiment_provider.py`, `social_sentiment_service.py` | provider protocols, Yahoo/deterministic quotes, Reddit/StockTwits sentiment adapters, degraded warnings |
 | Extension state/filtering | `extension_service.py`, `extension_dependency_service.py`, `extension_gate.py`, `../extensions/signaldeck_finance/provider_factories.py` | slim statically resident extension state, surface gating, ToolCatalog/runtime registry filtering, dependency-only run extension records, and finance provider factory wiring |
 | Model gateway / connection truth | `model_gateway.py`, `model_gateway_dto.py`, `model_gateway_openai.py`, `model_gateway_openai_responses.py`, `model_gateway_output_validation.py`, `model_gateway_policy_strategy.py`, `model_gateway_provider_retry.py`, `model_gateway_tool_strategy.py`, `model_gateway_tool_retry.py`, `model_connection_service.py`, `model_connection_probe_service.py`, `model_connection_resolution.py` | persisted model-connection state, capability/probe truth, official-SDK execution, provider retry metadata, tool/schema validation, responses/policy adapters, and protocol DTOs |
@@ -39,7 +38,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | MCP runtime boundary | `../agents/mcp/boundaries.py`, `../agents/mcp/runtime.py`, `../agents/mcp/AGENTS.md` | saved config boundary construction and package-private MCP runtime dispatch; active MCP support, not legacy quarantine |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
-| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extensions_api.py`, `../../tests/test_extension_lifecycle_matrix.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_workflow_memory_middleware.py`, `../../tests/test_workflow_memory_policy.py`, `../../tests/test_workflow_memory_context.py`, `../../tests/test_workflow_memory_checkpoints.py`, `../../tests/test_social_sentiment_service.py` | preserved-product regressions, extension state, platform execution, workflow memory, provider warnings, and run artifacts |
+| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extensions_api.py`, `../../tests/test_extension_lifecycle_matrix.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_social_sentiment_service.py` | preserved-product regressions, extension state, platform execution, provider warnings, and run artifacts |
 
 ## CONVENTIONS
 - Persistence-backed domain services are constructed with a `Session` and compose repositories or dependent services in `__init__`.
@@ -50,11 +49,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `app.extensions.signaldeck_finance.provider_factories` creates quote and social sentiment providers; services consume factories/dependencies instead of constructing providers ad hoc.
 - `PositionService` may consult the quote provider to resolve symbol names and caches successful lookups in `symbol_name_cache`; lookup failures should not block manual position CRUD.
 - `TemplateCompilerService` resolves the `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` placeholder contract against repositories and runtime input maps; it powers inline preview compile, stored-template compile, exact-name report embeds, dynamic report selectors, and report-content re-compilation with cycle detection.
-- `ReportService` treats `source` as report origin: `compiled` for template snapshots, `uploaded` for markdown uploads, `external` for true external user/API-created JSON reports, and `agent` for historical agent-origin reports. Historical agent-memory report purpose stays in `metadata.analysis.reviewType="agent_memory"` as report-domain history only; workflow memory retrieval and activation do not use reports as storage.
-- Workflow memory is platform-core. `workflow_package_manifest.py` owns declarative `spec.memory`, `WorkflowMemoryMiddleware` injects non-authoritative context into model input, and proposal writes are staged before detector/policy/review activation.
-- Workflow memory persistence lives in the workflow memory and checkpoint tables through the workflow memory repositories. Committed items, proposals, decisions, audit events, quarantine rows, revisions, consolidation runs, and checkpoints stay separate from report history.
-- Review APIs expose proposal, audit, quarantine, approve, and reject flows only. Policy evaluation is the only automatic activation path; review approval records an explicit decision before committed memory becomes eligible for future context packs.
-- Model-visible prompt and tool-output projections stay report-free: no report ids, slugs, names, raw markdown, URLs, downloads, or audit links. Run detail surfaces workflow memory through `workflowMemoryEvidence` groups only.
+- `ReportService` treats `source` as report origin: `compiled` for template snapshots, `uploaded` for markdown uploads, `external` for true external user/API-created JSON reports, and `agent` for historical agent-origin reports.
+- Model-visible prompt and tool-output projections stay report-free: no report ids, slugs, names, raw markdown, URLs, downloads, or audit links.
 - `model_gateway*.py` owns provider-protocol execution, output/tool validation, and official-SDK adapter behavior; persisted connection state, capability probes, and capability and runtime-profile truth stay in the `model_connection_*` services.
 - Workflow package services keep one mutable current package artifact, validate typed contracts before save, treat private MCP `env`, `headers`, and `query` values as secret-bearing authoring/runtime config that is omitted from browser-visible manifest reads and exports, and keep runtime-input registry/history plus run persistence detailed enough for snapshot provenance, rerun/fork lineage, and the run monitor.
 - Scheduled task services keep recurrence and fire semantics backend-owned: structured recurrence only, IANA timezone conversion, placeholder allowlist, preview-before-save validation, idempotent manual fires, delete that removes the schedule and fire rows, stops future automation, preserves existing run history through `scheduleProvenance`, and scheduled or manual fires materialized as ordinary queued package runs.
@@ -63,7 +59,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - API launch/rerun/fork paths create durable queued rows only; `RunSchedulerWorker` and `RunQueueService` own later claim, lease heartbeat, stale-lease recovery, and claimed execution.
 - Tools are global read-only server-declared metadata; package-local capability profiles store only canonical `signaldeck.<owner>.<tool_collection>.<tool>` `toolKeys` and validate against the extension-aware `ToolCatalog`.
 - Service-layer LLM calls must stay inside official SDK clients and service-owned integration boundaries; saved endpoint/key/runtime defaults come from global Model Connections.
-- Do not add quarantined legacy authoring services for cutover checks; execution and authoring work must use Workflow Package, schedule, Model Connection, Memory, and Run services.
+- Do not add quarantined legacy authoring services for cutover checks; execution and authoring work must use Workflow Package, schedule, Model Connection, and Run services.
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
@@ -85,7 +81,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extension_lifecycle_matrix.py tests/test_workflow_package_preflight.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py tests/test_workflow_memory_middleware.py tests/test_workflow_memory_policy.py tests/test_workflow_memory_context.py tests/test_workflow_memory_checkpoints.py
+uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extension_lifecycle_matrix.py tests/test_workflow_package_preflight.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py
 ```
 
 ## NOTES

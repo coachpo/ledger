@@ -10,10 +10,6 @@ ExecutionPlanInputMode = Literal["passthrough", "wired"]
 ExecutionPlanOperationKind = Literal["http"]
 ExecutionPlanTargetKind = Literal["workflow_package"]
 ExecutionPlanSourceKind = Literal["input", "step"]
-MemoryDefaultDecision = Literal["review", "commit", "reject"]
-MemoryPolicyAction = Literal["review", "quarantine", "reject"]
-MemoryConsolidation = Literal["disabled", "run_end"]
-MemoryCheckpointRetention = Literal["none", "run_lifecycle"]
 
 
 @dataclass(frozen=True)
@@ -71,47 +67,6 @@ class PackageResolvedModelBinding:
     api_style: str
     timeout_seconds: int
     has_api_key: bool
-
-
-@dataclass(frozen=True)
-class PackageMemoryRetrievalPolicy:
-    enabled: bool
-    namespaces: tuple[str, ...] = ()
-    max_items: int = 0
-    relevance_threshold: float | None = None
-    include_kinds: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class PackageMemoryWritePolicy:
-    proposals: bool
-    allowed_kinds: tuple[str, ...] = ()
-    default_decision: MemoryDefaultDecision = "review"
-    auto_commit_kinds: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class PackageMemoryDetectorPolicy:
-    secrets: MemoryPolicyAction = "quarantine"
-    sensitive_data: MemoryPolicyAction = "review"
-    expiration_days: int | None = None
-    unauthorized: Literal["reject"] = "reject"
-    consolidation: MemoryConsolidation = "disabled"
-
-
-@dataclass(frozen=True)
-class PackageMemoryCheckpointPolicy:
-    enabled: bool
-    retention: MemoryCheckpointRetention = "none"
-
-
-@dataclass(frozen=True)
-class PackageResolvedMemoryPolicy:
-    enabled: bool = False
-    retrieval: PackageMemoryRetrievalPolicy | None = None
-    writes: PackageMemoryWritePolicy | None = None
-    policy: PackageMemoryDetectorPolicy | None = None
-    checkpoints: PackageMemoryCheckpointPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -181,7 +136,6 @@ class PackageRuntimeAgentSpec:
     output_schema: PackageLocalOutputSchemaSpec
     capability_profiles: tuple[PackageCapabilityProfileGrant, ...]
     mcp_servers: tuple[PackagePrivateMcpConfig, ...]
-    memory_policy: PackageResolvedMemoryPolicy = field(default_factory=PackageResolvedMemoryPolicy)
 
 
 @dataclass(frozen=True)
@@ -202,7 +156,6 @@ class PackageExecutionStep:
     agents: tuple[PackageRuntimeAgentSpec, ...]
     operations: tuple[PackageRuntimeOperationSpec, ...] = ()
     graph_metadata: ExecutionPlanGraphMetadata | None = None
-    memory_policy: PackageResolvedMemoryPolicy = field(default_factory=PackageResolvedMemoryPolicy)
 
 
 @dataclass(frozen=True)
@@ -215,7 +168,6 @@ class PackageExecutionWorkflow:
     steps: tuple[PackageExecutionStep, ...]
     final_output: ExecutionPlanFinalOutput
     compiled_graph: dict[str, Any] | None = None
-    memory_policy: PackageResolvedMemoryPolicy = field(default_factory=PackageResolvedMemoryPolicy)
 
 
 @dataclass(frozen=True)
@@ -231,7 +183,6 @@ class ExecutionPlanAgent:
     optional: bool = False
     input_mode: ExecutionPlanInputMode = "wired"
     graph_metadata: ExecutionPlanGraphMetadata | None = None
-    memory_policy: PackageResolvedMemoryPolicy = field(default_factory=PackageResolvedMemoryPolicy)
 
 
 @dataclass(frozen=True)
@@ -256,7 +207,6 @@ class ExecutionPlanStep:
     operations: tuple[ExecutionPlanOperation, ...] = ()
     graph_metadata: ExecutionPlanGraphMetadata | None = None
     package_step: PackageExecutionStep | None = None
-    memory_policy: PackageResolvedMemoryPolicy = field(default_factory=PackageResolvedMemoryPolicy)
 
 
 @dataclass(frozen=True)
@@ -274,7 +224,6 @@ class ExecutionPlan:
     final_output: ExecutionPlanFinalOutput
     package_workflow: PackageExecutionWorkflow | None = None
     package_ownership: PackageExecutionOwnership | None = None
-    memory_policy: PackageResolvedMemoryPolicy = field(default_factory=PackageResolvedMemoryPolicy)
 
 
 __all__ = [
@@ -298,12 +247,7 @@ __all__ = [
     "PackageExecutionStep",
     "PackageExecutionWorkflow",
     "PackageLocalOutputSchemaSpec",
-    "PackageMemoryCheckpointPolicy",
-    "PackageMemoryDetectorPolicy",
-    "PackageMemoryRetrievalPolicy",
-    "PackageMemoryWritePolicy",
     "PackagePrivateMcpConfig",
-    "PackageResolvedMemoryPolicy",
     "PackageResolvedModelBinding",
     "PackageRuntimeAgentSpec",
     "PackageRuntimeOperationSpec",

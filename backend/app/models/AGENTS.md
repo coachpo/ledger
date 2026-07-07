@@ -31,7 +31,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Reports | `report.py` | slug-addressed markdown snapshots with source and metadata |
 | Extension state | `extension.py` | persisted enable/disable state for statically resident extension keys |
 | Platform package entities | `workflow_package.py`, `workflow_package_schedule.py` | package artifacts, package-backed schedules, and schedule fire history |
-| Platform global entities | `model_connection.py`, `run.py`, `workflow_memory.py`, `workflow_checkpoint.py` | saved model connections, persisted global run detail, schedule provenance, package provenance, workflow memory lifecycle rows, and checkpoint state |
+| Platform global entities | `model_connection.py`, `run.py` | saved model connections, persisted global run detail, schedule provenance, package provenance |
 ## CONVENTIONS
 - ORM models use `Mapped[...]` annotations and `mapped_column(...)`.
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
@@ -64,9 +64,7 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 - `workflow_package.py` stores current package artifacts without database ids in exported manifests.
 - `model_connection.py` stores UI-managed provider endpoint defaults, encrypted API-key payload metadata, status, and last connection-test results.
 - `run.py` persists package version identity, package hash, workflow key, queued/running status, execution scope, concurrency policy, lease metadata, attempt counts, per-step outputs, final output, and run totals used by the run monitor.
-- `workflow_memory.py` persists workflow memory items, proposals, decisions, audit events, revisions, quarantine evidence, and consolidation runs for declarative package memory.
-- `workflow_checkpoint.py` persists checkpoint state separately from workflow memory item/proposal/decision rows.
-- `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Historical agent-memory reports remain report-domain records only and are not workflow memory storage or retrieval.
+- `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
 - `extension.py` stores `extension_states` rows keyed by statically resident extension key; default enabled state is declared in `app/extensions/registry.py`.
 - Legacy global-authoring model files may still exist for startup cleanup or quarantine tests, but Workflow Packages and run-owned snapshots are the live persistence contracts.

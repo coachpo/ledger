@@ -341,7 +341,7 @@ _RUNTIME_RUN_ID = 4242
 _RUNTIME_RUN_STEP_ID = 5101
 _RUNTIME_AGENT_INVOCATION_ID = 5201
 _RUNTIME_OPERATION_INVOCATION_ID = 5301
-_RUNTIME_TOOL_CALL_INVOCATION_ID = "tool-call-runtime-memory"
+_RUNTIME_TOOL_CALL_INVOCATION_ID = "tool-call-runtime-tool"
 _RUNTIME_TRACE_SPAN_ID = "span-runtime-tools"
 _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
@@ -1151,9 +1151,9 @@ def _seed_runtime_run(
                 run_step_id=run_step_id,
                 run_id=run_id,
                 step_index=1,
-                slot="memory_dispatch",
+                slot="tool_dispatch",
                 position=1,
-                operation_key="memory_dispatch",
+                operation_key="tool_dispatch",
                 operation_kind="http",
                 output_schema_id=202,
                 output_schema_version=1,

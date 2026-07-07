@@ -11,7 +11,7 @@
 - `db/AGENTS.md` — engine/session lifecycle, bundled package seeding, startup recovery
 - `extensions/AGENTS.md` — statically resident bundled extension registry and ownership
 - `agents/AGENTS.md` — tool catalog, native runtime tools, MCP runtime boundaries
-- `services/AGENTS.md` — business rules, transactions, runtime execution, schedules, workflow memory
+- `services/AGENTS.md` — business rules, transactions, runtime execution, schedules
 - `repositories/AGENTS.md` — SQLAlchemy query and persistence helpers
 - `models/AGENTS.md` — ORM entities, constraints, indexes, runtime metadata
 - `schemas/AGENTS.md` — Pydantic request/response and manifest contracts
@@ -37,7 +37,7 @@ app/
 | Task | Location | Notes |
 |---|---|---|
 | App bootstrap | `main.py` | `create_app()`, Logfire setup, health/readiness, `/api` and `/api/v1` mounting |
-| Current platform APIs | `api/platform_router.py`, `api/{workflow_packages,schedules,model_connections,extensions,memory,tools,runs}.py` | live package-first platform routes under `/api` |
+| Current platform APIs | `api/platform_router.py`, `api/{workflow_packages,schedules,model_connections,extensions,tools,runs}.py` | live package-first platform routes under `/api` |
 | Preserved finance APIs | `api/router.py`, `extensions/signaldeck_finance/api_routers.py`, `api/{portfolios,balances,positions,trading_operations,market_data,templates,reports}.py` | extension-contributed `/api/v1` routes gated by `signaldeck.finance` |
 | Dependency composition | `api/dependencies.py` | request-scoped sessions, extension service, ToolCatalog, provider bundles, run services |
 | Extension state and registrars | `extensions/registry.py`, `services/extension_service.py` | statically resident extension identity plus enabled-route/tool/provider filtering |
@@ -52,7 +52,7 @@ app/
 - Repositories own SQLAlchemy query mechanics only. Models own persistence shape and constraints. Schemas own external camelCase contracts through `CamelModel`.
 - Shared formatting, `ApiError`, settings, constants, and Logfire helpers belong in `core/`; do not duplicate them in routes or services.
 - Extension-owned behavior enters through `extensions/registry.py` registrar loaders and `ExtensionService` enabled-state filtering. Finance and Digital Oracle tool keys stay owner-qualified.
-- Workflow Package manifests, schedules, runs, memory middleware/review, and package-private MCP remain platform-core app contracts; global authoring surfaces stay removed.
+- Workflow Package manifests, schedules, runs, and package-private MCP remain platform-core app contracts; global authoring surfaces stay removed.
 - The scheduler worker calls `init_db()` and executes queued runs in a separate process. FastAPI startup should not claim runs or materialize schedules inline.
 - Application LLM calls stay behind official SDK clients and gateway services, not raw HTTP helpers.
 

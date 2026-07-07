@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/backend/AGENTS.md`, and `/backend/app/extensions/AGENTS.md`. This file covers the statically resident `signaldeck.finance` extension only.
 
 ## OVERVIEW
-`signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance service gates/grants/dependency records, finance runtime tools, report lookup, and historical agent-memory report readers. Its public runtime tool keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`. It does not own Digital Oracle prediction markets, SEC filings, or market sentiment runtime tools.
+`signaldeck_finance/` owns the current first-party Finance Workspace behavior: preserved `/api/v1` portfolio/template/report routes, finance provider factories, finance service gates/grants/dependency records, finance runtime tools, and report lookup. Its public runtime tool keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`. It does not own Digital Oracle prediction markets, SEC filings, or market sentiment runtime tools.
 
 Treat this folder as extension-owned product logic, not as a staging area for generic platform behavior. If a finance-specific feature becomes a shared platform contract, move that ownership intentionally and update registries, gates, docs, and tests together.
 
@@ -26,10 +26,10 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Route registration | `api_routers.py` | finance `/api/v1` router list and `require_extension_enabled()` dependencies |
 | Dependency factories | `dependencies.py` | finance service/provider dependencies reused by route modules |
 | Provider factories | `provider_factories.py` | deterministic/Yahoo quote providers plus Reddit/StockTwits social sentiment adapters |
-| Service gates and grants | `service_gate.py`, `grant_policy.py`, `execution_dependencies.py`, `memory_metadata.py` | extension enabled checks, runtime grant policy, dependency-only run records, and finance-owned memory metadata helpers |
+| Service gates and grants | `service_gate.py`, `grant_policy.py`, `execution_dependencies.py` | extension enabled checks, runtime grant policy, and dependency-only run records |
 | Runtime tool specs | `tool_specs.py` | finance-owned server-declared tool metadata |
 | Runtime executors | `runtime_executors.py`, `runtime_market_data.py`, `runtime_positions.py`, `runtime_reports.py`, `runtime_types.py` | finance-owned OpenAI tool definitions, parser/executor modules, and typed runtime payloads |
-| Report hooks | `hooks.py` | report lookup, template placeholder, and return-resolution ownership hooks; core memory is platform-owned |
+| Report hooks | `hooks.py` | report lookup, template placeholder, and return-resolution ownership hooks |
 
 ## CONVENTIONS
 - `FINANCE_WORKSPACE_EXTENSION_KEY` stays `signaldeck.finance` and is the owner key for finance routes, tools, providers, and hooks.

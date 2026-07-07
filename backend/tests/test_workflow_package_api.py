@@ -241,7 +241,7 @@ def test_validate_manifest_accepts_private_mcp_and_http_demo_variants(
         },
         "digital_oracle_researcher": {
             "manifest_hash": "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
-            "compiled_hash": "1a997fe3f393bdef1db33473c7241683ecbba6e5f266b3bc1b1960c4e5ba5ea4",
+            "compiled_hash": "aaa4f5349ce48dafe2b49ea7f5891f6536995f85d74a3030bed07e473aaa3d84",
         },
     }
 

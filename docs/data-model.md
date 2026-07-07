@@ -1,12 +1,12 @@
 # Data Model Design
 
-> Status: Live data-model reference for branch `main` at `6c40d44`.
+> Status: Live data-model reference for the current branch.
 
 ## Overview
 
-SignalDeck uses PostgreSQL for the Finance Workspace, templates, reports, package-first platform artifacts, runs, package secrets, and platform-core memory. Startup bootstrap lives in `backend/app/db/`; there is no live Alembic path.
+SignalDeck uses PostgreSQL for the Finance Workspace, templates, reports, package-first platform artifacts, runs, and package secrets. Startup bootstrap lives in `backend/app/db/`; there is no live Alembic path.
 
-The data model follows two boundaries. Finance-owned product tables support preserved portfolio, template, report, and market-data behavior. Platform-owned tables support Workflow Packages, Model Connections, bundled extension state, package secret bindings, Tools metadata references, Runs, run operation evidence, run fork lineage, typed failure and retry metadata, and workflow-memory middleware state with proposal, policy, audit, quarantine, and checkpoint separation.
+The data model follows two boundaries. Finance-owned product tables support preserved portfolio, template, report, and market-data behavior. Platform-owned tables support Workflow Packages, Model Connections, bundled extension state, package secret bindings, Tools metadata references, Runs, run operation evidence, run fork lineage, and typed failure and retry metadata.
 
 ## Preserved Finance Product Tables
 
@@ -37,15 +37,6 @@ The data model follows two boundaries. Finance-owned product tables support pres
 | `run_steps`                        | Persisted workflow step status, copied rerun/fork context, graph metadata, typed tool-failure taxonomy, bounded retry metadata, errors, and timestamps.                                                                                                                                                                                 |
 | `run_agent_invocations`            | Persisted agent invocation lineage, approved inputs, outputs, token usage, durations, optional span ids, copied context, and edited fork target provenance.                                                                                                                                                                             |
 | `run_operation_invocations`        | Persisted non-agent operation invocation lineage for `kind: http`, redacted request metadata, bounded response metadata, outputs, errors, optional span ids, and copied context.                                                                                                                                                        |
-| `workflow_memory_items`            | Committed active long-term workflow memory only, keyed by package/workflow/agent/step scope, namespace, kind, JSON content, provenance, policy status, lifecycle status, validity windows, supersession, deletion, and timestamps. Retrieval considers only committed active authorized rows.                                             |
-| `workflow_memory_proposals`        | Runtime proposal staging rows keyed by run and invocation with package/workflow/agent/step scope, kind, JSON content, reason, source output path, detector evidence, status, and timestamps. Proposals are not active memory.                                                                    |
-| `workflow_memory_decisions`        | Policy or review decisions for proposals, including decision, reason code, reason text, policy snapshot, decider, and timestamps. This is the only activation boundary for proposal commits.                                                                                                     |
-| `workflow_memory_audit_events`     | Immutable audit stream for retrieval, injection, proposal, decision, quarantine, commit, supersession, expiry, deletion, and checkpoint lifecycle evidence.                                                                                                                                        |
-| `workflow_memory_revisions`        | Version and supersession history for active workflow memory items.                                                                                                                                                                                                                               |
-| `workflow_memory_quarantine`       | Isolated content and detector evidence for proposals/items blocked by secret, sensitive, or unsafe policies. Quarantine rows are never retrieval-eligible.                                                                                                                                       |
-| `workflow_memory_consolidation_runs` | Metadata for dedupe, supersession, and consolidation runs after policy approval.                                                                                                                                                                                                                 |
-| `workflow_checkpoints`             | Run-local checkpoint state keyed by run, step, agent, checkpoint type, state JSON, retention, and timestamps. Checkpoints are separate from long-term memory.                                                                                                                                    |
-
 Package-private agents, output schemas, capability profiles, private MCP configs, workflow graphs, and HTTP operation nodes are stored inside the current package artifact. Runs copy the executable artifact into their own snapshot at launch. These resources are not normalized into global authoring tables.
 
 ## Integrity Rules
@@ -62,7 +53,7 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - `capabilities`, policy columns, probe TTL, probe timestamps, and test metadata store backend-owned capability evidence. Public write DTOs must not treat those columns as client-authored truth.
 - Model-connection policy columns store output strategy, parallel tool-call, reasoning, and streaming defaults derived and maintained by backend resolution services.
 - Runs copy the effective non-secret `ModelConnectionRuntimeProfile` profile into package provenance at launch. Raw key material stays in the live Model Connection secret payload.
-- Global tools are read-only server-declared metadata, exposed by API and referenced by package-local capability profiles. Disabled extension-owned tools stay out of `/api/tools`; workflow memory is declared in package YAML and is not a server-declared runtime tool.
+- Global tools are read-only server-declared metadata, exposed by API and referenced by package-local capability profiles. Disabled extension-owned tools stay out of `/api/tools`; there is no server-declared memory tool surface.
 - Public extension state is not a manifest metadata store. It is the `extension_states` key plus `enabled` flag, surfaced as `key`, `label`, and `enabled` through `/api/extensions`.
 - Runs store snapshot-based package id, package key, package hashes, workflow key, local resource refs, approved model connection refs, launch inputs, and `extension_dependencies` records containing only extension key, surfaces, and fields.
 - Runs store scheduler metadata such as execution scope key, concurrency policy, lease owner/timestamps, attempt count, queued time, and last claimed time. Queue read models derive from persisted scheduler state. Progress read models derive from persisted invocation statuses.
@@ -71,15 +62,8 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Runtime failure metadata stores typed `failureTaxonomy` records, bounded `toolCallRetries` evidence, and distinct live-execution `providerRetries` evidence without raw tool arguments, secrets, headers, or provider bodies. `toolCallRetries` covers the model-feedback correction path for typed tool-call argument failures. `providerRetries` lives under `graphMetadata.modelGateway.providerRetries` for transient provider create-call retries only, uses `policy="transientProviderRetry/v1"` and `maxAttempts=3`, records failed attempts only, omits the field on first-attempt success and first non-retryable failure, and includes `terminalOutcome` only for `succeededAfterRetry` or `exhausted`. Connection tests, capability probes, and Responses manual replay do not persist provider retry metadata.
 - Reruns may edit root launch parameters. Forks preserve source run input, copy upstream context, persist one `run_forks` artifact, and mark the selected target agent invocation as edited with source invocation provenance. `resume_step_index` is the execution boundary only.
 - Runtime request metadata for HTTP operations must redact sensitive URL query names and all secret-backed headers, query fields, and body fields. Response metadata is bounded and stores redaction-safe URL, status, selected headers, content type, body preview, byte count, hash, and redirect metadata.
-- Workflow Package `spec.memory` is stored in the package manifest artifact and compiled plan. Omitted memory leaves retrieval, proposals, and checkpoints disabled. Workflow, agent, and step memory overrides resolve into execution-plan policy instead of runtime code merging raw YAML.
-- Workflow memory retrieval reads only committed active items with authorized package/workflow/agent/step/namespace scope, current validity windows, no deletion timestamp, no supersession, and no unresolved quarantine. Deleted, superseded, expired, unauthorized, quarantined, and review-pending records are excluded before ranking.
-- Runtime memory writes are staged as `workflow_memory_proposals`. Active memory can be created only by `workflow_memory_decisions` through policy or review; detector hits for secrets reject or quarantine before activation, and sensitive detector hits require review or quarantine.
-- Workflow memory context is persisted and projected as non-authoritative reference data. It cannot override system, developer, or package instructions and must not be stored as prompt or instruction text.
-- Checkpoints live in `workflow_checkpoints` and remain run-local recovery state. They are not long-term memory, not retrieval candidates, and not a migration path for old memory events.
-- `/api/memory` review projections are derived from workflow-memory proposal, decision, audit, and quarantine tables. They do not expose direct runtime write/lookup endpoints and do not query or join `reports` as canonical memory storage.
-- Workflow memory persistence is JSON-first in the workflow memory tables; chunk, embedding, and vector persistence are not part of the live data model.
-- Startup bootstrap uses SQLAlchemy `create_all`, bundled package seeds, and stale-run recovery in `backend/app/db/`; report rows remain report-domain history, not canonical memory storage.
+- Startup bootstrap uses SQLAlchemy `create_all`, bundled package seeds, and stale-run recovery in `backend/app/db/`; report rows remain report-domain history.
 
 ## Retired Data
 
-Backtest, simulation, orchestration, Studio, Tryout, runtime-v2, skill-contract tables, and global authoring tables for agents, capabilities, MCP servers, output schemas, and workflows are not part of the current shipped data contract.
+Backtest, simulation, orchestration, Studio, Tryout, runtime-v2, skill-contract tables, workflow-memory/checkpoint tables, and global authoring tables for agents, capabilities, MCP servers, output schemas, and workflows are not part of the current shipped data contract.

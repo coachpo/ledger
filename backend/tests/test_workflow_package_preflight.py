@@ -60,12 +60,6 @@ _TOOL_REQUIRED_FIXTURE = (
 _DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
-_MEMORY_RESEARCH_FIXTURE = (
-    Path(__file__).resolve().parent
-    / "fixtures"
-    / "workflow_packages"
-    / "advisory_research_memory.yaml"
-)
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.digital_oracle.prediction_markets.lookup",
     "signaldeck.digital_oracle.sec_filings.lookup",
@@ -99,10 +93,6 @@ def _tool_required_package_source() -> str:
 
 def _digital_oracle_researcher_demo_source() -> str:
     return _canonicalize_live_tool_keys(_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text())
-
-
-def _memory_research_package_source() -> str:
-    return _canonicalize_live_tool_keys(_MEMORY_RESEARCH_FIXTURE.read_text())
 
 
 def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
@@ -458,10 +448,6 @@ def _bind_package_secret(client: TestClient, package_id: int, key: str) -> None:
 
 def _delete_existing_tradingagents_package(client: TestClient) -> None:
     _delete_existing_package(client, "tradingagents_advisory_research")
-
-
-def _delete_existing_memory_research_package(client: TestClient) -> None:
-    _delete_existing_package(client, "signaldeck_advisory_research_memory")
 
 
 def _create_package(client: TestClient) -> dict[str, Any]:
@@ -1127,84 +1113,6 @@ def test_digital_oracle_researcher_demo_validates_compiles_and_preflights(
         sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
     )
     assert set(agent_profiles_by_key) == {"digital_oracle_phase1_tools"}
-
-
-def test_memory_research_fixture_validates_compiles_and_preflights(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    manifest_source = _memory_research_package_source()
-    parsed = parse_workflow_package_manifest(manifest_source)
-    assert parsed.diagnostics == []
-    assert parsed.manifest is not None
-    assert parsed.manifest.spec.memory is not None
-    assert parsed.manifest.spec.memory.retrieval is not None
-    assert parsed.manifest.spec.memory.retrieval.namespaces == ["advisory_research"]
-
-    validation = client.post(
-        "/api/workflow-packages/validate-manifest",
-        json={"manifestSource": manifest_source},
-    )
-    assert validation.status_code == 200, validation.json()
-    assert validation.json()["diagnostics"] == []
-
-    compiled = compile_workflow_package_manifest(manifest_source)
-    compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
-    memory_policy = cast(dict[str, object], compiled_plan["memoryPolicy"])
-    profiles = cast(list[dict[str, Any]], compiled_plan["capabilityProfiles"])
-    profiles_by_key = {str(profile["key"]): profile for profile in profiles}
-
-    with session_factory() as session:
-        tool_errors = _project_blocking_diagnostics(
-            WorkflowPackagePreflightService(session)._tool_errors(compiled_plan)
-        )
-
-    plan = PackageExecutionPlanBuilder.build_from_compiled_plan(
-        compiled_plan,
-        "advisory_research",
-    )
-    runtime_agent = plan.steps[0].agents[0].package_runtime_agent
-    assert runtime_agent is not None
-
-    _seed_model_connection(
-        session_factory,
-        protocol_profile="openai_chat_completions",
-        capabilities=_capabilities_with_statuses(),
-        last_test_ok=True,
-    )
-    _delete_existing_memory_research_package(client)
-    created = client.post("/api/workflow-packages", json={"manifestSource": manifest_source})
-    assert created.status_code == 201, created.json()
-    preflight = client.post(
-        f"/api/workflow-packages/{created.json()['id']}/preflight",
-        json={
-            "workflowKey": "advisory_research",
-            "parameters": {
-                "ticker": "AAPL",
-                "researchQuestion": "What changed this week?",
-                "outputLanguage": "English",
-            },
-        },
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    preflight_body = cast(dict[str, object], preflight.json())
-    assert preflight_body["ready"] is True
-    assert preflight_body["blockingErrors"] == []
-    assert preflight_body["warnings"] == []
-    assert tool_errors == []
-    assert memory_policy["enabled"] is True
-    assert cast(dict[str, object], memory_policy["writes"])["defaultDecision"] == "review"
-    assert cast(dict[str, object], memory_policy["checkpoints"])["enabled"] is True
-    assert profiles_by_key["market_research_tools"]["toolKeys"] == sorted(
-        [
-            "signaldeck.finance.market_data.history_lookup",
-            "signaldeck.finance.market_data.quote_lookup",
-        ]
-    )
-    assert runtime_agent.memory_policy.enabled is True
-    assert runtime_agent.memory_policy.retrieval is not None
-    assert runtime_agent.memory_policy.retrieval.namespaces == ("advisory_research",)
 
 
 def test_preflight_missing_digital_oracle_toolKeys_diagnostic_preserves_field_only_shape(

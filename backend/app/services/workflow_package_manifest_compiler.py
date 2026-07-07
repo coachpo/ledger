@@ -24,7 +24,6 @@ from app.schemas.workflow_package_manifest import (
     WorkflowPackageManifestDiagnostic,
     WorkflowPackageManifestDiagnosticSeverity,
     WorkflowPackageMcpServer,
-    WorkflowPackageMemoryConfig,
     WorkflowPackageNode,
     WorkflowPackageReference,
     WorkflowPackageSecretReference,
@@ -323,7 +322,6 @@ def _compile_plan(
     return {
         "packageKey": manifest.metadata.key,
         "inputs": manifest.spec.inputs,
-        "memoryPolicy": _compile_memory_policy((manifest.spec.memory,)),
         "capabilityProfiles": [
             {
                 "key": profile.key,
@@ -347,14 +345,13 @@ def _compile_plan(
             for server in sorted(manifest.spec.mcp_servers, key=lambda item: item.key)
         ],
         "agents": [
-            _compile_agent(agent, package_memory=manifest.spec.memory)
+            _compile_agent(agent)
             for agent in sorted(manifest.spec.agents, key=lambda item: item.key)
         ],
         "workflows": [
             _compile_workflow(
                 workflow,
                 agents_by_key={agent.key: agent for agent in manifest.spec.agents},
-                package_memory=manifest.spec.memory,
             )
             for workflow in sorted(manifest.spec.workflows, key=lambda item: item.key)
         ],
@@ -412,11 +409,7 @@ def _compile_package_private_mcp_tool_descriptors(
     return descriptors
 
 
-def _compile_agent(
-    agent: WorkflowPackageAgent,
-    *,
-    package_memory: WorkflowPackageMemoryConfig | None,
-) -> dict[str, object]:
+def _compile_agent(agent: WorkflowPackageAgent) -> dict[str, object]:
     return {
         "key": agent.key,
         "name": agent.name,
@@ -427,7 +420,6 @@ def _compile_agent(
         "outputSchema": agent.output_schema,
         "capabilityProfiles": sorted(agent.capability_profiles),
         "mcpServers": sorted(agent.mcp_servers),
-        "memoryPolicy": _compile_memory_policy((package_memory, agent.memory)),
     }
 
 
@@ -435,7 +427,6 @@ def _compile_workflow(
     workflow: WorkflowPackageWorkflow,
     *,
     agents_by_key: Mapping[str, WorkflowPackageAgent],
-    package_memory: WorkflowPackageMemoryConfig | None,
 ) -> dict[str, object]:
     context = _WorkflowCompileContext()
     _ = _compile_node(
@@ -443,15 +434,12 @@ def _compile_workflow(
         context=context,
         graph_path=workflow.flow.id,
         agents_by_key=agents_by_key,
-        package_memory=package_memory,
-        workflow_memory=workflow.memory,
     )
     return {
         "key": workflow.key,
         "name": workflow.name,
         "description": workflow.description,
         "inputSchema": workflow.input_schema,
-        "memoryPolicy": _compile_memory_policy((package_memory, workflow.memory)),
         "steps": context.steps,
         "outputSpec": _compile_output(workflow.output.from_, context),
         "compiledGraph": {
@@ -469,8 +457,6 @@ def _compile_node(
     context: _WorkflowCompileContext,
     graph_path: str,
     agents_by_key: Mapping[str, WorkflowPackageAgent],
-    package_memory: WorkflowPackageMemoryConfig | None,
-    workflow_memory: WorkflowPackageMemoryConfig | None,
 ) -> dict[str, tuple[int, str]]:
     if isinstance(node, WorkflowPackageStepNode):
         return _compile_step_node(
@@ -478,8 +464,6 @@ def _compile_node(
             context=context,
             graph_path=graph_path,
             agents_by_key=agents_by_key,
-            package_memory=package_memory,
-            workflow_memory=workflow_memory,
         )
     if isinstance(node, WorkflowPackageHttpNode):
         return _compile_http_node(node, context=context, graph_path=graph_path)
@@ -500,8 +484,6 @@ def _compile_node(
                     context=context,
                     graph_path=f"{graph_path}.{child.id}",
                     agents_by_key=agents_by_key,
-                    package_memory=package_memory,
-                    workflow_memory=workflow_memory,
                 )
             )
         context.register_outputs(node.id, sequence_outputs)
@@ -525,8 +507,6 @@ def _compile_node(
                 context=context,
                 graph_path=f"{graph_path}.{branch.id}.{branch.node.id}",
                 agents_by_key=agents_by_key,
-                package_memory=package_memory,
-                workflow_memory=workflow_memory,
             )
             fanout_outputs.update(branch_outputs)
             if branch_outputs:
@@ -558,8 +538,6 @@ def _compile_node(
             context=context,
             graph_path=f"{graph_path}.iteration_{iteration}.{node.sequence.id}",
             agents_by_key=agents_by_key,
-            package_memory=package_memory,
-            workflow_memory=workflow_memory,
         )
     context.register_outputs(node.id, loop_outputs)
     return loop_outputs
@@ -571,13 +549,7 @@ def _compile_step_node(
     context: _WorkflowCompileContext,
     graph_path: str,
     agents_by_key: Mapping[str, WorkflowPackageAgent],
-    package_memory: WorkflowPackageMemoryConfig | None,
-    workflow_memory: WorkflowPackageMemoryConfig | None,
 ) -> dict[str, tuple[int, str]]:
-    agent_memory = agents_by_key[node.uses].memory if node.uses in agents_by_key else None
-    memory_policy = _compile_memory_policy(
-        (package_memory, agent_memory, workflow_memory, node.memory)
-    )
     agent: dict[str, object] = {
         "agentKey": node.uses,
         "slot": node.slot,
@@ -586,7 +558,6 @@ def _compile_step_node(
             for field_name, reference in node.inputs.items()
         },
         "optional": node.optional,
-        "memoryPolicy": memory_policy,
     }
     step_index, slot = context.create_step(agent)
     output = {node.slot: (step_index, slot)}
@@ -604,117 +575,9 @@ def _compile_step_node(
                 for field_name, reference in node.inputs.items()
             },
             "optional": node.optional,
-            "memoryPolicy": memory_policy,
         }
     )
     return output
-
-
-def _compile_memory_policy(
-    configs: Sequence[WorkflowPackageMemoryConfig | None],
-) -> dict[str, object]:
-    merged: dict[str, object] = {}
-    for config in configs:
-        _deep_update(merged, _memory_config_overlay(config))
-    if not bool(merged.get("enabled", False)):
-        return {
-            "enabled": False,
-            "retrieval": None,
-            "writes": None,
-            "policy": None,
-            "checkpoints": None,
-        }
-
-    retrieval = _active_memory_retrieval(merged.get("retrieval"))
-    writes = _active_memory_block(merged.get("writes"))
-    policy = _active_memory_block(merged.get("policy"))
-    checkpoints = _active_memory_checkpoints(merged.get("checkpoints"))
-    return {
-        "enabled": True,
-        "retrieval": retrieval,
-        "writes": writes,
-        "policy": policy,
-        "checkpoints": checkpoints,
-    }
-
-
-def _memory_config_overlay(config: WorkflowPackageMemoryConfig | None) -> dict[str, object]:
-    if config is None:
-        return {}
-    overlay: dict[str, object] = {}
-    if "enabled" in config.model_fields_set:
-        overlay["enabled"] = config.enabled
-    for field_name, alias in (
-        ("retrieval", "retrieval"),
-        ("writes", "writes"),
-        ("policy", "policy"),
-        ("checkpoints", "checkpoints"),
-    ):
-        if field_name not in config.model_fields_set:
-            continue
-        value = getattr(config, field_name)
-        if value is not None:
-            overlay[alias] = {
-                str(field.alias or name): item
-                for name, field in value.__class__.model_fields.items()
-                if name in value.model_fields_set
-                for item in [getattr(value, name)]
-            }
-    return overlay
-
-
-def _deep_update(target: dict[str, object], source: Mapping[str, object]) -> None:
-    for key, value in source.items():
-        existing = target.get(key)
-        if isinstance(existing, dict) and isinstance(value, Mapping):
-            _deep_update(existing, value)
-            continue
-        target[key] = deepcopy(value)
-
-
-def _active_memory_retrieval(value: object) -> dict[str, object] | None:
-    if not isinstance(value, Mapping) or not bool(value.get("enabled", False)):
-        return None
-    return {
-        "enabled": True,
-        "namespaces": list(cast(Sequence[object], value.get("namespaces") or [])),
-        "maxItems": int(str(value.get("maxItems") or 0)),
-        "relevanceThreshold": value.get("relevanceThreshold"),
-        "includeKinds": list(cast(Sequence[object], value.get("includeKinds") or [])),
-    }
-
-
-def _active_memory_checkpoints(value: object) -> dict[str, object] | None:
-    if not isinstance(value, Mapping) or not bool(value.get("enabled", False)):
-        return None
-    return {
-        "enabled": True,
-        "retention": str(value.get("retention") or "none"),
-    }
-
-
-def _active_memory_block(value: object) -> dict[str, object] | None:
-    if not isinstance(value, Mapping):
-        return None
-    if (
-        "defaultDecision" in value
-        or "autoCommitKinds" in value
-        or "allowedKinds" in value
-        or "proposals" in value
-    ):
-        return {
-            "proposals": bool(value.get("proposals", False)),
-            "allowedKinds": list(cast(Sequence[object], value.get("allowedKinds") or [])),
-            "defaultDecision": str(value.get("defaultDecision") or "review"),
-            "autoCommitKinds": list(cast(Sequence[object], value.get("autoCommitKinds") or [])),
-        }
-    return {
-        "secrets": str(value.get("secrets") or "quarantine"),
-        "sensitiveData": str(value.get("sensitiveData") or "review"),
-        "expirationDays": value.get("expirationDays"),
-        "unauthorized": str(value.get("unauthorized") or "reject"),
-        "consolidation": str(value.get("consolidation") or "disabled"),
-    }
 
 
 def _compile_http_node(
