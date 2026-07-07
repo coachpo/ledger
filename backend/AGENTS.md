@@ -39,7 +39,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ```text
 backend/
 ├── app/core/                   # config, errors, formatting, telemetry, constants
-├── app/db/                     # engine/session/init + PostgreSQL upgrade helpers
+├── app/db/                     # engine/session/init + package seed and startup recovery
 ├── app/api/                    # APIRouter modules + dependency wiring for /api/v1 and /api/*
 ├── app/extensions/             # statically resident extension registry plus finance and Digital Oracle ownership
 ├── app/agents/                 # server-declared tools, native runtime tools, MCP boundaries
@@ -65,7 +65,7 @@ backend/
 | Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler, schedule recurrence/materialization, execution providers/lifecycle hooks, runtime execution, queue claims/read projections, workflow memory middleware/review, historical report-domain agent-memory records, and market-data fallback |
 | API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, run progress/queue read models, workflow memory review payloads, serialization, camelCase aliasing |
 | Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, run forks, and runtime data access |
-| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, workflow memory middleware/review, historical report-domain agent-memory records, runtime tools, runtime boundary coverage, and DB-upgrade coverage |
+| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, workflow memory middleware/review, historical report-domain agent-memory records, runtime tools, runtime boundary coverage, and DB-bootstrap coverage |
 
 ## CONVENTIONS
 - Each route module declares `APIRouter(prefix=..., tags=[...])`, accepts integer ids where applicable, and delegates to a service.
@@ -120,5 +120,5 @@ uv run pytest
 - `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and schema upgrades.
 - Extension API, extension registry, lifecycle matrix, social sentiment, manifest, MCP, runtime-tool, workflow-memory, workflow package, schedule, tool catalog, and model connection tests cover the current agent-platform and finance-extension contract beyond the original runtime suite.
 - `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_workflow_memory_*.py`, `tests/test_agent_execution_memory_context.py`, `tests/test_run_read_projection.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, scheduled tasks, rerun/fork behavior, scheduler queues, trace, run-owned snapshot provenance, workflow memory evidence, and current-package persistence contracts.
-- `tests/test_runtime_db_upgrades.py` covers startup schema repair, schedule tables, and runtime-table shape.
-- There is no live Alembic migration path; schema changes stay in `app/db/upgrades.py`, even if a scaffold reappears.
+- `tests/test_db_bootstrap.py` covers schema creation, bundled package seeding, idempotency, and startup recovery.
+- There is no live Alembic migration path; schema changes require a database reset until data must survive upgrades.

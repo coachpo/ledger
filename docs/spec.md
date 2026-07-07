@@ -35,7 +35,7 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 - `backend/app/extensions/signaldeck_digital_oracle/` contributes only Digital Oracle runtime tools as `signaldeck.digital_oracle`; Digital Oracle has no route or nav surface, and it adds no API routers, frontend routes, provider bundles, or lifecycle hooks in this upgrade.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting.
-- `backend/app/db/` owns PostgreSQL session lifecycle and startup schema repair.
+- `backend/app/db/` owns PostgreSQL session lifecycle, `create_all` bootstrap, bundled package seeds, and startup recovery.
 
 ## Frontend Architecture
 

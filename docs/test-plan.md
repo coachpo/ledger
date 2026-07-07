@@ -70,7 +70,7 @@ Frontend route tests cover the product-owned unknown-route shell instead of main
 Use targeted checks when these contracts change:
 
 ```bash
-(cd backend && uv run pytest tests/test_workflow_package_preflight.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_run_contracts.py tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_memory_domain_schemas.py tests/test_memory_service.py tests/test_api_memory.py tests/test_runtime_db_upgrades.py)
+(cd backend && uv run pytest tests/test_workflow_package_preflight.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_run_contracts.py tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_memory_domain_schemas.py tests/test_memory_service.py tests/test_api_memory.py tests/test_db_bootstrap.py)
 (cd frontend && pnpm test:run src/pages/workflow-packages src/pages/scheduled-tasks src/pages/model-connections src/pages/runs src/pages/memory src/routes.test.tsx)
 (cd frontend && pnpm exec playwright test e2e/scheduled-tasks.spec.ts)
 (cd frontend && pnpm typecheck && pnpm test:run && cd ../backend && uv run pytest tests/test_workflow_package_preflight.py -k "digital_oracle" -q)

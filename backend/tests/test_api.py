@@ -1746,51 +1746,6 @@ def test_init_db_rejects_uuid_backed_portfolio_schema(database_url: str) -> None
         engine.dispose()
 
 
-def test_init_db_adds_balance_operation_type(database_url: str) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE balances (
-                    id INTEGER PRIMARY KEY,
-                    portfolio_id INTEGER NOT NULL,
-                    label VARCHAR(60) NOT NULL,
-                    amount NUMERIC(20, 4) NOT NULL,
-                    currency VARCHAR(3) NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-                )
-                """
-            )
-            connection.exec_driver_sql(
-                """
-                INSERT INTO balances (
-                    id, portfolio_id, label, amount, currency, created_at, updated_at
-                )
-                VALUES (1, 1, 'Cash', 1000.00, 'USD', NOW(), NOW())
-                """
-            )
-
-        init_db(database_url)
-
-        inspector = inspect(engine)
-        balance_columns = {column["name"]: column for column in inspector.get_columns("balances")}
-        assert "operation_type" in balance_columns
-        assert balance_columns["operation_type"]["nullable"] is False
-
-        with engine.connect() as connection:
-            operation_type = connection.exec_driver_sql(
-                "SELECT operation_type FROM balances WHERE id = 1"
-            ).scalar_one()
-
-        assert operation_type == "DEPOSIT"
-
-    finally:
-        engine.dispose()
-
-
 def test_init_db_creates_symbol_name_cache_as_unlogged_table(database_url: str) -> None:
     init_db(database_url)
     engine = create_engine(database_url, future=True)

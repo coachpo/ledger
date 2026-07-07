@@ -46,7 +46,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not hide implicit defaults or rely on database-side behavior without matching app expectations.
 - Do not omit indexes for frequently queried lookup paths.
 - Do not create relationships just for convenience when ids suffice.
-- Do not rename tables or columns casually; tests and upgrade helpers depend on them.
+- Do not rename tables or columns casually; tests and startup bootstrap depend on them.
 - Do not document retired global authoring tables as live behavior. Package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs live inside the current `workflow_packages` JSON artifacts and run-owned snapshots.
 
 ## VALIDATION
@@ -68,5 +68,5 @@ uv run pytest tests/test_api.py tests/test_runtime_models.py
 - `workflow_checkpoint.py` persists checkpoint state separately from workflow memory item/proposal/decision rows.
 - `report.py` stores unique `name` and `slug`, tracks the canonical origin `source` values `compiled`, `uploaded`, `external`, and `agent`, and keeps optional metadata in JSONB under the `metadata` column. Historical agent-memory reports remain report-domain records only and are not workflow memory storage or retrieval.
 - `symbol_name_cache.py` is intentionally `UNLOGGED` because the cache is reconstructible from provider lookups.
-- `extension.py` stores `extension_states` rows keyed by statically resident extension key; the initial enabled seed is declared in `app/extensions/registry.py` and applied by DB upgrades.
+- `extension.py` stores `extension_states` rows keyed by statically resident extension key; default enabled state is declared in `app/extensions/registry.py`.
 - Legacy global-authoring model files may still exist for startup cleanup or quarantine tests, but Workflow Packages and run-owned snapshots are the live persistence contracts.

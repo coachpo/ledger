@@ -60,7 +60,7 @@ signaldeck/
 | Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/scheduled-tasks/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md`, `frontend/src/pages/memory/AGENTS.md` | Workflow Packages, Scheduled Tasks, Model Connections, Runs, and Memory; Tools appear as package-authoring metadata, not a standalone browser route |
 | Frontend preserved product UI | `frontend/src/pages/portfolios/AGENTS.md`, `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved portfolio, template, and report routes |
 | Frontend reports and templates | `frontend/src/components/templates/AGENTS.md`, `frontend/src/components/forms/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts`, `frontend/src/lib/report-grouping.ts` | runtime inputs, placeholder browsing, grouping, upload, and report generation UI |
-| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_workflow_package_preflight.py`, `backend/tests/test_workflow_package_runtime_api.py`, `backend/tests/test_workflow_package_run_contracts.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_runtime_db_upgrades.py` | preserved v1 CRUD plus package validation, Scheduled Tasks, runtime, MCP, rerun/fork, and DB-upgrade coverage |
+| Backend tests | `backend/tests/AGENTS.md`, `backend/tests/test_api.py`, `backend/tests/test_workflow_package_preflight.py`, `backend/tests/test_workflow_package_runtime_api.py`, `backend/tests/test_workflow_package_run_contracts.py`, `backend/tests/test_runtime_tools.py`, `backend/tests/test_mcp_runtime.py`, `backend/tests/test_db_bootstrap.py` | preserved v1 CRUD plus package validation, Scheduled Tasks, runtime, MCP, rerun/fork, and DB-bootstrap coverage |
 | Docs ownership | `docs/AGENTS.md`, `docs/*.md` | six canonical owner docs stay live and mirror current code |
 | CI quality gates | `.github/workflows/ci.yml`, `.github/workflows/docker-images.yml` | version sync, frozen backend/frontend installs, quality gates, frontend E2E, and arm64 GHCR images |
 
@@ -138,7 +138,7 @@ docker compose -f docker-compose.yml down
 ## NOTES
 
 - `start.sh` is the authoritative local stack launcher. It wraps the root `docker-compose.yml`, builds the current local/demo app image, starts PostgreSQL/pgvector in Docker, runs Nginx/FastAPI/scheduler inside the app container, and exposes only `http://localhost:${APP_PORT:-8080}` on the host.
-- Supported schema repair is code-based in `backend/app/db/`; startup repair targets live tables and must not grow compatibility backfill or cleanup paths for removed surfaces. Do not create migration instructions around a reappearing Alembic scaffold.
+- Database bootstrap is code-based in `backend/app/db/`; `create_all` builds the schema, bundled package seeds load from SQL files, and startup recovery marks in-flight runs terminal. Do not add compatibility backfills or migration instructions around a reappearing Alembic scaffold.
 - Playwright runs against backend `8001` and frontend `4173`; the backend startup helper starts both Uvicorn and the scheduler worker, while the frontend helper serves the built preview.
 - Backend requires Python 3.13+; frontend targets Node 24 and pnpm 10.
 - Root CI currently runs `version-sync`, `backend-quality`, `frontend-quality`, and `frontend-e2e`; Docker image publishing lives in a separate workflow.

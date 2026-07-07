@@ -4,7 +4,7 @@
 
 ## Overview
 
-SignalDeck uses PostgreSQL for the Finance Workspace, templates, reports, package-first platform artifacts, runs, package secrets, and platform-core memory. Startup schema repair lives in `backend/app/db/`; there is no live Alembic path.
+SignalDeck uses PostgreSQL for the Finance Workspace, templates, reports, package-first platform artifacts, runs, package secrets, and platform-core memory. Startup bootstrap lives in `backend/app/db/`; there is no live Alembic path.
 
 The data model follows two boundaries. Finance-owned product tables support preserved portfolio, template, report, and market-data behavior. Platform-owned tables support Workflow Packages, Model Connections, bundled extension state, package secret bindings, Tools metadata references, Runs, run operation evidence, run fork lineage, typed failure and retry metadata, and workflow-memory middleware state with proposal, policy, audit, quarantine, and checkpoint separation.
 
@@ -78,7 +78,7 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 - Checkpoints live in `workflow_checkpoints` and remain run-local recovery state. They are not long-term memory, not retrieval candidates, and not a migration path for old memory events.
 - `/api/memory` review projections are derived from workflow-memory proposal, decision, audit, and quarantine tables. They do not expose direct runtime write/lookup endpoints and do not query or join `reports` as canonical memory storage.
 - Workflow memory persistence is JSON-first in the workflow memory tables; chunk, embedding, and vector persistence are not part of the live data model.
-- Startup repair handles current platform tables through `backend/app/db/upgrades.py`; report rows remain report-domain history, not canonical memory storage.
+- Startup bootstrap uses SQLAlchemy `create_all`, bundled package seeds, and stale-run recovery in `backend/app/db/`; report rows remain report-domain history, not canonical memory storage.
 
 ## Retired Data
 

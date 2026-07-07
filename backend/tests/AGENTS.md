@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `backend/tests/`.
 
 ## OVERVIEW
-`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind Finance Workspace gates; Digital Oracle runtime tools behind `signaldeck.digital_oracle`; extension registry/state behavior; current agent-platform APIs; startup schema upgrades; and run rerun/fork semantics. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
+`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind Finance Workspace gates; Digital Oracle runtime tools behind `signaldeck.digital_oracle`; extension registry/state behavior; current agent-platform APIs; database bootstrap; and run rerun/fork semantics. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -27,7 +27,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_run_service_http_operations.py` | package execution, scheduler defaults/worker queue semantics, run detail/list progress and queue read models, model-binding provenance, reruns, invocation-input forks, HTTP/tool operations, and historical step replay read-lineage coverage |
 | Runtime artifact and workflow memory coverage | `test_workflow_package_runtime_artifacts.py`, `test_api_memory.py`, `test_workflow_memory_manifest.py`, `test_workflow_memory_persistence.py`, `test_workflow_memory_checkpoints.py`, `test_workflow_memory_context.py`, `test_workflow_memory_policy.py`, `test_workflow_memory_middleware.py`, `test_agent_execution_memory_context.py`, `test_run_read_projection.py` | persisted step outputs, Logfire trace linkage, review API contracts, declarative memory policy, non-authoritative context injection, proposal/policy/quarantine flows, checkpoints, run-detail evidence, and workflow memory projections |
 | Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, current-package persistence, run-fork persistence, and run-snapshot expectations |
-| DB-upgrade, export, and demo preset coverage | `test_runtime_db_upgrades.py`, `test_workflow_package_db_upgrades.py`, `test_workflow_package_export.py`, `test_workflow_package_export_security.py`, `test_workflow_package_demo_presets.py` | startup repairs, runtime-table shape, export shape, and demo seed contracts |
+| DB bootstrap, export, and demo preset coverage | `test_db_bootstrap.py`, `test_workflow_package_export.py`, `test_workflow_package_export_security.py`, `test_workflow_package_demo_presets.py` | schema creation, startup recovery, export shape, and demo seed contracts |
 | Formatting helper coverage | `test_formatting.py` | decimal and portfolio cash formatting behavior |
 
 ## CONVENTIONS
@@ -42,7 +42,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 - Do not rely on shared DB state across tests.
 - Do not hit real provider APIs or network services from this suite.
-- Do not change preserved product contracts, current agent-platform contracts, or DB-upgrade behavior without updating the corresponding regression files.
+- Do not change preserved product contracts, current agent-platform contracts, or DB bootstrap behavior without updating the corresponding regression files.
 - Keep removed extension metadata references limited to explicit negative-validation tests or upgrade-normalization tests. Live contract tests should assert the slim state and dependency-only run records.
 - Do not leave dependency overrides behind after a test; `conftest.py` clears them for a reason.
 
@@ -56,4 +56,4 @@ uv run pytest
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` covers preserved `/api/v1` behavior, finance extension gating, and current agent-platform validation paths.
 - Extension, tool-catalog, runtime-tool, and lifecycle tests lock statically resident `signaldeck.finance` and `signaldeck.digital_oracle` state, enabled-tool filtering, and provider/runtime-tool contracts.
-- `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_mcp_runtime.py`, `test_workflow_memory_manifest.py`, `test_workflow_memory_persistence.py`, `test_workflow_memory_checkpoints.py`, `test_workflow_memory_context.py`, `test_workflow_memory_policy.py`, `test_workflow_memory_middleware.py`, `test_agent_execution_memory_context.py`, `test_run_read_projection.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_runtime_db_upgrades.py` lock the current agent-platform persistence, Scheduled Task APIs/materialization, saved model-connection, trace metadata, MCP boundaries, workflow memory policy/review/evidence behavior, run-fork behavior, upgrade, and execution contracts.
+- `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_mcp_runtime.py`, `test_workflow_memory_manifest.py`, `test_workflow_memory_persistence.py`, `test_workflow_memory_checkpoints.py`, `test_workflow_memory_context.py`, `test_workflow_memory_policy.py`, `test_workflow_memory_middleware.py`, `test_agent_execution_memory_context.py`, `test_run_read_projection.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_db_bootstrap.py` lock the current agent-platform persistence, Scheduled Task APIs/materialization, saved model-connection, trace metadata, MCP boundaries, workflow memory policy/review/evidence behavior, run-fork behavior, bootstrap, and execution contracts.

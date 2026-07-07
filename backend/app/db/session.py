@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from app.db.engine import get_db_session, get_engine, get_session_factory, reset_db_caches
-from app.db.upgrades import apply_startup_schema_repairs
+from app.db.seed import seed_preset_packages
+from app.db.startup_recovery import fail_inflight_runs
 from app.db.validation import (
     SupportsDialect,
     SupportsDialectName,
@@ -19,7 +20,8 @@ def init_db(database_url: str | None = None) -> None:
     validate_supported_database_engine(engine)
     validate_supported_id_schema(engine)
     Base.metadata.create_all(bind=engine)
-    apply_startup_schema_repairs(engine)
+    seed_preset_packages(engine)
+    fail_inflight_runs(engine)
 
 
 __all__ = [

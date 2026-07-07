@@ -72,8 +72,8 @@ docker compose -f ../docker-compose.yml down -v
 
 ## Notes
 
-- `app/db/upgrades.py` is the supported schema-repair path; there is no live Alembic path.
-- Startup schema repair keeps current schedule, run, extension-state, preset, and report invariants in sync with live tables.
+- `app/db/session.py` uses `create_all`, bundled package seeds, and startup recovery; there is no live Alembic path.
+- Schema changes require a database reset until data must survive upgrades.
 - Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs`, sets `QUOTE_PROVIDER_BACKEND=deterministic` by default, and pairs with a built frontend preview on `4173`.
 - The frontend E2E helper defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
 - `docs/` has live product, platform, API, data-model, test, and runtime-input references.

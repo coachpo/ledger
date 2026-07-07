@@ -44,5 +44,5 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## VALIDATION
 ```bash
 cd backend
-uv run pytest tests/test_workflow_package_runtime_api.py tests/test_workflow_package_run_contracts.py tests/test_runtime_db_upgrades.py
+uv run pytest tests/test_workflow_package_runtime_api.py tests/test_workflow_package_run_contracts.py tests/test_db_bootstrap.py
 ```

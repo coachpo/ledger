@@ -38,7 +38,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Digital Oracle extension | `signaldeck_digital_oracle/AGENTS.md` | tool-only prediction markets, SEC filings, market sentiment, macro rates, crypto derivatives, CFTC positioning, and options runtime extension |
 | Service state/filtering | `../services/extension_service.py` | persisted slim state plus ToolCatalog/runtime registry filtering |
 | API state | `../api/extensions.py` | `/api/extensions` list/toggle route family |
-| DB state | `../models/extension.py`, `../db/upgrades.py` | `extension_states` persistence and default statically resident extension seeding |
+| DB state | `../models/extension.py` | `extension_states` persistence |
 
 ## CONVENTIONS
 - Extension definitions are private registry wiring; behavior is supplied through explicit registrars and service-layer filtering.

@@ -8,7 +8,7 @@
 ## CHILD DOCS
 - `api/AGENTS.md` — APIRouter modules, dependency injection, route/service boundaries
 - `core/AGENTS.md` — settings, errors, formatting, constants, telemetry
-- `db/AGENTS.md` — engine/session lifecycle, startup repair, PostgreSQL upgrades
+- `db/AGENTS.md` — engine/session lifecycle, bundled package seeding, startup recovery
 - `extensions/AGENTS.md` — statically resident bundled extension registry and ownership
 - `agents/AGENTS.md` — tool catalog, native runtime tools, MCP runtime boundaries
 - `services/AGENTS.md` — business rules, transactions, runtime execution, schedules, workflow memory
@@ -23,7 +23,7 @@ app/
 ├── main.py          # create_app(), health/readiness, router mounting
 ├── api/             # route modules and request-scoped dependencies
 ├── core/            # shared backend primitives
-├── db/              # PostgreSQL session/init/upgrade code
+├── db/              # PostgreSQL session/init, seed, and startup recovery code
 ├── extensions/      # bundled extension registry and extension packages
 ├── agents/          # server tools, runtime tools, MCP runtime
 ├── services/        # business and orchestration layer
@@ -43,7 +43,7 @@ app/
 | Extension state and registrars | `extensions/registry.py`, `services/extension_service.py` | statically resident extension identity plus enabled-route/tool/provider filtering |
 | Runtime execution | `services/run_service.py`, `services/agent_execution_service.py`, `agents/runtime_tools/`, `agents/mcp/` | queued package execution, model calls, native tools, MCP dispatch, trace ids |
 | Scheduler process | `workers/run_scheduler.py` | separate worker entrypoint; not FastAPI lifespan work |
-| Schema repair | `db/session.py`, `db/upgrades.py` | code-owned PostgreSQL startup repair; no live Alembic path |
+| DB bootstrap | `db/session.py`, `db/seed.py`, `db/startup_recovery.py` | `create_all`, bundled package seeding, and stale-run recovery; no live Alembic path |
 
 ## CONVENTIONS
 - `main.create_app()` includes `platform_router` under `/api` and extension-contributed `api_router` under `/api/v1`; keep the split deliberate.

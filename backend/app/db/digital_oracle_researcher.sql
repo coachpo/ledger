@@ -28,4 +28,23 @@ ON CONFLICT (key) DO UPDATE SET
     compiled_plan = EXCLUDED.compiled_plan,
     compiled_hash = EXCLUDED.compiled_hash,
     extension_dependencies = EXCLUDED.extension_dependencies,
-    updated_at = NOW();
+    updated_at = NOW()
+WHERE (
+    workflow_packages.name,
+    workflow_packages.description,
+    workflow_packages.manifest_source,
+    workflow_packages.manifest_hash,
+    workflow_packages.package_definition,
+    workflow_packages.compiled_plan,
+    workflow_packages.compiled_hash,
+    workflow_packages.extension_dependencies
+) IS DISTINCT FROM (
+    EXCLUDED.name,
+    EXCLUDED.description,
+    EXCLUDED.manifest_source,
+    EXCLUDED.manifest_hash,
+    EXCLUDED.package_definition,
+    EXCLUDED.compiled_plan,
+    EXCLUDED.compiled_hash,
+    EXCLUDED.extension_dependencies
+);
