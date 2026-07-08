@@ -28,6 +28,9 @@ mechanical underscore mapping from those keys.
 
 Do not use dynamic `import_module` discovery or registrar side effects.
 
+Bundled Workflow Package preset seeds use `ON CONFLICT DO UPDATE`; shipped presets
+are managed/read-only and can overwrite same-key edits on restart.
+
 ## Multiple Implementations
 
 Two extensions can expose similar capability through different owner keys:

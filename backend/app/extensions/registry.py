@@ -48,6 +48,8 @@ def package_private_mcp_tool_owners() -> dict[str, str]:
 def _assert_unique_extension_and_tool_keys() -> None:
     extension_keys: set[str] = set()
     tool_keys: set[str] = set()
+    runtime_tool_spec_keys: set[str] = set()
+    package_private_mcp_tool_keys: set[str] = set()
     for extension in INSTALLED_EXTENSIONS:
         if extension.key in extension_keys:
             raise RuntimeError(f"duplicate extension key: {extension.key}")
@@ -56,6 +58,15 @@ def _assert_unique_extension_and_tool_keys() -> None:
             if declaration.key in tool_keys:
                 raise RuntimeError(f"duplicate tool key: {declaration.key}")
             tool_keys.add(declaration.key)
+        for spec in extension.runtime_tool_specs:
+            if spec.key in runtime_tool_spec_keys:
+                raise RuntimeError(f"duplicate runtime tool spec key: {spec.key}")
+            runtime_tool_spec_keys.add(spec.key)
+        for tool_key in extension.package_private_mcp_tool_keys:
+            normalized_key = tool_key.strip().lower()
+            if normalized_key in package_private_mcp_tool_keys:
+                raise RuntimeError(f"duplicate package-private MCP tool key: {normalized_key}")
+            package_private_mcp_tool_keys.add(normalized_key)
 
 
 _assert_unique_extension_and_tool_keys()

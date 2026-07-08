@@ -31,7 +31,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Runtime config uses env aliases such as `DATABASE_URL`, `QUOTE_PROVIDER_TIMEOUT`, `QUOTE_STALE_AFTER_MINUTES`, `CORS_ALLOWED_ORIGINS`, `AGENT_PLATFORM_ENCRYPTION_KEY`, `RUN_SCHEDULER_MAX_ACTIVE_RUNS`, `RUN_SCHEDULER_MAX_ACTIVE_PER_PACKAGE`, `RUN_SCHEDULER_POLL_INTERVAL_SECONDS`, `RUN_SCHEDULER_HEARTBEAT_SECONDS`, and `RUN_SCHEDULER_LEASE_TTL_SECONDS`.
 - `errors.py` is the single source for domain-level error envelopes and validation-detail shaping.
 - `formatting.py` is the single place for decimal parsing, decimal string serialization, symbol/currency normalization, UTC conversion, and `utcnow()`.
-- `constants.py` owns `PORTFOLIO_CURRENCY = "USD"` for finance quote currency checks.
+- `constants.py` owns `DEFAULT_CURRENCY = "USD"` for finance quote currency checks.
 - `telemetry.py` configures Logfire once with `send_to_logfire="if-token-present"` and formats trace/span ids for persisted run metadata.
 - `config.py` normalizes `public_base_url`.
 

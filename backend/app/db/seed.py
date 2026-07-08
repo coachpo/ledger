@@ -20,6 +20,8 @@ def _insert_bundled_package_preset(connection: Connection, preset_sql_path: Path
 
 def seed_preset_packages(engine: Engine) -> None:
     with engine.begin() as connection:
+        # Bundled preset SQL uses ON CONFLICT DO UPDATE; these packages are
+        # managed/read-only and restart seeding can overwrite same-key edits.
         for sql_file in _BUNDLED_PACKAGE_PRESET_SQL_FILES:
             _insert_bundled_package_preset(connection, _preset_package_sql_path(sql_file))
 

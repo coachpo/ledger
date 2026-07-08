@@ -119,8 +119,6 @@ def _sanitize_mcp_server(server: dict[Any, Any]) -> dict[str, object]:
         sanitized_item = _sanitize_package_definition(item)
         if raw_key == "args" and sanitized_item == []:
             continue
-        if raw_key in {"env", "headers", "query"} and sanitized_item == {}:
-            continue
         sanitized[raw_key] = sanitized_item
     return sanitized
 

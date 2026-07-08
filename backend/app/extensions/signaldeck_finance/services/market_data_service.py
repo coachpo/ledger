@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, cast
 from sqlalchemy.orm import Session
 
 from app.agents.runtime_tools.types import RuntimeToolWarning
-from app.core.constants import PORTFOLIO_CURRENCY
+from app.core.constants import DEFAULT_CURRENCY
 from app.core.formatting import normalize_symbol, to_utc, utcnow
 from app.models.market_quote import MarketQuote
 from app.repositories.market_quote import MarketQuoteRepository
@@ -1486,7 +1486,7 @@ class MarketDataService:
             cached = self.repository.get_latest(symbol)
             if cached is None:
                 return None, f"No quote available for {symbol}", False
-            if cached.currency != PORTFOLIO_CURRENCY:
+            if cached.currency != DEFAULT_CURRENCY:
                 return None, f"Cached quote currency mismatch for {symbol}", False
             is_stale = self._is_quote_stale(cached.as_of)
             was_updated = cached.is_stale != is_stale
@@ -1498,7 +1498,7 @@ class MarketDataService:
                 was_updated,
             )
 
-        if provider_quote.currency != PORTFOLIO_CURRENCY:
+        if provider_quote.currency != DEFAULT_CURRENCY:
             return None, f"Quote currency mismatch for {symbol}", False
 
         is_stale = self._is_quote_stale(provider_quote.as_of)
