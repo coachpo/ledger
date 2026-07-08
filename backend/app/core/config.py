@@ -97,6 +97,11 @@ class Settings(BaseSettings):
         alias="RUN_SCHEDULER_LEASE_TTL_SECONDS",
         gt=0,
     )
+    run_retention_days: int | None = Field(
+        default=None,
+        alias="SIGNALDECK_RUN_RETENTION_DAYS",
+        ge=0,
+    )
     mcp_stdio_allowed_commands: Annotated[list[str], NoDecode] = Field(
         default=["node", "npx", "python", "python3"],
         alias="MCP_STDIO_ALLOWED_COMMANDS",

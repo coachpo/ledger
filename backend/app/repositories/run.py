@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import timedelta
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +14,8 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.repositories.base import BaseRepository
+
+_TERMINAL_RUN_STATUSES = ("succeeded", "failed", "cancelled")
 
 
 class RunRepository(BaseRepository[Run]):
@@ -156,6 +159,18 @@ class RunRepository(BaseRepository[Run]):
     def list_ids_for_workflow_package(self, *, package_id: int) -> list[int]:
         statement = select(self.model.id).where(self._workflow_package_owner_filter(package_id))
         return list(self.session.scalars(statement))
+
+    def delete_runs_older_than(self, days: int) -> int:
+        cutoff = utcnow() - timedelta(days=days)
+        runs = self._list(
+            select(self.model).where(
+                self.model.status.in_(_TERMINAL_RUN_STATUSES),
+                self.model.created_at < cutoff,
+            )
+        )
+        for run in runs:
+            self.delete(run)
+        return len(runs)
 
     def list_for_workflow_package(self, *, package_id: int) -> list[Run]:
         statement = select(self.model).where(self._workflow_package_owner_filter(package_id))

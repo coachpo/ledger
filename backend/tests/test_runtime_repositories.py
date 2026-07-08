@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Event
 from typing import cast
 
@@ -11,6 +11,7 @@ from sqlalchemy import exc as sqlalchemy_exc
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
+from app.core.formatting import utcnow
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
@@ -1199,6 +1200,56 @@ def _build_deletable_run(
             preflight_summary={"ready": True, "blockingErrors": [], "warnings": []},
         )
     return run
+
+
+def test_delete_runs_older_than_prunes_only_terminal_runs_by_created_at(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        old_created_at = utcnow() - timedelta(days=14)
+        recent_created_at = utcnow()
+        succeeded = _build_deletable_run(
+            target_id=9301,
+            target_key="retention_old_succeeded",
+        )
+        running = _build_deletable_run(
+            target_id=9302,
+            target_key="retention_old_running",
+        )
+        running.status = RunStatus.RUNNING.value
+        running.started_at = old_created_at
+        running.finished_at = None
+        cancelled = _build_deletable_run(
+            target_id=9303,
+            target_key="retention_old_cancelled",
+        )
+        cancelled.status = RunStatus.CANCELLED.value
+        cancelled.finished_at = old_created_at
+        recent_succeeded = _build_deletable_run(
+            target_id=9304,
+            target_key="retention_recent_succeeded",
+        )
+        session.add_all([succeeded, running, cancelled, recent_succeeded])
+        session.flush()
+        succeeded.created_at = old_created_at
+        running.created_at = old_created_at
+        cancelled.created_at = old_created_at
+        recent_succeeded.created_at = recent_created_at
+        session.commit()
+        succeeded_id = succeeded.id
+        running_id = running.id
+        cancelled_id = cancelled.id
+        recent_succeeded_id = recent_succeeded.id
+
+        deleted_count = RunRepository(session).delete_runs_older_than(7)
+        session.commit()
+        session.expunge_all()
+
+        assert deleted_count == 2
+        assert session.get(Run, succeeded_id) is None
+        assert session.get(Run, cancelled_id) is None
+        assert session.get(Run, running_id) is not None
+        assert session.get(Run, recent_succeeded_id) is not None
 
 
 def test_run_delete_cascades_steps_and_invocations(

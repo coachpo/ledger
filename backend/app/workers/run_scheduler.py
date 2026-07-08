@@ -17,6 +17,7 @@ from app.core.config import Settings, get_settings
 from app.db.engine import get_session_factory
 from app.db.session import init_db
 from app.extensions.registry import build_execution_provider_bundle
+from app.repositories.run import RunRepository
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_package_schedule_materializer import WorkflowPackageScheduleMaterializer
@@ -97,6 +98,7 @@ class RunSchedulerWorker:
                 self._materialize_due_schedules()
                 self._collect_finished_runs(in_flight)
                 claimed = self._submit_available_runs(executor, in_flight)
+                self._prune_old_runs()
                 if not claimed:
                     time.sleep(self.settings.run_scheduler_poll_interval_seconds)
         except KeyboardInterrupt:
@@ -168,6 +170,18 @@ class RunSchedulerWorker:
         if recovered_count:
             logger.warning("Recovered %d stale SignalDeck scheduler lease(s)", recovered_count)
         return recovered_count
+
+    def _prune_old_runs(self) -> int:
+        if self.settings.run_retention_days is None:
+            return 0
+        with self.session_factory() as session:
+            deleted_count = RunRepository(session).delete_runs_older_than(
+                self.settings.run_retention_days
+            )
+            session.commit()
+        if deleted_count:
+            logger.info("Pruned %d old SignalDeck run(s)", deleted_count)
+        return deleted_count
 
     def _run_executor(self, session: Session) -> RunService:
         run_service_class = RunService
