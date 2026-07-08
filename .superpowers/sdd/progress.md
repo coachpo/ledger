@@ -14,3 +14,4 @@
 | 5.3 | done | Commit `178d5b52`; frontend lint/typecheck/test:run/build passed (379 tests); e2e passed (24 tests); fresh spec reviewer approved, code-quality reviewers found stale docs/test/metadata issues that were fixed, then final fresh code-quality reviewer approved. |
 | 6.1 | done | Commit `780a15a3`; backend full validation passed (742 tests); fresh spec reviewer approved, fresh code-quality reviewer found stale service guidance that was fixed, then final fresh code-quality reviewer approved. |
 | 6.2 | done | Commit `da259a3f`; backend full validation passed (742 tests); fresh spec reviewer approved, code-quality reviewers found import-cycle regressions that were fixed, then final fresh code-quality reviewer approved. |
+| 6.5.1 | done | Commit `7b081d94`; backend full validation passed (744 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
