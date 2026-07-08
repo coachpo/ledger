@@ -53,7 +53,11 @@ _FORBIDDEN_MANIFEST_KEYS = {
 }
 _REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
 _HTTP_REQUEST_REF_FIELDS = {"url", "headers", "query", "body"}
-_REMOVED_SCHEMA_KEYWORDS = {"additionalProperties", "allowAdditionalProperties"}
+_REMOVED_SCHEMA_KEYWORDS = {
+    "additionalProperties",
+    "allowAdditionalProperties",
+    "patternProperties",
+}
 
 _ALIAS_LOC = {
     "api_version": "apiVersion",

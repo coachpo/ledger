@@ -33,7 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | MCP runtime boundary | `../agents/mcp/boundaries.py`, `../agents/mcp/runtime.py`, `../agents/mcp/AGENTS.md` | saved config boundary construction and package-private MCP runtime dispatch; active MCP support, not legacy quarantine |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
-| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extension_contract.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_social_sentiment_service.py` | preserved-product regressions, extension contract, platform execution, provider warnings, and run artifacts |
+| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extension_contract.py`, `../../tests/test_workflow_package_diagnostics.py`, `../../tests/test_workflow_package_execution_plan.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_social_sentiment_service.py` | preserved-product regressions, extension contract, platform execution, provider warnings, and run artifacts |
 
 ## CONVENTIONS
 - Persistence-backed domain services are constructed with a `Session` and compose repositories or dependent services in `__init__`.
@@ -72,7 +72,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_extension_contract.py tests/test_tool_catalog_api.py tests/test_workflow_package_preflight.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py
+uv run pytest tests/test_api.py tests/test_extension_contract.py tests/test_tool_catalog_api.py tests/test_workflow_package_diagnostics.py tests/test_workflow_package_execution_plan.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py
 ```
 
 ## NOTES

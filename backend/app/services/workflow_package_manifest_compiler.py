@@ -40,7 +40,11 @@ from app.services.workflow_package_manifest_parser import (
 _REF_EXPR_RE = re.compile(r"^\$\{\{\s*(?P<body>[^{}]+?)\s*\}\}$")
 _MCP_INLINE_SECRET_FIELDS = {"env", "headers", "query"}
 _MCP_SECRET_REDACTION_VALUE = "[REDACTED]"
-_REMOVED_SCHEMA_KEYWORDS = {"additionalProperties", "allowAdditionalProperties"}
+_REMOVED_SCHEMA_KEYWORDS = {
+    "additionalProperties",
+    "allowAdditionalProperties",
+    "patternProperties",
+}
 type McpSecretProjectionMode = Literal["authoring", "redacted"]
 MCP_SECRET_PROJECTION_AUTHORING: McpSecretProjectionMode = "authoring"
 MCP_SECRET_PROJECTION_REDACTED: McpSecretProjectionMode = "redacted"

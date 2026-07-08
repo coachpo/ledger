@@ -21,7 +21,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Security checks | `security.py` | URL and stdio validation rules |
 | Tool adapter | `tool_adapter.py` | MCP tool snapshots to execution descriptors |
 | Integration | `../../services/agent_execution_service.py` | runtime execution wiring |
-| Coverage | `../../../tests/test_mcp_runtime.py`, `../../../tests/test_workflow_package_preflight.py` | MCP safety, snapshots, preflight dependency checks |
+| Coverage | `../../../tests/test_mcp_runtime.py`, `../../../tests/test_workflow_package_runtime_api.py`, `../../../tests/test_workflow_package_execution_plan.py` | MCP safety, snapshots, and package runtime dependency checks |
 
 ## CONVENTIONS
 - MCP configs are package-private runtime dependencies; do not recreate global live MCP authoring routes.
@@ -41,5 +41,5 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## VALIDATION
 ```bash
 cd backend
-uv run pytest tests/test_mcp_runtime.py tests/test_workflow_package_preflight.py
+uv run pytest tests/test_mcp_runtime.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_execution_plan.py
 ```

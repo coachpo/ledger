@@ -19,7 +19,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Registry | `registry.py`, `__init__.py` | descriptors, OpenAI tools, dispatch lookup |
 | Runtime spec types | `types.py`, `declarations.py` | tool spec, context, warnings, model-facing declarations |
 | Failure taxonomy | `failure_taxonomy.py` | typed retryable/non-retryable runtime failure categories |
-| Coverage | `../../../tests/test_runtime_tools.py`, `../../../tests/test_workflow_package_preflight.py` | tool keys, OpenAI function names, access checks, package validation |
+| Coverage | `../../../tests/test_runtime_tools.py`, `../../../tests/test_tool_catalog_api.py`, `../../../tests/test_workflow_package_manifest_compiler.py` | tool keys, OpenAI function names, access checks, package validation |
 
 ## CONVENTIONS
 - All public runtime tool keys use the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme; extension-owned tool specs keep their implementations in `app/extensions/<extension>/runtime_*` and are listed on `EXTENSION.runtime_tool_specs`.
@@ -37,5 +37,5 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## VALIDATION
 ```bash
 cd backend
-uv run pytest tests/test_runtime_tools.py tests/test_workflow_package_preflight.py tests/test_tool_catalog_api.py
+uv run pytest tests/test_runtime_tools.py tests/test_tool_catalog_api.py tests/test_workflow_package_manifest_compiler.py
 ```

@@ -338,6 +338,28 @@ def test_parse_rejects_package_schema_allow_additional_properties_keyword() -> N
     )
 
 
+def test_parse_rejects_package_schema_pattern_properties_keyword() -> None:
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["outputSchemas"][0]["jsonSchema"]["properties"].__setitem__(
+            "broken",
+            {
+                "type": "object",
+                "patternProperties": {".*": {"type": "string"}},
+            },
+        )
+    )
+
+    result = parse_workflow_package_manifest(source)
+
+    assert result.manifest is None
+    assert [diagnostic.path for diagnostic in result.diagnostics] == [
+        "spec.outputSchemas[0].jsonSchema.properties.broken.patternProperties"
+    ]
+    assert result.diagnostics[0].message == (
+        "patternProperties is not supported in package schemas; " "objects are closed by default"
+    )
+
+
 def test_parse_http_sse_mcp_server_accepts_headers_and_query() -> None:
     result = parse_workflow_package_manifest(_valid_http_sse_package_manifest_source())
 

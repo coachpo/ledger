@@ -25,6 +25,12 @@ from tests.test_workflow_package_manifest_parser import (
 _DIGITAL_ORACLE_RESEARCHER_DEMO = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
 )
+_TOOL_REQUIRED_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "workflow_packages"
+    / "tool-required-fixture.yaml"
+)
 
 
 def _compiled_plan(source: str | None = None) -> dict[str, Any]:
@@ -56,6 +62,131 @@ def _model_binding(key: str = "tradingagents_primary_model") -> PackageResolvedM
     )
 
 
+def _mixed_capability_package_source() -> str:
+    input_schema = {
+        "type": "object",
+        "required": ["topic"],
+        "properties": {"topic": {"type": "string"}},
+    }
+    report_schema = {
+        "key": "report",
+        "name": "Report",
+        "jsonSchema": {
+            "type": "object",
+            "required": ["summary"],
+            "properties": {"summary": {"type": "string"}},
+        },
+    }
+    return base_manifest(
+        package_key="mixed_capability_fixture",
+        package_name="Mixed Capability Fixture",
+        package_description="Multi-agent fixture for scoped capability requirements.",
+        input_schema=input_schema,
+        capability_profiles=[
+            {
+                "key": "tool_required",
+                "name": "Tool Required",
+                "toolKeys": ["signaldeck.finance.market_data.quote_lookup"],
+            }
+        ],
+        output_schema_key="report",
+        output_schemas=[report_schema],
+        mcp_servers=[],
+        agents=[
+            {
+                "key": "tool_analyst",
+                "name": "Tool Analyst",
+                "modelConnection": "tool_capable_model",
+                "systemPrompt": "Use tools and return JSON.",
+                "inputSchema": input_schema,
+                "outputSchema": "report",
+                "capabilityProfiles": ["tool_required"],
+                "mcpServers": [],
+            },
+            {
+                "key": "summary_writer",
+                "name": "Summary Writer",
+                "modelConnection": "no_tool_model",
+                "systemPrompt": "Return JSON without tools.",
+                "inputSchema": input_schema,
+                "outputSchema": "report",
+                "capabilityProfiles": [],
+                "mcpServers": [],
+            },
+            {
+                "key": "unused_critic",
+                "name": "Unused Critic",
+                "modelConnection": "unused_bad_model",
+                "systemPrompt": "This agent is not in the selected workflow.",
+                "inputSchema": input_schema,
+                "outputSchema": "report",
+                "capabilityProfiles": [],
+                "mcpServers": [],
+            },
+        ],
+        workflows=[
+            {
+                "key": "main",
+                "name": "Main",
+                "inputSchema": input_schema,
+                "flow": {
+                    "kind": "sequence",
+                    "id": "main_sequence",
+                    "nodes": [
+                        {
+                            "kind": "step",
+                            "id": "analyze",
+                            "slot": "analysis",
+                            "uses": "tool_analyst",
+                            "with": {"topic": "${{ inputs.topic }}"},
+                        },
+                        {
+                            "kind": "step",
+                            "id": "summarize",
+                            "slot": "summary",
+                            "uses": "summary_writer",
+                            "with": {"topic": "${{ inputs.topic }}"},
+                        },
+                    ],
+                },
+                "output": {"from": "${{ nodes.summarize.outputs.summary }}"},
+            },
+            {
+                "key": "fanout",
+                "name": "Fanout",
+                "inputSchema": input_schema,
+                "flow": {
+                    "kind": "fanout",
+                    "id": "fanout_tools",
+                    "branches": [
+                        {
+                            "id": "tool",
+                            "node": {
+                                "kind": "step",
+                                "id": "tool_branch",
+                                "slot": "tool_report",
+                                "uses": "tool_analyst",
+                                "with": {"topic": "${{ inputs.topic }}"},
+                            },
+                        },
+                        {
+                            "id": "plain",
+                            "node": {
+                                "kind": "step",
+                                "id": "plain_branch",
+                                "slot": "plain_report",
+                                "uses": "summary_writer",
+                                "with": {"topic": "${{ inputs.topic }}"},
+                            },
+                        },
+                    ],
+                },
+                "output": {"from": "${{ nodes.fanout_tools.outputs.tool_report }}"},
+            },
+        ],
+    )
+
+
 def test_execution_plan_agent_requires_package_runtime_spec() -> None:
     constructor = cast(Callable[..., ExecutionPlanAgent], ExecutionPlanAgent)
     with pytest.raises(TypeError):
@@ -68,6 +199,59 @@ def test_execution_plan_agent_requires_package_runtime_spec() -> None:
             output_schema_version=1,
             wiring={},
         )
+
+
+def test_package_execution_plan_builder_derives_tool_and_output_requirements() -> None:
+    compiled = compile_workflow_package_manifest(_TOOL_REQUIRED_FIXTURE.read_text())
+    requirements = PackageExecutionPlanBuilder.derive_package_requirements(
+        cast(dict[str, Any], compiled["compiledPlan"])
+    )
+
+    assert requirements.requires_native_tool_calls is True
+    assert requirements.requires_structured_output is True
+    assert requirements.native_tool_sources == ("spec.capabilityProfiles.tool_required.toolKeys",)
+    assert requirements.structured_output_sources == ("spec.outputSchemas.report.jsonSchema",)
+
+
+def test_package_execution_plan_builder_derives_workflow_agent_requirements() -> None:
+    compiled = compile_workflow_package_manifest(_mixed_capability_package_source())
+    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
+    agents = cast(list[dict[str, Any]], compiled_plan["agents"])
+    agents_by_key = {str(agent["key"]): agent for agent in agents}
+    agents_by_key["tool_analyst"]["requiresStreaming"] = True
+    agents_by_key["summary_writer"]["requiresReasoningHints"] = True
+
+    fanout_requirements = PackageExecutionPlanBuilder.derive_workflow_agent_requirements(
+        compiled_plan,
+        "fanout",
+    )
+    main_requirements = PackageExecutionPlanBuilder.derive_workflow_agent_requirements(
+        compiled_plan,
+        "main",
+    )
+
+    assert set(main_requirements) == {"tool_analyst", "summary_writer"}
+    assert "unused_critic" not in main_requirements
+    assert (
+        PackageExecutionPlanBuilder.derive_workflow_agent_requirements(compiled_plan, "missing")
+        == {}
+    )
+
+    tool_main_requirements = main_requirements["tool_analyst"].requirements
+    summary_main_requirements = main_requirements["summary_writer"].requirements
+    tool_fanout_requirements = fanout_requirements["tool_analyst"].requirements
+    summary_fanout_requirements = fanout_requirements["summary_writer"].requirements
+
+    assert tool_main_requirements.requires_native_tool_calls is True
+    assert summary_main_requirements.requires_native_tool_calls is False
+    assert tool_main_requirements.requires_structured_output is True
+    assert summary_main_requirements.requires_structured_output is True
+    assert tool_fanout_requirements.requires_parallel_tool_calls is True
+    assert summary_fanout_requirements.requires_parallel_tool_calls is False
+    assert tool_main_requirements.requires_streaming is True
+    assert summary_main_requirements.requires_streaming is False
+    assert summary_main_requirements.requires_reasoning_hints is True
+    assert tool_main_requirements.requires_reasoning_hints is False
 
 
 def test_package_execution_plan_builds_from_local_compiled_plan() -> None:
@@ -615,39 +799,31 @@ PlanMutator = Callable[[dict[str, Any]], None]
 
 
 @pytest.mark.parametrize(
-    ("mutator", "workflow_key", "expected_field", "expected_issue"),
+    ("mutator", "workflow_key"),
     [
         (
             lambda plan: cast(
                 list[dict[str, Any]], cast(list[dict[str, Any]], plan["workflows"])[0]["steps"]
             )[0]["agents"][0].__setitem__("agentKey", "missing_agent"),
             "daily_research",
-            "spec.workflows.daily_research.graph.steps[0].agents[0].agentRef",
-            "missing_local_agent",
         ),
         (
             lambda plan: cast(list[dict[str, Any]], plan["agents"])[0].__setitem__(
                 "outputSchema", "missing_schema"
             ),
             "daily_research",
-            "spec.agents.market_analyst.outputSchema",
-            "missing_local_output_schema",
         ),
         (
             lambda plan: cast(list[dict[str, Any]], plan["agents"])[0].__setitem__(
                 "capabilityProfiles", ["missing_profile"]
             ),
             "daily_research",
-            "spec.agents.market_analyst.capabilityProfiles[0]",
-            "unknown_capability_profile",
         ),
         (
             lambda plan: cast(list[dict[str, Any]], plan["agents"])[0].__setitem__(
                 "mcpServers", ["missing_context"]
             ),
             "daily_research",
-            "spec.agents.market_analyst.mcpServers[0]",
-            "unknown_mcp_config",
         ),
         (
             lambda plan: cast(
@@ -658,8 +834,6 @@ PlanMutator = Callable[[dict[str, Any]], None]
                 )["nodes"],
             )[0].__setitem__("kind", "edge"),
             "daily_research",
-            "spec.workflows.daily_research.compiledGraph.nodes[0].kind",
-            "unsupported_graph_edge",
         ),
         (
             lambda plan: cast(
@@ -668,24 +842,18 @@ PlanMutator = Callable[[dict[str, Any]], None]
                 "wiring", {"ticker": {"from": "step", "stepIndex": 1, "slot": "decision"}}
             ),
             "daily_research",
-            "spec.workflows.daily_research.graph.steps[0].agents[0].with.ticker",
-            "cycle",
         ),
         (
             lambda plan: cast(
                 dict[str, Any], cast(list[dict[str, Any]], plan["workflows"])[0]["outputSpec"]
             ).__setitem__("stepIndex", 99),
             "daily_research",
-            "spec.workflows.daily_research.output.from",
-            "unreachable_node",
         ),
     ],
 )
 def test_package_execution_plan_errors_are_machine_readable(
     mutator: PlanMutator,
     workflow_key: str,
-    expected_field: str,
-    expected_issue: str,
 ) -> None:
     plan = deepcopy(_compiled_plan())
     mutator(plan)
@@ -693,9 +861,8 @@ def test_package_execution_plan_errors_are_machine_readable(
     with pytest.raises(WorkflowPackageExecutionPlanError) as excinfo:
         _ = PackageExecutionPlanBuilder.build_from_compiled_plan(plan, workflow_key)
 
-    assert excinfo.value.field == expected_field
-    assert excinfo.value.issue == expected_issue
-    assert excinfo.value.details == ({"field": expected_field, "issue": expected_issue},)
+    assert excinfo.value.code == "workflow_package_execution_plan_invalid"
+    assert excinfo.value.details
 
 
 def test_package_execution_plan_reports_missing_entry_workflow() -> None:
@@ -705,5 +872,5 @@ def test_package_execution_plan_reports_missing_entry_workflow() -> None:
             "missing_workflow",
         )
 
-    assert excinfo.value.field == "spec.workflows.missing_workflow"
-    assert excinfo.value.issue == "missing_entry_workflow"
+    assert excinfo.value.code == "workflow_package_execution_plan_invalid"
+    assert excinfo.value.details

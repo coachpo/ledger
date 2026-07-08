@@ -41,7 +41,7 @@ app/agents/
 | Extension runtime tools | `../extensions/signaldeck_finance/runtime_*`, `../extensions/signaldeck_digital_oracle/runtime_*` | Finance Workspace quotes/history/OHLCV/indicators/fundamentals/news/social sentiment/insider data, and report lookup plus Digital Oracle prediction markets, SEC filings, market sentiment, macro rates, crypto derivatives, CFTC positioning, and options |
 | MCP runtime | `mcp/AGENTS.md`, `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |
 | Integration points | `../extensions/registry.py`, `../services/agent_execution_service.py` | installed extension lookup, runtime dispatch, and execution wiring |
-| Coverage | `../../tests/test_runtime_tools.py`, `../../tests/test_mcp_runtime.py`, `../../tests/test_workflow_package_preflight.py` | tool keys, MCP safety, and package capability validation |
+| Coverage | `../../tests/test_runtime_tools.py`, `../../tests/test_mcp_runtime.py`, `../../tests/test_tool_catalog_api.py`, `../../tests/test_workflow_package_manifest_compiler.py` | tool keys, MCP safety, and package capability validation |
 
 ## CONVENTIONS
 - `ToolCatalog` and `RuntimeToolRegistry` must be built from installed extension contracts; do not construct alternate request-local registries with divergent tool sets.
@@ -63,7 +63,7 @@ app/agents/
 ## VALIDATION
 ```bash
 cd backend
-uv run pytest tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_workflow_package_preflight.py
+uv run pytest tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_tool_catalog_api.py tests/test_workflow_package_manifest_compiler.py
 ```
 
 ## NOTES

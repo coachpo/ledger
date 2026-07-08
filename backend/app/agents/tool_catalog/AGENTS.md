@@ -20,7 +20,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Server tools | `server_declared.py` | extension-contributed metadata registry |
 | API route | `../../api/tools.py` | read-only `/api/tools` response |
 | Service wiring | `../../extensions/registry.py`, `../../api/dependencies.py` | builds catalog from installed extensions |
-| Coverage | `../../../tests/test_tool_catalog_api.py`, `../../../tests/test_workflow_package_preflight.py` | slim public tool shape and package tool-key validation |
+| Coverage | `../../../tests/test_tool_catalog_api.py`, `../../../tests/test_workflow_package_manifest_compiler.py` | slim public tool shape and package tool-key validation |
 
 ## CONVENTIONS
 - Public tool metadata is intentionally small: `key`, `displayName`, and `description`.
@@ -38,5 +38,5 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## VALIDATION
 ```bash
 cd backend
-uv run pytest tests/test_tool_catalog_api.py tests/test_workflow_package_preflight.py
+uv run pytest tests/test_tool_catalog_api.py tests/test_workflow_package_manifest_compiler.py
 ```

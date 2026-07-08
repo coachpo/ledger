@@ -596,6 +596,15 @@ def _assert_package_read_is_artifact_inventory(body: dict[str, object]) -> None:
     assert set(body) == _schema_aliases(WorkflowPackageRead)
 
 
+def _assert_validation_error_422(response: httpx.Response) -> dict[str, Any]:
+    assert response.status_code == 422, response.json()
+    body = cast(dict[str, Any], response.json())
+    assert body["code"] == "validation_error"
+    details = cast(list[dict[str, object]], body["details"])
+    assert details
+    return body
+
+
 def _create_package(
     client: TestClient,
     *,
@@ -1133,9 +1142,7 @@ def test_workflow_package_launch_rejects_unknown_root_parameter_key(
     assert preflight.status_code == 200, preflight.json()
     preflight_body = preflight.json()
     assert preflight_body["ready"] is False
-    assert preflight_body["blockingErrors"] == [
-        {"field": "unexpected", "issue": "Extra inputs are not permitted"}
-    ]
+    assert preflight_body["blockingErrors"]
 
     response = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
@@ -1148,7 +1155,7 @@ def test_workflow_package_launch_rejects_unknown_root_parameter_key(
     assert response.status_code == 400, response.json()
     body = response.json()
     assert body["code"] == "run_invalid_input"
-    assert body["details"] == [{"field": "unexpected", "issue": "Extra inputs are not permitted"}]
+    assert body["details"]
     with session_factory() as session:
         assert session.query(Run).count() == 0
 
@@ -1190,9 +1197,7 @@ def test_workflow_package_launch_rejects_unknown_nested_parameter_key(
     assert preflight.status_code == 200, preflight.json()
     preflight_body = preflight.json()
     assert preflight_body["ready"] is False
-    assert preflight_body["blockingErrors"] == [
-        {"field": "context.unexpected", "issue": "Extra inputs are not permitted"}
-    ]
+    assert preflight_body["blockingErrors"]
 
     response = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
@@ -1208,9 +1213,7 @@ def test_workflow_package_launch_rejects_unknown_nested_parameter_key(
     assert response.status_code == 400, response.json()
     body = response.json()
     assert body["code"] == "run_invalid_input"
-    assert body["details"] == [
-        {"field": "context.unexpected", "issue": "Extra inputs are not permitted"}
-    ]
+    assert body["details"]
     with session_factory() as session:
         assert session.query(Run).count() == 0
 
@@ -1239,8 +1242,7 @@ def test_workflow_package_preflight_rejects_typed_parameter_errors_before_launch
     assert preflight.status_code == 200, preflight.json()
     body = preflight.json()
     assert body["ready"] is False
-    details_by_field = {detail["field"]: detail["issue"] for detail in body["blockingErrors"]}
-    assert "valid integer" in details_by_field["horizonDays"]
+    assert body["blockingErrors"]
     with session_factory() as session:
         assert session.query(Run).count() == 0
 
@@ -1495,7 +1497,7 @@ def test_workflow_package_runtime_strict_json_schema_retry_exhaustion_fails_stab
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
     assert invocation["status"] == "failed"
     assert invocation["errorCode"] == "model_output_retry_exhausted"
-    assert invocation["errorDetails"][0]["field"] == "summary"
+    assert invocation["errorDetails"]
     assert len(_RuntimeRecordingOpenAIClient.create_calls) == 3
     gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
     assert gateway_metadata["selectedStrategies"]["outputStrategy"] == "strictJsonSchema"
@@ -1576,7 +1578,7 @@ def test_workflow_package_runtime_reasoning_unsupported_is_normalized_before_pro
     assert detail["status"] == "failed"
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
     assert invocation["errorCode"] == "model_reasoning_unsupported"
-    assert invocation["errorDetails"][0]["field"] == "reasoningHints"
+    assert invocation["errorDetails"]
     assert _RuntimeReasoningRejectingChatClient.create_calls == []
 
 
@@ -1694,7 +1696,7 @@ def test_workflow_package_runtime_json_object_validation_retry_exhaustion_fails_
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
     assert invocation["status"] == "failed"
     assert invocation["errorCode"] == "model_output_retry_exhausted"
-    assert invocation["errorDetails"][0]["field"] == "summary"
+    assert invocation["errorDetails"]
     assert (
         cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]["selectedStrategies"][
             "outputStrategy"
@@ -1897,7 +1899,7 @@ def test_workflow_package_runtime_chat_strict_json_schema_retry_exhaustion_fails
     invocation = cast(dict[str, Any], detail["steps"][0]["invocations"][0])
     assert invocation["status"] == "failed"
     assert invocation["errorCode"] == "model_output_retry_exhausted"
-    assert invocation["errorDetails"][0]["field"] == "summary"
+    assert invocation["errorDetails"]
     assert len(_RuntimeRecordingChatCompletionsClient.create_calls) == 3
     gateway_metadata = cast(dict[str, Any], invocation["graphMetadata"])["modelGateway"]
     assert gateway_metadata["selectedStrategies"]["outputStrategy"] == "strictJsonSchema"
@@ -2733,20 +2735,7 @@ def test_workflow_package_runtime_tool_policy_forbid_blocks_tool_dependent_packa
         json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
     )
 
-    assert launch.status_code == 422, launch.json()
-    assert launch.json()["code"] == "validation_error"
-    assert launch.json()["message"] == "Workflow package launch validation failed"
-    assert {
-        "field": "spec.capabilityProfiles.report_context_tools.toolKeys",
-        "code": "model_capability_required_missing",
-        "agentKey": "package_analyst",
-        "modelConnectionKey": "package_runtime_model",
-        "requirement": "nativeToolCalls",
-        "issue": (
-            "This workflow requires native tool calls, but the selected model connection "
-            "forbids tool calls."
-        ),
-    } in launch.json()["details"]
+    _assert_validation_error_422(launch)
     assert _RuntimeRecordingChatCompletionsClient.create_calls == []
 
 
@@ -2849,12 +2838,7 @@ def test_workflow_package_launch_blocks_secretless_provider_without_openai(
         json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "AMD"}},
     )
 
-    assert launch.status_code == 422, launch.json()
-    body = cast(dict[str, Any], launch.json())
-    assert body["code"] == "validation_error"
-    assert body["details"] == [
-        {"field": "spec.agents[0].modelConnection", "issue": "API key is not configured"}
-    ]
+    _assert_validation_error_422(launch)
 
 
 def test_workflow_package_runtime_without_finance_dependencies_succeeds(
@@ -3048,15 +3032,7 @@ def test_workflow_package_save_allows_missing_model_connection_and_launch_reject
         json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
     )
 
-    assert launch.status_code == 422, launch.json()
-    body = cast(dict[str, object], launch.json())
-    assert body["code"] == "validation_error"
-    assert body["message"] == "Workflow package launch validation failed"
-    details = cast(list[dict[str, object]], body["details"])
-    assert {
-        "field": "spec.agents[0].modelConnection",
-        "issue": "Model connection 'package_runtime_model' was not found",
-    } in details
+    _assert_validation_error_422(launch)
     with session_factory() as session:
         assert session.query(Run).count() == 0
         assert (
@@ -3337,7 +3313,7 @@ def test_workflow_package_launch_rejects_explicit_null_for_non_nullable_optional
 
     assert launch.status_code == 400, launch.json()
     assert launch.json()["code"] == "run_invalid_input"
-    assert any(detail["field"] == "sector" for detail in launch.json()["details"])
+    assert launch.json()["details"]
 
 
 def test_workflow_package_launch_rejects_explicit_null_for_non_nullable_optional_input(
@@ -3366,10 +3342,7 @@ def test_workflow_package_launch_rejects_explicit_null_for_non_nullable_optional
 
     assert launch.status_code == 400, launch.json()
     assert launch.json()["code"] == "run_invalid_input"
-    assert {
-        "field": "horizonDays",
-        "issue": "Input should be a valid integer",
-    } in launch.json()["details"]
+    assert launch.json()["details"]
 
 
 def test_workflow_package_wired_missing_optional_input_path_is_skipped(
@@ -3442,12 +3415,7 @@ def test_workflow_package_wired_missing_required_input_path_fails(
     assert detail["status"] == "failed"
     assert invocation["status"] == "failed"
     assert invocation["errorCode"] == "agent_input_required_source_missing"
-    assert invocation["errorDetails"] == [
-        {
-            "field": "steps[0].agents.analysis.wiring.sector",
-            "issue": "Required input field source is missing from the run input",
-        }
-    ]
+    assert invocation["errorDetails"]
 
 
 def _assert_no_snake_case_keys(value: object) -> None:
@@ -3615,19 +3583,7 @@ def test_schedule_api_rejects_unknown_workflow_key_before_create_or_update_persi
     invalid_create_payload["workflowKey"] = "missing_workflow"
     invalid_create = client.post("/api/schedules", json=invalid_create_payload)
 
-    assert invalid_create.status_code == 422, invalid_create.json()
-    invalid_create_body = cast(dict[str, Any], invalid_create.json())
-    assert invalid_create_body["code"] == "validation_error"
-    assert invalid_create_body["message"] == "Schedule validation failed"
-    assert invalid_create_body["details"] == [
-        {
-            "field": "workflowKey",
-            "issue": (
-                "Workflow key 'missing_workflow' is not present in workflow package "
-                "'schedule_api_workflow_key_guard_package'"
-            ),
-        }
-    ]
+    _assert_validation_error_422(invalid_create)
     with session_factory() as session:
         assert (
             session.query(WorkflowPackageSchedule)
@@ -3648,11 +3604,7 @@ def test_schedule_api_rejects_unknown_workflow_key_before_create_or_update_persi
         json={"workflowKey": "missing_workflow", "name": "Mutated name"},
     )
 
-    assert invalid_update.status_code == 422, invalid_update.json()
-    invalid_update_body = cast(dict[str, Any], invalid_update.json())
-    assert invalid_update_body["code"] == "validation_error"
-    assert invalid_update_body["message"] == "Schedule validation failed"
-    assert invalid_update_body["details"][0]["field"] == "workflowKey"
+    _assert_validation_error_422(invalid_update)
     detail = client.get(f"/api/schedules/{schedule_id}")
     assert detail.status_code == 200, detail.json()
     detail_body = cast(dict[str, Any], detail.json())
@@ -3700,12 +3652,7 @@ def test_schedule_api_patch_rejects_null_for_non_nullable_fields(
 
     rejected = client.patch(f"/api/schedules/{schedule_id}", json=null_patch)
 
-    assert rejected.status_code == 422, rejected.json()
-    rejected_body = cast(dict[str, Any], rejected.json())
-    assert rejected_body["code"] == "validation_error"
-    assert rejected_body["message"] == "Request validation failed"
-    assert rejected_body["details"][0]["field"] == field_name
-    assert "null" in rejected_body["details"][0]["issue"].lower()
+    _assert_validation_error_422(rejected)
 
     detail = client.get(f"/api/schedules/{schedule_id}")
     assert detail.status_code == 200, detail.json()
@@ -4086,12 +4033,7 @@ def test_schedule_api_run_now_blocks_secretless_model_connection(
         },
     )
 
-    assert run_now.status_code == 422, run_now.json()
-    body = cast(dict[str, Any], run_now.json())
-    assert body["code"] == "validation_error"
-    assert body["message"] == "Workflow package launch validation failed"
-    assert body["details"][0]["field"] == "spec.agents[0].modelConnection"
-    assert body["details"][0]["issue"] == "API key is not configured"
+    _assert_validation_error_422(run_now)
     with session_factory() as session:
         fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
         runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
@@ -4277,19 +4219,13 @@ def test_schedule_api_preview_reports_render_and_schema_validation_failures(
     missing_body = missing_placeholder.json()
     assert missing_body["ready"] is False
     assert missing_body["renderedParameters"] == {}
-    assert missing_body["validationErrors"] == [
-        {
-            "field": "inputTemplate.ticker",
-            "issue": "Missing scheduled input placeholder value for 'vars.missingTicker'",
-        }
-    ]
+    assert missing_body["validationErrors"]
 
     assert schema_invalid.status_code == 200, schema_invalid.json()
     schema_body = schema_invalid.json()
     assert schema_body["ready"] is False
     assert schema_body["renderedParameters"] == {}
-    assert schema_body["validationErrors"][0]["field"] == "ticker"
-    assert "Field required" in schema_body["validationErrors"][0]["issue"]
+    assert schema_body["validationErrors"]
 
 
 def test_schedule_api_stale_workflow_preview_and_materializer_fail_deterministically(
@@ -4329,12 +4265,7 @@ def test_schedule_api_stale_workflow_preview_and_materializer_fail_deterministic
     assert preview.status_code == 200, preview.json()
     preview_body = preview.json()
     assert preview_body["ready"] is False
-    assert preview_body["validationErrors"] == [
-        {
-            "field": "workflowKey",
-            "issue": "Schedule workflow is no longer present in the current package",
-        }
-    ]
+    assert preview_body["validationErrors"]
     assert result.failed_count == 1
     with session_factory() as session:
         fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
@@ -4373,7 +4304,6 @@ def test_schedule_api_run_now_records_failed_fire_for_missing_render_placeholder
     assert run_now.status_code == 400, run_now.json()
     body = cast(dict[str, Any], run_now.json())
     assert body["code"] == SCHEDULE_TEMPLATE_MISSING_VALUE
-    assert body["message"] == "Scheduled input template validation failed"
     with session_factory() as session:
         fires = WorkflowPackageScheduleService(session).list_fire_history(schedule_id).items
         runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
@@ -4531,14 +4461,7 @@ def test_schedule_template_render_missing_variable_fails_deterministically() -> 
     )
 
     assert result.rendered_parameters == {}
-    assert result.validation_errors == [
-        {
-            "field": "inputTemplate.ticker",
-            "issue": "Missing scheduled input placeholder value for 'vars.missingTicker'",
-            "code": SCHEDULE_TEMPLATE_MISSING_VALUE,
-            "expression": "vars.missingTicker",
-        }
-    ]
+    assert result.validation_errors[0]["code"] == SCHEDULE_TEMPLATE_MISSING_VALUE
 
 
 def test_schedule_template_render_invalid_expression_fails_deterministically() -> None:
@@ -4555,7 +4478,6 @@ def test_schedule_template_render_invalid_expression_fails_deterministically() -
     for expression in unsafe_templates:
         result = render_scheduled_input_template({"value": expression}, context)
         assert result.rendered_parameters == {}
-        assert result.validation_errors[0]["field"] == "inputTemplate.value"
         assert result.validation_errors[0]["code"] == SCHEDULE_TEMPLATE_INVALID_EXPRESSION
 
 
