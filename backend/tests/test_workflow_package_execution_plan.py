@@ -16,6 +16,7 @@ from app.services.package_execution_plan_builder import (
     WorkflowPackageExecutionPlanError,
 )
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from tests.fixtures.workflow_manifests import base_manifest
 from tests.test_workflow_package_manifest_parser import (
     _valid_http_sse_package_manifest_source,
     _valid_package_manifest_source,
@@ -170,217 +171,191 @@ def test_package_execution_plan_supports_step_and_fanout_roots() -> None:
 
 
 def _graph_package_manifest_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: graph_package
-  name: Graph Package
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles:
-    - key: graph_tools
-      name: Graph Tools
-      toolKeys:
-        - signaldeck.finance.market_data.quote_lookup
-  outputSchemas:
-    - key: graph_note
-      name: Graph Note
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  mcpServers:
-    - key: graph_context
-      name: Graph Context
-      transport: stdio
-      command: python
-      args: [server.py]
-  agents:
-    - key: market_agent
-      name: Market Agent
-      modelConnection: graph_model
-      systemPrompt: Return market output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-      capabilityProfiles: [graph_tools]
-      mcpServers: [graph_context]
-    - key: news_agent
-      name: News Agent
-      modelConnection: graph_model
-      systemPrompt: Return news output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-      capabilityProfiles: [graph_tools]
-      mcpServers: [graph_context]
-    - key: risk_agent
-      name: Risk Agent
-      modelConnection: graph_model
-      systemPrompt: Return risk output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-      capabilityProfiles: [graph_tools]
-      mcpServers: [graph_context]
-    - key: decision_agent
-      name: Decision Agent
-      modelConnection: graph_model
-      systemPrompt: Return final output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-      capabilityProfiles: [graph_tools]
-      mcpServers: [graph_context]
-  workflows:
-    - key: advisory_research
-      name: Advisory Research
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      flow:
-        kind: sequence
-        id: root_sequence
-        nodes:
-          - kind: fanout
-            id: analyst_fanout
-            branches:
-              - id: market
-                node:
-                  kind: step
-                  id: market_analysis
-                  slot: market
-                  uses: market_agent
-                  with:
-                    ticker: ${{ inputs.ticker }}
-              - id: news
-                node:
-                  kind: step
-                  id: news_analysis
-                  slot: news
-                  uses: news_agent
-                  with:
-                    ticker: ${{ inputs.ticker }}
-          - kind: loop
-            id: review_loop
-            maxIterations: 2
-            sequence:
-              kind: sequence
-              id: review_sequence
-              nodes:
-                - kind: step
-                  id: risk_review
-                  slot: risk
-                  uses: risk_agent
-                  with:
-                    ticker: ${{ inputs.ticker }}
-          - kind: step
-            id: decision
-            slot: final
-            uses: decision_agent
-            with:
-              marketReport: ${{ nodes.analyst_fanout.outputs.market }}
-              newsReport: ${{ nodes.analyst_fanout.outputs.news }}
-              riskReport: ${{ nodes.review_loop.outputs.risk }}
-      output:
-        from: ${{ nodes.root_sequence.outputs.final }}
-"""
+    return _graph_manifest_source(
+        package_key="graph_package",
+        package_name="Graph Package",
+        agent_keys=("market_agent", "news_agent", "risk_agent", "decision_agent"),
+        flow={
+            "kind": "sequence",
+            "id": "root_sequence",
+            "nodes": [
+                {
+                    "kind": "fanout",
+                    "id": "analyst_fanout",
+                    "branches": [
+                        {
+                            "id": "market",
+                            "node": {
+                                "kind": "step",
+                                "id": "market_analysis",
+                                "slot": "market",
+                                "uses": "market_agent",
+                                "with": {"ticker": "${{ inputs.ticker }}"},
+                            },
+                        },
+                        {
+                            "id": "news",
+                            "node": {
+                                "kind": "step",
+                                "id": "news_analysis",
+                                "slot": "news",
+                                "uses": "news_agent",
+                                "with": {"ticker": "${{ inputs.ticker }}"},
+                            },
+                        },
+                    ],
+                },
+                {
+                    "kind": "loop",
+                    "id": "review_loop",
+                    "maxIterations": 2,
+                    "sequence": {
+                        "kind": "sequence",
+                        "id": "review_sequence",
+                        "nodes": [
+                            {
+                                "kind": "step",
+                                "id": "risk_review",
+                                "slot": "risk",
+                                "uses": "risk_agent",
+                                "with": {"ticker": "${{ inputs.ticker }}"},
+                            }
+                        ],
+                    },
+                },
+                {
+                    "kind": "step",
+                    "id": "decision",
+                    "slot": "final",
+                    "uses": "decision_agent",
+                    "with": {
+                        "marketReport": "${{ nodes.analyst_fanout.outputs.market }}",
+                        "newsReport": "${{ nodes.analyst_fanout.outputs.news }}",
+                        "riskReport": "${{ nodes.review_loop.outputs.risk }}",
+                    },
+                },
+            ],
+        },
+        output_reference="${{ nodes.root_sequence.outputs.final }}",
+    )
 
 
 def _fanout_root_package_manifest_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: fanout_root_package
-  name: Fanout Root Package
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles:
-    - key: graph_tools
-      name: Graph Tools
-      toolKeys:
-        - signaldeck.finance.market_data.quote_lookup
-  outputSchemas:
-    - key: graph_note
-      name: Graph Note
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  mcpServers:
-    - key: graph_context
-      name: Graph Context
-      transport: stdio
-      command: python
-      args: [server.py]
-  agents:
-    - key: market_agent
-      name: Market Agent
-      modelConnection: graph_model
-      systemPrompt: Return market output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-      capabilityProfiles: [graph_tools]
-      mcpServers: [graph_context]
-    - key: news_agent
-      name: News Agent
-      modelConnection: graph_model
-      systemPrompt: Return news output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-      capabilityProfiles: [graph_tools]
-      mcpServers: [graph_context]
-  workflows:
-    - key: advisory_research
-      name: Advisory Research
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      flow:
-        kind: fanout
-        id: analyst_fanout
-        branches:
-          - id: market
-            node:
-              kind: step
-              id: market_analysis
-              slot: market
-              uses: market_agent
-              with:
-                ticker: ${{ inputs.ticker }}
-          - id: news
-            node:
-              kind: step
-              id: news_analysis
-              slot: news
-              uses: news_agent
-              with:
-                ticker: ${{ inputs.ticker }}
-      output:
-        from: ${{ nodes.analyst_fanout.outputs.market }}
-"""
+    return _graph_manifest_source(
+        package_key="fanout_root_package",
+        package_name="Fanout Root Package",
+        agent_keys=("market_agent", "news_agent"),
+        flow={
+            "kind": "fanout",
+            "id": "analyst_fanout",
+            "branches": [
+                {
+                    "id": "market",
+                    "node": {
+                        "kind": "step",
+                        "id": "market_analysis",
+                        "slot": "market",
+                        "uses": "market_agent",
+                        "with": {"ticker": "${{ inputs.ticker }}"},
+                    },
+                },
+                {
+                    "id": "news",
+                    "node": {
+                        "kind": "step",
+                        "id": "news_analysis",
+                        "slot": "news",
+                        "uses": "news_agent",
+                        "with": {"ticker": "${{ inputs.ticker }}"},
+                    },
+                },
+            ],
+        },
+        output_reference="${{ nodes.analyst_fanout.outputs.market }}",
+    )
+
+
+def _graph_manifest_source(
+    *,
+    package_key: str,
+    package_name: str,
+    agent_keys: tuple[str, ...],
+    flow: dict[str, Any],
+    output_reference: str,
+) -> str:
+    input_schema = {
+        "type": "object",
+        "properties": {"ticker": {"type": "string"}},
+        "required": ["ticker"],
+    }
+    agent_names = {
+        "market_agent": "Market Agent",
+        "news_agent": "News Agent",
+        "risk_agent": "Risk Agent",
+        "decision_agent": "Decision Agent",
+    }
+    prompts = {
+        "market_agent": "Return market output.",
+        "news_agent": "Return news output.",
+        "risk_agent": "Return risk output.",
+        "decision_agent": "Return final output.",
+    }
+    return base_manifest(
+        package_key=package_key,
+        package_name=package_name,
+        package_description=None,
+        input_schema=input_schema,
+        capability_profiles=[
+            {
+                "key": "graph_tools",
+                "name": "Graph Tools",
+                "toolKeys": ["signaldeck.finance.market_data.quote_lookup"],
+            }
+        ],
+        output_schema_key="graph_note",
+        output_schemas=[
+            {
+                "key": "graph_note",
+                "name": "Graph Note",
+                "jsonSchema": {
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                    "required": ["summary"],
+                },
+            }
+        ],
+        mcp_servers=[
+            {
+                "key": "graph_context",
+                "name": "Graph Context",
+                "transport": "stdio",
+                "command": "python",
+                "args": ["server.py"],
+            }
+        ],
+        agents=[
+            {
+                "key": agent_key,
+                "name": agent_names[agent_key],
+                "modelConnection": "graph_model",
+                "systemPrompt": prompts[agent_key],
+                "inputSchema": {"type": "object"},
+                "outputSchema": "graph_note",
+                "capabilityProfiles": ["graph_tools"],
+                "mcpServers": ["graph_context"],
+            }
+            for agent_key in agent_keys
+        ],
+        workflows=[
+            {
+                "key": "advisory_research",
+                "name": "Advisory Research",
+                "inputSchema": input_schema,
+                "flow": flow,
+                "output": {"from": output_reference},
+            }
+        ],
+    )
 
 
 def test_digital_oracle_demo_execution_plan_uses_fanout_then_synthesis() -> None:

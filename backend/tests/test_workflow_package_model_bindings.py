@@ -22,6 +22,7 @@ from app.services.workflow_package_manifest_compiler import (
     WorkflowPackageManifestCompilerError,
     compile_workflow_package_manifest,
 )
+from tests.fixtures.workflow_manifests import dump_manifest, tradingagents_research_manifest_data
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
 
@@ -160,26 +161,10 @@ def _seed_tradingagents_connection(session_factory: sessionmaker[Session]) -> No
 
 
 def _launch_ready_package_manifest_source() -> str:
-    return (
-        _valid_package_manifest_source()
-        .replace(
-            """  mcpServers:
-    - key: research_context
-      name: Research Context
-      description: Local context server declaration.
-      transport: stdio
-      command: python
-      args: [server.py]
-      env:
-        RESEARCH_CONTEXT_TOKEN: local-token
-      toolKeys:
-        - research_context.search
-""",
-            "  mcpServers: []\n",
-            1,
-        )
-        .replace("      mcpServers: [research_context]\n", "", 1)
-    )
+    data = tradingagents_research_manifest_data()
+    data["spec"]["mcpServers"] = []
+    data["spec"]["agents"][0]["mcpServers"] = []
+    return dump_manifest(data)
 
 
 def test_launch_and_preflight_expose_resolved_model_connections(

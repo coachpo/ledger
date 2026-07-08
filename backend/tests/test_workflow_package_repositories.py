@@ -5,6 +5,7 @@ from typing import Any, TypedDict
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.repositories.workflow_package import WorkflowPackageRepository
+from tests.fixtures.workflow_manifests import base_manifest
 
 _HASH_A = "a" * 64
 _HASH_B = "b" * 64
@@ -20,7 +21,7 @@ class _PackagePayload(TypedDict):
 
 def _package_payload(package_key: str = "market_review") -> _PackagePayload:
     return {
-        "manifest_source": "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n",
+        "manifest_source": base_manifest(package_key=package_key),
         "manifest_hash": _HASH_A,
         "package_definition": {
             "apiVersion": "signaldeck.workflowPackage/v1",
@@ -95,11 +96,9 @@ def test_workflow_package_repository_replaces_current_artifact_in_place(
         package = _create_current_package(session)
         repository = WorkflowPackageRepository(session)
         replacement = _package_payload()
-        replacement["manifest_source"] = (
-            "apiVersion: signaldeck.workflowPackage/v1\n"
-            "kind: WorkflowPackage\n"
-            "metadata:\n"
-            "  key: market_review\n"
+        replacement["manifest_source"] = base_manifest(
+            package_key="market_review",
+            package_name="Market Review Replacement",
         )
         replacement["manifest_hash"] = _HASH_B
         replacement["compiled_hash"] = _HASH_A

@@ -15,6 +15,7 @@ from app.agents.mcp.boundaries import McpClientBoundary
 from app.core.config import reset_settings_cache
 from app.models.model_connection import ModelConnection
 from app.services.run_service import RunService
+from tests.fixtures.workflow_manifests import base_manifest
 from tests.test_workflow_package_runtime_api import _drain_run_queue, _wait_for_run
 
 _FIXTURE_PATH = (
@@ -127,110 +128,93 @@ def _fixture_source() -> str:
 
 
 def _single_agent_fixture_source(*, package_key: str) -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: TradingAgents MCP Rejection Fixture
-  description: Single-agent package fixture for rejected continuation coverage.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-      asOfDate:
-        type: string
-      horizonDays:
-        type: integer
-      benchmarkSymbol:
-        type: string
-    required:
-      - ticker
-      - asOfDate
-      - horizonDays
-      - benchmarkSymbol
-  capabilityProfiles: []
-  outputSchemas:
-    - key: trader_proposal
-      name: Trader Proposal
-      description: Advisory portfolio proposal used for rejection coverage.
-      jsonSchema:
-        type: object
-        properties:
-          posture:
-            type: string
-          rationale:
-            type: string
-          sizingNotes:
-            type: string
-        required: [posture, rationale, sizingNotes]
-  mcpServers:
-    - key: exa
-      name: Exa Web Search
-      description: Remote Exa MCP server for advisory information search.
-      transport: http-sse
-      url: https://mcp.exa.ai/mcp?tools=web_search_exa
-      headers:
-        Authorization: Bearer exa-inline-token
-      query:
-        exaApiKey: exa-inline-key
-      toolKeys:
-        - web_search_exa
-  agents:
-    - key: news_analyst
-      name: News Analyst
-      description: Produces company news context for the rejection workflow.
-      modelConnection: tradingagents_primary_model
-      systemPrompt: >-
-        Use the Exa MCP web search tool to search current company information,
-        then return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-          asOfDate:
-            type: string
-          horizonDays:
-            type: integer
-          benchmarkSymbol:
-            type: string
-      outputSchema: trader_proposal
-      capabilityProfiles: []
-      mcpServers: [exa]
-  workflows:
-    - key: news_research
-      name: News Research
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-          asOfDate:
-            type: string
-          horizonDays:
-            type: integer
-          benchmarkSymbol:
-            type: string
-        required:
-          - ticker
-          - asOfDate
-          - horizonDays
-          - benchmarkSymbol
-      flow:
-        kind: step
-        id: news_analysis
-        slot: analysis
-        uses: news_analyst
-        with:
-          ticker: ${{{{ inputs.ticker }}}}
-          asOfDate: ${{{{ inputs.asOfDate }}}}
-          horizonDays: ${{{{ inputs.horizonDays }}}}
-          benchmarkSymbol: ${{{{ inputs.benchmarkSymbol }}}}
-      output:
-        from: ${{{{ nodes.news_analysis.outputs.analysis }}}}
-"""
+    workflow_input_schema = {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "asOfDate": {"type": "string"},
+            "horizonDays": {"type": "integer"},
+            "benchmarkSymbol": {"type": "string"},
+        },
+        "required": ["ticker", "asOfDate", "horizonDays", "benchmarkSymbol"],
+    }
+    agent_input_schema = {
+        "type": "object",
+        "properties": workflow_input_schema["properties"],
+    }
+    system_prompt = (
+        "Use the Exa MCP web search tool to search current company information, "
+        "then return a short JSON summary."
+    )
+    flow = {
+        "kind": "step",
+        "id": "news_analysis",
+        "slot": "analysis",
+        "uses": "news_analyst",
+        "with": {
+            "ticker": "${{ inputs.ticker }}",
+            "asOfDate": "${{ inputs.asOfDate }}",
+            "horizonDays": "${{ inputs.horizonDays }}",
+            "benchmarkSymbol": "${{ inputs.benchmarkSymbol }}",
+        },
+    }
+    return base_manifest(
+        package_key=package_key,
+        package_name="TradingAgents MCP Rejection Fixture",
+        package_description="Single-agent package fixture for rejected continuation coverage.",
+        input_schema=workflow_input_schema,
+        output_schema_key="trader_proposal",
+        output_schemas=[
+            {
+                "key": "trader_proposal",
+                "name": "Trader Proposal",
+                "description": "Advisory portfolio proposal used for rejection coverage.",
+                "jsonSchema": {
+                    "type": "object",
+                    "properties": {
+                        "posture": {"type": "string"},
+                        "rationale": {"type": "string"},
+                        "sizingNotes": {"type": "string"},
+                    },
+                    "required": ["posture", "rationale", "sizingNotes"],
+                },
+            }
+        ],
+        mcp_servers=[
+            {
+                "key": "exa",
+                "name": "Exa Web Search",
+                "description": "Remote Exa MCP server for advisory information search.",
+                "transport": "http-sse",
+                "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+                "headers": {"Authorization": "Bearer exa-inline-token"},
+                "query": {"exaApiKey": "exa-inline-key"},
+                "toolKeys": ["web_search_exa"],
+            }
+        ],
+        agents=[
+            {
+                "key": "news_analyst",
+                "name": "News Analyst",
+                "description": "Produces company news context for the rejection workflow.",
+                "modelConnection": "tradingagents_primary_model",
+                "systemPrompt": system_prompt,
+                "inputSchema": agent_input_schema,
+                "outputSchema": "trader_proposal",
+                "capabilityProfiles": [],
+                "mcpServers": ["exa"],
+            }
+        ],
+        workflows=[
+            {
+                "key": "news_research",
+                "name": "News Research",
+                "inputSchema": workflow_input_schema,
+                "flow": flow,
+                "output": {"from": "${{ nodes.news_analysis.outputs.analysis }}"},
+            }
+        ],
+    )
 
 
 def _seed_tradingagents_model(session_factory: sessionmaker[Session]) -> None:

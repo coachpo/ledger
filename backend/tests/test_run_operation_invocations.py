@@ -12,6 +12,7 @@ from app.models.run_step import RunStep
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
 from app.schemas.run import RunOperationInvocationRead
 from app.services.run_service import RunService
+from tests.fixtures.workflow_manifests import base_manifest
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -50,7 +51,7 @@ def _create_run_with_step(
         workflow_description="",
         manifest_hash="a" * 64,
         compiled_hash="b" * 64,
-        manifest_source="apiVersion: signaldeck.workflowPackage/v1\nkey: operation_package\n",
+        manifest_source=base_manifest(package_key="operation_package"),
         package_definition={"metadata": {"key": "operation_package"}},
         compiled_plan={"workflows": [{"key": "notify_workflow"}]},
         extension_dependencies=[],

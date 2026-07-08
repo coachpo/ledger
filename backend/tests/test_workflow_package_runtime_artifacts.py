@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import RunPackageProvenanceRead, RunRead
+from tests.fixtures.workflow_manifests import base_manifest
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -43,7 +44,7 @@ def _snapshot() -> RunWorkflowPackageSnapshot:
         workflow_description="Compile a one-step runtime workflow.",
         manifest_hash="a" * 64,
         compiled_hash="b" * 64,
-        manifest_source="apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n",
+        manifest_source=base_manifest(package_key="artifact_runtime_package"),
         package_definition={
             "metadata": {"key": "artifact_runtime_package"},
             "spec": {"workflows": [{"key": "runtime_workflow"}]},

@@ -20,6 +20,7 @@ from app.schemas.run import (
     RunScheduleProvenanceRead,
     RunStatus,
 )
+from tests.fixtures.workflow_manifests import base_manifest
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -77,7 +78,7 @@ def _build_run(
         workflow_description="",
         manifest_hash="a" * 64,
         compiled_hash="b" * 64,
-        manifest_source=f"apiVersion: signaldeck.workflowPackage/v1\nkey: {target_key}\n",
+        manifest_source=base_manifest(package_key=target_key),
         package_definition={"metadata": {"key": target_key}},
         compiled_plan={"workflows": [{"key": workflow_key}]},
         extension_dependencies=[],
@@ -427,9 +428,7 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
                 "workflowKey": "queued_workflow",
                 "workflowName": "Queued Workflow",
                 "workflowDescription": "",
-                "manifestSource": (
-                    "apiVersion: signaldeck.workflowPackage/v1\n" "key: queued_workflow_package\n"
-                ),
+                "manifestSource": base_manifest(package_key="queued_workflow_package"),
                 "packageDefinition": {"metadata": {"key": "queued_workflow_package"}},
                 "compiledPlan": {"workflows": [{"key": "queued_workflow"}]},
                 "launchSnapshot": None,

@@ -19,6 +19,7 @@ from app.services.model_gateway_dto import (
     ModelToolExecutor,
 )
 from app.services.run_service import RunService
+from tests.fixtures.workflow_manifests import base_manifest, base_manifest_data, dump_manifest
 
 
 def _seed_model_connection(session_factory: sessionmaker[Session]) -> None:
@@ -45,140 +46,61 @@ def _seed_model_connection(session_factory: sessionmaker[Session]) -> None:
 
 
 def _one_step_package_source(package_key: str) -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: Runtime Package
-  description: Runtime package fixture.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles: []
-  outputSchemas:
-    - key: summary_output
-      name: Summary Output
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  agents:
-    - key: package_analyst
-      name: Package Analyst
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      outputSchema: summary_output
-      capabilityProfiles: []
-  workflows:
-    - key: runtime_workflow
-      name: Runtime Workflow
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      flow:
-        kind: step
-        id: package_analysis
-        slot: analysis
-        uses: package_analyst
-        with:
-          ticker: ${{{{ inputs.ticker }}}}
-      output:
-        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
-"""
+    return base_manifest(package_key=package_key)
 
 
 def _two_step_package_source(package_key: str) -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: Runtime Package
-  description: Runtime package fixture.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles: []
-  outputSchemas:
-    - key: summary_output
-      name: Summary Output
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  agents:
-    - key: first_agent
-      name: First Agent
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      outputSchema: summary_output
-      capabilityProfiles: []
-    - key: second_agent
-      name: Second Agent
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-      outputSchema: summary_output
-      capabilityProfiles: []
-  workflows:
-    - key: runtime_workflow
-      name: Runtime Workflow
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      flow:
-        kind: sequence
-        id: root_sequence
-        nodes:
-          - kind: step
-            id: first_step
-            slot: first
-            uses: first_agent
-            with:
-              ticker: ${{{{ inputs.ticker }}}}
-          - kind: step
-            id: second_step
-            slot: second
-            uses: second_agent
-            with:
-              summary: ${{{{ nodes.first_step.outputs.first.summary }}}}
-      output:
-        from: ${{{{ nodes.second_step.outputs.second }}}}
-"""
+    data = base_manifest_data(package_key=package_key)
+    data["spec"]["agents"] = [
+        {
+            "key": "first_agent",
+            "name": "First Agent",
+            "modelConnection": "package_runtime_model",
+            "systemPrompt": "Return a short JSON summary.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"ticker": {"type": "string"}},
+                "required": ["ticker"],
+            },
+            "outputSchema": "summary_output",
+            "capabilityProfiles": [],
+        },
+        {
+            "key": "second_agent",
+            "name": "Second Agent",
+            "modelConnection": "package_runtime_model",
+            "systemPrompt": "Return a short JSON summary.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"summary": {"type": "string"}},
+                "required": ["summary"],
+            },
+            "outputSchema": "summary_output",
+            "capabilityProfiles": [],
+        },
+    ]
+    data["spec"]["workflows"][0]["flow"] = {
+        "kind": "sequence",
+        "id": "root_sequence",
+        "nodes": [
+            {
+                "kind": "step",
+                "id": "first_step",
+                "slot": "first",
+                "uses": "first_agent",
+                "with": {"ticker": "${{ inputs.ticker }}"},
+            },
+            {
+                "kind": "step",
+                "id": "second_step",
+                "slot": "second",
+                "uses": "second_agent",
+                "with": {"summary": "${{ nodes.first_step.outputs.first.summary }}"},
+            },
+        ],
+    }
+    data["spec"]["workflows"][0]["output"] = {"from": "${{ nodes.second_step.outputs.second }}"}
+    return dump_manifest(data)
 
 
 def _create_package(

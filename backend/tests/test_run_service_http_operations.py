@@ -33,6 +33,7 @@ from app.services.execution_plan import (
 )
 from app.services.http_operation_execution_service import HttpOperationExecutionService
 from app.services.run_service import RunAgentInvocationResult, RunService
+from tests.fixtures.workflow_manifests import base_manifest
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -99,17 +100,15 @@ def _execute_claimed_run_with_http_service(
 
 
 def _package_source(package_key: str) -> str:
-    source = http_node_package_source().replace(
-        "key: http_callbacks",
-        f"key: {package_key}",
-        1,
-    )
-    return source.replace(
-        "      jsonSchema:\n        type: object\n  workflows:",
-        "      jsonSchema:\n        type: object\n        properties:\n"
-        "          ok:\n            type: boolean\n"
-        "          message:\n            type: string\n  workflows:",
-        1,
+    return http_node_package_source(
+        package_key=package_key,
+        response_json_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "message": {"type": "string"},
+            },
+        },
     )
 
 
@@ -483,7 +482,7 @@ def _running_run(session: Session) -> Run:
         workflow_description="",
         manifest_hash="manifest-mixed",
         compiled_hash="compiled-mixed",
-        manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+        manifest_source=base_manifest(package_key="mixed_package"),
         package_definition={"metadata": {"key": "mixed_package", "name": "Mixed Package"}},
         compiled_plan={"packageKey": "mixed_package", "workflows": [{"key": "mixed_workflow"}]},
         extension_dependencies=[],

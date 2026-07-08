@@ -71,6 +71,7 @@ from app.services.workflow_package_schedule_materializer import WorkflowPackageS
 from app.services.workflow_package_schedule_service import WorkflowPackageScheduleService
 from app.workers.run_scheduler import RunSchedulerWorker, scheduler_lease_owner
 from tests.fake_openai_provider import run_fake_openai_provider
+from tests.fixtures.workflow_manifests import base_manifest, base_manifest_data, dump_manifest
 
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.digital_oracle.prediction_markets.lookup",
@@ -526,174 +527,64 @@ def _provider_status_error(
 
 
 def _package_source(*, package_key: str = "runtime_package") -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: Runtime Package
-  description: Runtime package fixture.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles: []
-  outputSchemas:
-    - key: summary_output
-      name: Summary Output
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  agents:
-    - key: package_analyst
-      name: Package Analyst
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      outputSchema: summary_output
-      capabilityProfiles: []
-  workflows:
-    - key: runtime_workflow
-      name: Runtime Workflow
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      flow:
-        kind: step
-        id: package_analysis
-        slot: analysis
-        uses: package_analyst
-        with:
-          ticker: ${{{{ inputs.ticker }}}}
-      output:
-        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
-"""
+    return base_manifest(package_key=package_key)
 
 
 def _package_source_with_report_lookup(*, package_key: str) -> str:
-    source = _package_source(package_key=package_key)
-    source = source.replace(
-        "  capabilityProfiles: []\n  outputSchemas:",
-        """  capabilityProfiles:
-    - key: report_context_tools
-      name: Memory Context Tools
-      toolKeys:
-        - signaldeck.finance.reports.lookup
-  outputSchemas:""",
-        1,
-    )
-    return source.replace(
-        "      capabilityProfiles: []\n  workflows:",
-        "      capabilityProfiles: [report_context_tools]\n  workflows:",
-        1,
+    return base_manifest(
+        package_key=package_key,
+        tool_keys=["signaldeck.finance.reports.lookup"],
+        tool_profile_key="report_context_tools",
+        tool_profile_name="Memory Context Tools",
     )
 
 
 def _package_source_with_digital_oracle_phase1_tools(*, package_key: str) -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: Digital Oracle Runtime Fixture
-  description: Runtime fixture for Digital Oracle phase-1 tool grants.
-spec:
-  inputs:
-    type: object
-    properties:
-      researchQuestion:
-        type: string
-    required: [researchQuestion]
-  capabilityProfiles:
-    - key: digital_oracle_phase1_tools
-      name: Digital Oracle Phase 1 Tools
-      toolKeys:
-        - signaldeck.digital_oracle.cftc_positioning.lookup
-        - signaldeck.digital_oracle.crypto_derivatives.lookup
-        - signaldeck.digital_oracle.macro_rates.lookup
-        - signaldeck.digital_oracle.market_sentiment.lookup
-        - signaldeck.digital_oracle.options.lookup
-        - signaldeck.digital_oracle.prediction_markets.lookup
-        - signaldeck.digital_oracle.sec_filings.lookup
-  outputSchemas:
-    - key: summary_output
-      name: Summary Output
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  agents:
-    - key: package_analyst
-      name: Package Analyst
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          researchQuestion:
-            type: string
-        required: [researchQuestion]
-      outputSchema: summary_output
-      capabilityProfiles: [digital_oracle_phase1_tools]
-  workflows:
-    - key: runtime_workflow
-      name: Runtime Workflow
-      inputSchema:
-        type: object
-        properties:
-          researchQuestion:
-            type: string
-        required: [researchQuestion]
-      flow:
-        kind: step
-        id: package_analysis
-        slot: analysis
-        uses: package_analyst
-        with:
-          researchQuestion: ${{{{ inputs.researchQuestion }}}}
-      output:
-        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
-"""
+    input_schema = {
+        "type": "object",
+        "properties": {"researchQuestion": {"type": "string"}},
+        "required": ["researchQuestion"],
+    }
+    return base_manifest(
+        package_key=package_key,
+        package_name="Digital Oracle Runtime Fixture",
+        package_description="Runtime fixture for Digital Oracle phase-1 tool grants.",
+        input_schema=input_schema,
+        tool_keys=[
+            "signaldeck.digital_oracle.cftc_positioning.lookup",
+            "signaldeck.digital_oracle.crypto_derivatives.lookup",
+            "signaldeck.digital_oracle.macro_rates.lookup",
+            "signaldeck.digital_oracle.market_sentiment.lookup",
+            "signaldeck.digital_oracle.options.lookup",
+            "signaldeck.digital_oracle.prediction_markets.lookup",
+            "signaldeck.digital_oracle.sec_filings.lookup",
+        ],
+        tool_profile_key="digital_oracle_phase1_tools",
+        tool_profile_name="Digital Oracle Phase 1 Tools",
+        flow={
+            "kind": "step",
+            "id": "package_analysis",
+            "slot": "analysis",
+            "uses": "package_analyst",
+            "with": {"researchQuestion": "${{ inputs.researchQuestion }}"},
+        },
+    )
 
 
 def _package_source_with_inline_private_mcp(*, package_key: str) -> str:
-    return (
-        _package_source(package_key=package_key)
-        .replace(
-            "  agents:\n",
-            """  mcpServers:
-    - key: exa
-      name: Exa Web Search
-      transport: http-sse
-      url: https://mcp.exa.ai/mcp?tools=web_search_exa
-      headers:
-        Authorization: Bearer inline-header-secret
-      query:
-        exaApiKey: inline-query-secret
-      toolKeys: [web_search_exa]
-  agents:
-""",
-            1,
-        )
-        .replace(
-            "      capabilityProfiles: []",
-            "      capabilityProfiles: []\n      mcpServers: [exa]",
-            1,
-        )
+    return base_manifest(
+        package_key=package_key,
+        mcp_servers=[
+            {
+                "key": "exa",
+                "name": "Exa Web Search",
+                "transport": "http-sse",
+                "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+                "headers": {"Authorization": "Bearer inline-header-secret"},
+                "query": {"exaApiKey": "inline-query-secret"},
+                "toolKeys": ["web_search_exa"],
+            }
+        ],
     )
 
 
@@ -1267,37 +1158,21 @@ def test_workflow_package_launch_rejects_unknown_nested_parameter_key(
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-    original_input_schema = (
-        "      inputSchema:\n"
-        "        type: object\n"
-        "        properties:\n"
-        "          ticker:\n"
-        "            type: string\n"
-        "        required: [ticker]\n"
-        "      flow:\n"
-    )
-    nested_input_schema = (
-        "      inputSchema:\n"
-        "        type: object\n"
-        "        properties:\n"
-        "          ticker:\n"
-        "            type: string\n"
-        "          context:\n"
-        "            type: object\n"
-        "            properties:\n"
-        "              sector:\n"
-        "                type: string\n"
-        "        required: [ticker]\n"
-        "      flow:\n"
-    )
-    manifest_source = _package_source(package_key="runtime_unknown_nested_package").replace(
-        original_input_schema,
-        nested_input_schema,
-        1,
-    )
+    data = base_manifest_data(package_key="runtime_unknown_nested_package")
+    data["spec"]["workflows"][0]["inputSchema"] = {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "context": {
+                "type": "object",
+                "properties": {"sector": {"type": "string"}},
+            },
+        },
+        "required": ["ticker"],
+    }
     created_response = client.post(
         "/api/workflow-packages",
-        json={"manifestSource": manifest_source},
+        json={"manifestSource": dump_manifest(data)},
     )
     assert created_response.status_code == 201, created_response.json()
     created = cast(dict[str, object], created_response.json())
@@ -3191,141 +3066,85 @@ def test_workflow_package_save_allows_missing_model_connection_and_launch_reject
 
 
 def _package_source_with_runtime_input_default(*, package_key: str) -> str:
-    original_input_schema = (
-        "      inputSchema:\n"
-        "        type: object\n"
-        "        properties:\n"
-        "          ticker:\n"
-        "            type: string\n"
-        "        required: [ticker]\n"
-        "      flow:\n"
-    )
-    defaulted_input_schema = (
-        "      inputSchema:\n"
-        "        type: object\n"
-        "        properties:\n"
-        "          ticker:\n"
-        "            type: string\n"
-        "          horizonDays:\n"
-        "            type: integer\n"
-        "            default: 14\n"
-        "        required: [ticker]\n"
-        "      flow:\n"
-    )
-    return _package_source(package_key=package_key).replace(
-        original_input_schema,
-        defaulted_input_schema,
-        1,
-    )
+    data = base_manifest_data(package_key=package_key)
+    workflow = data["spec"]["workflows"][0]
+    workflow["inputSchema"] = {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "horizonDays": {"type": "integer", "default": 14},
+        },
+        "required": ["ticker"],
+    }
+    return dump_manifest(data)
 
 
 def _package_source_with_nullable_optional_input(*, package_key: str) -> str:
-    return (
-        _package_source_with_optional_wired_inputs(package_key=package_key)
-        .replace(
-            "      sector:\n        type: string\n",
-            '      sector:\n        type: [string, "null"]\n',
-            1,
-        )
-        .replace(
-            "          sector:\n            type: string\n",
-            '          sector:\n            type: [string, "null"]\n',
-            2,
+    return dump_manifest(
+        _optional_wired_manifest_data(
+            package_key=package_key,
+            sector_schema={"type": ["string", "null"]},
         )
     )
 
 
 def _package_source_with_enum_optional_input(*, package_key: str, nullable: bool) -> str:
-    sector_schema = (
-        '      sector:\n        type: [string, "null"]\n        enum: [growth, value]\n'
-        if nullable
-        else "      sector:\n        type: string\n        enum: [growth, value]\n"
-    )
-    agent_sector_schema = (
-        '          sector:\n            type: [string, "null"]\n            enum: [growth, value]\n'
-        if nullable
-        else "          sector:\n            type: string\n            enum: [growth, value]\n"
-    )
-    return (
-        _package_source_with_optional_wired_inputs(package_key=package_key)
-        .replace("      sector:\n        type: string\n", sector_schema, 1)
-        .replace("          sector:\n            type: string\n", agent_sector_schema, 2)
+    schema_type: str | list[str] = ["string", "null"] if nullable else "string"
+    return dump_manifest(
+        _optional_wired_manifest_data(
+            package_key=package_key,
+            sector_schema={"type": schema_type, "enum": ["growth", "value"]},
+        )
     )
 
 
 def _package_source_with_optional_wired_inputs(
     *, package_key: str, require_sector: bool = False
 ) -> str:
-    agent_required = "[ticker, sector]" if require_sector else "[ticker]"
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: Optional Input Runtime Package
-  description: Runtime package fixture with optional wired inputs.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-      sector:
-        type: string
-      horizonDays:
-        type: integer
-    required: [ticker]
-  capabilityProfiles: []
-  outputSchemas:
-    - key: summary_output
-      name: Summary Output
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  agents:
-    - key: package_analyst
-      name: Package Analyst
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-          sector:
-            type: string
-          horizonDays:
-            type: integer
-        required: {agent_required}
-      outputSchema: summary_output
-      capabilityProfiles: []
-  workflows:
-    - key: runtime_workflow
-      name: Runtime Workflow
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-          sector:
-            type: string
-          horizonDays:
-            type: integer
-        required: [ticker]
-      flow:
-        kind: step
-        id: package_analysis
-        slot: analysis
-        uses: package_analyst
-        with:
-          ticker: ${{{{ inputs.ticker }}}}
-          sector: ${{{{ inputs.sector }}}}
-          horizonDays: ${{{{ inputs.horizonDays }}}}
-      output:
-        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
-"""
+    return dump_manifest(
+        _optional_wired_manifest_data(
+            package_key=package_key,
+            require_sector=require_sector,
+        )
+    )
+
+
+def _optional_wired_manifest_data(
+    *,
+    package_key: str,
+    sector_schema: dict[str, object] | None = None,
+    require_sector: bool = False,
+) -> dict[str, Any]:
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "sector": sector_schema or {"type": "string"},
+            "horizonDays": {"type": "integer"},
+        },
+        "required": ["ticker"],
+    }
+    data = base_manifest_data(
+        package_key=package_key,
+        package_name="Optional Input Runtime Package",
+        package_description="Runtime package fixture with optional wired inputs.",
+        input_schema=input_schema,
+        flow={
+            "kind": "step",
+            "id": "package_analysis",
+            "slot": "analysis",
+            "uses": "package_analyst",
+            "with": {
+                "ticker": "${{ inputs.ticker }}",
+                "sector": "${{ inputs.sector }}",
+                "horizonDays": "${{ inputs.horizonDays }}",
+            },
+        },
+    )
+    agent_schema = deepcopy(input_schema)
+    agent_schema["required"] = ["ticker", "sector"] if require_sector else ["ticker"]
+    data["spec"]["agents"][0]["inputSchema"] = agent_schema
+    return data
 
 
 def test_workflow_package_launch_records_canonical_required_parameters(
@@ -4947,10 +4766,7 @@ def test_schedule_materializer_overlap_skip_and_misfire_skip(
             workflow_description="",
             manifest_hash="a" * 64,
             compiled_hash="b" * 64,
-            manifest_source=(
-                "apiVersion: signaldeck.workflowPackage/v1\n"
-                "key: schedule_materializer_overlap_package\n"
-            ),
+            manifest_source=base_manifest(package_key="schedule_materializer_overlap_package"),
             package_definition={"metadata": {"key": "schedule_materializer_overlap_package"}},
             compiled_plan={"workflows": [{"key": "runtime_workflow"}]},
             extension_dependencies=[],
@@ -5067,9 +4883,8 @@ def test_schedule_materializer_overlap_queue_creates_run_when_prior_run_active(
             workflow_description="",
             manifest_hash="a" * 64,
             compiled_hash="b" * 64,
-            manifest_source=(
-                "apiVersion: signaldeck.workflowPackage/v1\n"
-                "key: schedule_materializer_overlap_queue_package\n"
+            manifest_source=base_manifest(
+                package_key="schedule_materializer_overlap_queue_package"
             ),
             package_definition={"metadata": {"key": "schedule_materializer_overlap_queue_package"}},
             compiled_plan={"workflows": [{"key": "runtime_workflow"}]},

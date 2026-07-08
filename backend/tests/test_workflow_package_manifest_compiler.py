@@ -12,6 +12,11 @@ from app.services.workflow_package_manifest_compiler import (
     WorkflowPackageManifestCompilerError,
     compile_workflow_package_manifest,
 )
+from tests.fixtures.workflow_manifests import (
+    base_manifest,
+    dump_manifest,
+    tradingagents_research_manifest_data,
+)
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
 _DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
@@ -43,82 +48,77 @@ def _compiled_tool_keys(compiled: dict[str, object]) -> set[str]:
 
 
 def _inline_private_mcp_manifest_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: tradingagents_inline_private_mcp
-  name: Inline Private MCP Research
-  description: Round-trip manifest that keeps inline private MCP values.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles:
-    - key: report_context_tools
-      name: Report Context Tools
-      description: Reads persisted SignalDeck reports and quotes for research context.
-      toolKeys:
-        - signaldeck.finance.reports.lookup
-        - signaldeck.finance.market_data.quote_lookup
-  outputSchemas:
-    - key: decision
-      name: Decision
-      description: Structured decision.
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  mcpServers:
-    - key: exa
-      name: Exa Web Search
-      description: Remote Exa MCP server for advisory information search.
-      transport: http-sse
-      url: https://mcp.exa.ai/mcp
-      headers:
-        Authorization: Bearer test-token
-      query:
-        api_key: test-api-key
-      toolKeys:
-        - web_search_exa
-  agents:
-    - key: researcher
-      name: Researcher
-      description: Produces market research.
-      modelConnection: tradingagents_primary_model
-      systemPrompt: |
-        Use provided tools and return structured output.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-      outputSchema: decision
-      capabilityProfiles: [report_context_tools]
-      mcpServers: [exa]
-  workflows:
-    - key: inline_private_mcp_roundtrip
-      name: Inline Private MCP Roundtrip
-      description: Runs the researcher.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-      flow:
-        kind: step
-        id: research_step
-        slot: summary
-        uses: researcher
-        with:
-          ticker: ${{ inputs.ticker }}
-      output:
-        from: ${{ nodes.research_step.outputs.summary }}
-"""
+    input_schema = {
+        "type": "object",
+        "properties": {"ticker": {"type": "string"}},
+        "required": ["ticker"],
+    }
+    return base_manifest(
+        package_key="tradingagents_inline_private_mcp",
+        package_name="Inline Private MCP Research",
+        package_description="Round-trip manifest that keeps inline private MCP values.",
+        input_schema=input_schema,
+        capability_profiles=[
+            {
+                "key": "report_context_tools",
+                "name": "Report Context Tools",
+                "description": (
+                    "Reads persisted SignalDeck reports and quotes for research context."
+                ),
+                "toolKeys": [
+                    "signaldeck.finance.reports.lookup",
+                    "signaldeck.finance.market_data.quote_lookup",
+                ],
+            }
+        ],
+        output_schema_key="decision",
+        output_schemas=[
+            {
+                "key": "decision",
+                "name": "Decision",
+                "description": "Structured decision.",
+                "jsonSchema": {
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                    "required": ["summary"],
+                },
+            }
+        ],
+        mcp_servers=[
+            {
+                "key": "exa",
+                "name": "Exa Web Search",
+                "description": "Remote Exa MCP server for advisory information search.",
+                "transport": "http-sse",
+                "url": "https://mcp.exa.ai/mcp",
+                "headers": {"Authorization": "Bearer test-token"},
+                "query": {"api_key": "test-api-key"},
+                "toolKeys": ["web_search_exa"],
+            }
+        ],
+        agent_key="researcher",
+        agent_name="Researcher",
+        agent_description="Produces market research.",
+        model_connection="tradingagents_primary_model",
+        system_prompt="Use provided tools and return structured output.\n",
+        workflow_key="inline_private_mcp_roundtrip",
+        workflow_name="Inline Private MCP Roundtrip",
+        workflow_description="Runs the researcher.",
+        flow={
+            "kind": "step",
+            "id": "research_step",
+            "slot": "summary",
+            "uses": "researcher",
+            "with": {"ticker": "${{ inputs.ticker }}"},
+        },
+        workflow_output={"from": "${{ nodes.research_step.outputs.summary }}"},
+    )
+
+
+def _updated_valid_manifest(mutator) -> str:
+    data = tradingagents_research_manifest_data()
+    mutator(data)
+    return dump_manifest(data)
 
 
 def test_compile_valid_package_manifest_roundtrips_current_contract() -> None:
@@ -295,13 +295,14 @@ def test_compile_demo_presets_lock_hashes_tools_and_private_operations(
 
 
 def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
-    source = _valid_package_manifest_source().replace(
-        "        - signaldeck.finance.market_data.quote_lookup\n",
-        (
-            "        - signaldeck.finance.reports.lookup\n"
-            "        - signaldeck.finance.reports.lookup\n"
-        ),
-        1,
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["capabilityProfiles"][0].__setitem__(
+            "toolKeys",
+            [
+                "signaldeck.finance.reports.lookup",
+                "signaldeck.finance.reports.lookup",
+            ],
+        )
     )
 
     with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
@@ -316,10 +317,10 @@ def test_compile_package_manifest_rejects_duplicate_report_tool_keys() -> None:
 
 
 def test_compile_package_manifest_rejects_unknown_tool_keys() -> None:
-    source = _valid_package_manifest_source().replace(
-        "        - signaldeck.finance.market_data.quote_lookup\n",
-        "        - signaldeck.unknown.lookup\n",
-        1,
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["capabilityProfiles"][0].__setitem__(
+            "toolKeys", ["signaldeck.unknown.lookup"]
+        )
     )
 
     with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
@@ -333,8 +334,8 @@ def test_compile_package_manifest_rejects_unknown_tool_keys() -> None:
 
 
 def test_compile_package_manifest_rejects_unresolved_local_refs() -> None:
-    source = _valid_package_manifest_source().replace(
-        "outputSchema: trading_decision", "outputSchema: missing_schema", 1
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["agents"][0].__setitem__("outputSchema", "missing_schema")
     )
 
     with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
@@ -348,8 +349,8 @@ def test_compile_package_manifest_rejects_unresolved_local_refs() -> None:
 
 
 def test_compile_package_manifest_rejects_unresolved_workflow_agent_refs() -> None:
-    source = _valid_package_manifest_source().replace(
-        "uses: market_analyst", "uses: missing_agent", 1
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["workflows"][0]["flow"].__setitem__("uses", "missing_agent")
     )
 
     with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
@@ -363,10 +364,10 @@ def test_compile_package_manifest_rejects_unresolved_workflow_agent_refs() -> No
 
 
 def test_compile_package_manifest_rejects_unresolved_capability_profile_refs() -> None:
-    source = _valid_package_manifest_source().replace(
-        "capabilityProfiles: [market_research_tools]",
-        "capabilityProfiles: [missing_profile]",
-        1,
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["agents"][0].__setitem__(
+            "capabilityProfiles", ["missing_profile"]
+        )
     )
 
     with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:
@@ -380,10 +381,8 @@ def test_compile_package_manifest_rejects_unresolved_capability_profile_refs() -
 
 
 def test_compile_package_manifest_rejects_unresolved_mcp_server_refs() -> None:
-    source = _valid_package_manifest_source().replace(
-        "mcpServers: [research_context]",
-        "mcpServers: [missing_context]",
-        1,
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["agents"][0].__setitem__("mcpServers", ["missing_context"])
     )
 
     with pytest.raises(WorkflowPackageManifestCompilerError) as excinfo:

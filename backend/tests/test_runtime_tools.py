@@ -324,6 +324,7 @@ from app.services.runtime_tool_grants import (
     RuntimeToolGrantService,
 )
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
+from tests.fixtures.workflow_manifests import base_manifest
 
 _NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 _RUNTIME_RUN_ID = 4242
@@ -1101,7 +1102,7 @@ def _seed_runtime_run(
                     workflow_name="Runtime Tool Test Workflow",
                     manifest_hash=f"runtime-tool-test-manifest-{run_id}",
                     compiled_hash=f"runtime-tool-test-compiled-{run_id}",
-                    manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+                    manifest_source=base_manifest(package_key=package_key),
                     package_definition={},
                     compiled_plan={},
                 ),

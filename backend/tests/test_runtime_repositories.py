@@ -29,6 +29,7 @@ from app.schemas.model_connection import default_model_connection_capabilities
 from app.schemas.run import RunAgentInvocationRead, RunRead, RunStatus
 from app.services.model_connection_service import ModelConnectionService
 from app.services.run_service import RunService
+from tests.fixtures.workflow_manifests import base_manifest
 
 UTC_TZ = timezone.utc  # noqa: UP017
 
@@ -92,7 +93,7 @@ def _build_agent_platform_run(
         workflow_description="Runtime workflow",
         manifest_hash="a" * 64,
         compiled_hash="b" * 64,
-        manifest_source=(f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {package_key}\\n"),
+        manifest_source=base_manifest(package_key=package_key),
         package_definition={"metadata": {"key": package_key}},
         compiled_plan={"workflows": [{"key": workflow_key}]},
         extension_dependencies=[],
@@ -115,7 +116,7 @@ def _seed_workflow_package_target(
         key=package_key,
         name=f"{key_prefix} package",
         description="Package target fixture",
-        manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+        manifest_source=base_manifest(package_key=package_key),
         manifest_hash="a" * 64,
         package_definition={"metadata": {"key": package_key, "name": f"{key_prefix} package"}},
         compiled_plan={"workflows": []},
@@ -273,7 +274,7 @@ def test_model_connection_delete_allows_current_package_ref_as_future_readiness_
         package = WorkflowPackageRepository(session).create_package(
             key="package_delete_readiness",
             name="Package Delete Readiness",
-            manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+            manifest_source=base_manifest(package_key="package_delete_readiness"),
             manifest_hash="p" * 64,
             package_definition={"metadata": {"key": "package_delete_readiness"}},
             compiled_plan={"agents": [{"key": "local_agent", "modelConnection": connection.key}]},
@@ -345,7 +346,7 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
             workflow_description="",
             manifest_hash="s" * 64,
             compiled_hash="r" * 64,
-            manifest_source="apiVersion: signaldeck.workflowPackage/v1\n",
+            manifest_source=base_manifest(package_key=package_key),
             package_definition={"metadata": {"key": package_key}},
             compiled_plan={
                 "agents": [{"key": "local_agent", "modelConnection": connection.key}],
@@ -669,10 +670,7 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                         "workflowKey": workflow_key,
                         "workflowName": "Market Review",
                         "workflowDescription": "Runtime workflow",
-                        "manifestSource": (
-                            "apiVersion: signaldeck.workflowPackage/v1\n"
-                            "key: market_review_package\n"
-                        ),
+                        "manifestSource": (base_manifest(package_key="market_review_package")),
                         "packageDefinition": {"metadata": {"key": "market_review_package"}},
                         "compiledPlan": {"workflows": [{"key": workflow_key}]},
                         "launchSnapshot": None,
@@ -1189,7 +1187,7 @@ def _build_deletable_run(
             workflow_description="",
             manifest_hash="a" * 64,
             compiled_hash="b" * 64,
-            manifest_source=f"apiVersion: signaldeck.workflowPackage/v1\\nkey: {target_key}\\n",
+            manifest_source=base_manifest(package_key=target_key),
             package_definition={"metadata": {"key": target_key}},
             compiled_plan={"workflows": [{"key": workflow_key}]},
             extension_dependencies=[],

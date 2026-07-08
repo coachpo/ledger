@@ -60,6 +60,7 @@ from app.services.workflow_package_schedule_service import (
     WorkflowPackageScheduleService,
 )
 from tests.fake_openai_provider import run_fake_openai_provider
+from tests.fixtures.workflow_manifests import base_manifest, base_manifest_data, dump_manifest
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 _EXPECTED_STRUCTURED_OUTPUT_WARNING = {
@@ -255,61 +256,7 @@ def _seed_tradingagents_model_connection(
 
 
 def _package_source(*, package_key: str = "runtime_package") -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: Runtime Package
-  description: Runtime package fixture.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles: []
-  outputSchemas:
-    - key: summary_output
-      name: Summary Output
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  agents:
-    - key: package_analyst
-      name: Package Analyst
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      outputSchema: summary_output
-      capabilityProfiles: []
-  workflows:
-    - key: runtime_workflow
-      name: Runtime Workflow
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-        required: [ticker]
-      flow:
-        kind: step
-        id: package_analysis
-        slot: analysis
-        uses: package_analyst
-        with:
-          ticker: ${{{{ inputs.ticker }}}}
-      output:
-        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
-"""
+    return base_manifest(package_key=package_key)
 
 
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
@@ -335,94 +282,70 @@ def _digital_oracle_guidance_package_source(
     *,
     tool_keys: tuple[str, ...] = _DIGITAL_ORACLE_PHASE1_TOOL_KEYS,
 ) -> str:
-    tool_key_lines = "\n".join(f"        - {tool_key}" for tool_key in tool_keys)
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: digital_oracle_guidance_package
-  name: Digital Oracle Guidance Package
-spec:
-  inputs:
-    type: object
-    properties:
-      researchQuestion:
-        type: string
-      outputLanguage:
-        type: string
-    required: [researchQuestion, outputLanguage]
-  capabilityProfiles:
-    - key: digital_oracle_phase1_tools
-      name: Digital Oracle Phase 1 Tools
-      toolKeys:
-{tool_key_lines}
-  outputSchemas:
-    - key: digital_oracle_report
-      name: Digital Oracle Report
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-          signals:
-            type: array
-            items:
-              type: string
-          contradictions:
-            type: array
-            items:
-              type: string
-          limitations:
-            type: array
-            items:
-              type: string
-          nextQuestions:
-            type: array
-            items:
-              type: string
-        required: [summary, signals, contradictions, limitations, nextQuestions]
-  agents:
-    - key: digital_oracle_researcher
-      name: Digital Oracle Researcher
-      modelConnection: package_runtime_model
-      systemPrompt: |
-        Digital Oracle methodology is package-local for this agent.
-        Decompose the research question before calling tools.
-        Call the minimum relevant tools from granted package capability profiles.
-        Compare contradictory signals and disclose warnings or coverage gaps.
-        Synthesize a research-only report; never invent prices, filing facts,
-        event probabilities, or sentiment readings.
-      inputSchema:
-        type: object
-        properties:
-          researchQuestion:
-            type: string
-          outputLanguage:
-            type: string
-        required: [researchQuestion, outputLanguage]
-      outputSchema: digital_oracle_report
-      capabilityProfiles: [digital_oracle_phase1_tools]
-  workflows:
-    - key: research
-      name: Research
-      inputSchema:
-        type: object
-        properties:
-          researchQuestion:
-            type: string
-          outputLanguage:
-            type: string
-        required: [researchQuestion, outputLanguage]
-      flow:
-        kind: step
-        id: digital_oracle_research
-        slot: report
-        uses: digital_oracle_researcher
-        with:
-          researchQuestion: ${{{{ inputs.researchQuestion }}}}
-          outputLanguage: ${{{{ inputs.outputLanguage }}}}
-      output:
-        from: ${{{{ nodes.digital_oracle_research.outputs.report }}}}
-"""
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "researchQuestion": {"type": "string"},
+            "outputLanguage": {"type": "string"},
+        },
+        "required": ["researchQuestion", "outputLanguage"],
+    }
+    return base_manifest(
+        package_key="digital_oracle_guidance_package",
+        package_name="Digital Oracle Guidance Package",
+        package_description=None,
+        input_schema=input_schema,
+        tool_keys=tool_keys,
+        tool_profile_key="digital_oracle_phase1_tools",
+        tool_profile_name="Digital Oracle Phase 1 Tools",
+        output_schema_key="digital_oracle_report",
+        output_schemas=[
+            {
+                "key": "digital_oracle_report",
+                "name": "Digital Oracle Report",
+                "jsonSchema": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "signals": {"type": "array", "items": {"type": "string"}},
+                        "contradictions": {"type": "array", "items": {"type": "string"}},
+                        "limitations": {"type": "array", "items": {"type": "string"}},
+                        "nextQuestions": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": [
+                        "summary",
+                        "signals",
+                        "contradictions",
+                        "limitations",
+                        "nextQuestions",
+                    ],
+                },
+            }
+        ],
+        agent_key="digital_oracle_researcher",
+        agent_name="Digital Oracle Researcher",
+        system_prompt=(
+            "Digital Oracle methodology is package-local for this agent.\n"
+            "Decompose the research question before calling tools.\n"
+            "Call the minimum relevant tools from granted package capability profiles.\n"
+            "Compare contradictory signals and disclose warnings or coverage gaps.\n"
+            "Synthesize a research-only report; never invent prices, filing facts,\n"
+            "event probabilities, or sentiment readings.\n"
+        ),
+        workflow_key="research",
+        workflow_name="Research",
+        flow={
+            "kind": "step",
+            "id": "digital_oracle_research",
+            "slot": "report",
+            "uses": "digital_oracle_researcher",
+            "with": {
+                "researchQuestion": "${{ inputs.researchQuestion }}",
+                "outputLanguage": "${{ inputs.outputLanguage }}",
+            },
+        },
+        workflow_output={"from": "${{ nodes.digital_oracle_research.outputs.report }}"},
+    )
 
 
 def _package_source_with_optional_contract_inputs(
@@ -431,75 +354,31 @@ def _package_source_with_optional_contract_inputs(
     workflow_sector_nullable: bool = False,
     agent_sector_nullable: bool = False,
 ) -> str:
-    workflow_sector_type = '[string, "null"]' if workflow_sector_nullable else "string"
-    agent_sector_type = '[string, "null"]' if agent_sector_nullable else "string"
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: Optional Contract Runtime Package
-  description: Runtime package fixture for descendant input contracts.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-      sector:
-        type: {workflow_sector_type}
-      horizonDays:
-        type: integer
-    required: [ticker]
-  capabilityProfiles: []
-  outputSchemas:
-    - key: summary_output
-      name: Summary Output
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-  agents:
-    - key: package_analyst
-      name: Package Analyst
-      modelConnection: package_runtime_model
-      systemPrompt: Return a short JSON summary.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-          sector:
-            type: {agent_sector_type}
-          horizonDays:
-            type: integer
-        required: [ticker]
-      outputSchema: summary_output
-      capabilityProfiles: []
-  workflows:
-    - key: runtime_workflow
-      name: Runtime Workflow
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-          sector:
-            type: {workflow_sector_type}
-          horizonDays:
-            type: integer
-        required: [ticker]
-      flow:
-        kind: step
-        id: package_analysis
-        slot: analysis
-        uses: package_analyst
-        with:
-          ticker: ${{{{ inputs.ticker }}}}
-      output:
-        from: ${{{{ nodes.package_analysis.outputs.analysis }}}}
-"""
+    workflow_schema = {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "sector": {"type": ["string", "null"] if workflow_sector_nullable else "string"},
+            "horizonDays": {"type": "integer"},
+        },
+        "required": ["ticker"],
+    }
+    data = base_manifest_data(
+        package_key=package_key,
+        package_name="Optional Contract Runtime Package",
+        package_description="Runtime package fixture for descendant input contracts.",
+        input_schema=workflow_schema,
+    )
+    data["spec"]["agents"][0]["inputSchema"] = {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string"},
+            "sector": {"type": ["string", "null"] if agent_sector_nullable else "string"},
+            "horizonDays": {"type": "integer"},
+        },
+        "required": ["ticker"],
+    }
+    return dump_manifest(data)
 
 
 def _create_package(
@@ -2142,50 +2021,44 @@ def test_seeded_tradingagents_advisory_manifest_exports_after_startup(
 
 
 def _mcp_only_package_source(package_key: str) -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: {package_key}
-  name: MCP Dependency Snapshot Fixture
-spec:
-  inputs:
-    type: object
-  capabilityProfiles: []
-  outputSchemas:
-    - key: mcp_output
-      name: MCP Output
-      jsonSchema:
-        type: object
-  mcpServers:
-    - key: exa
-      name: Exa Web Search
-      transport: http-sse
-      url: https://mcp.exa.ai/mcp?tools=web_search_exa
-      toolKeys: [web_search_exa]
-  agents:
-    - key: mcp_agent
-      name: MCP Agent
-      modelConnection: tradingagents_primary_model
-      systemPrompt: Use package-private MCP search and return JSON.
-      inputSchema:
-        type: object
-      outputSchema: mcp_output
-      capabilityProfiles: []
-      mcpServers: [exa]
-  workflows:
-    - key: mcp_flow
-      name: MCP Flow
-      inputSchema:
-        type: object
-      flow:
-        kind: step
-        id: mcp_step
-        slot: result
-        uses: mcp_agent
-        with: {{}}
-      output:
-        from: ${{{{ nodes.mcp_step.outputs.result }}}}
-"""
+    input_schema = {"type": "object"}
+    return base_manifest(
+        package_key=package_key,
+        package_name="MCP Dependency Snapshot Fixture",
+        package_description=None,
+        input_schema=input_schema,
+        output_schema_key="mcp_output",
+        output_schemas=[
+            {
+                "key": "mcp_output",
+                "name": "MCP Output",
+                "jsonSchema": {"type": "object"},
+            }
+        ],
+        mcp_servers=[
+            {
+                "key": "exa",
+                "name": "Exa Web Search",
+                "transport": "http-sse",
+                "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+                "toolKeys": ["web_search_exa"],
+            }
+        ],
+        agent_key="mcp_agent",
+        agent_name="MCP Agent",
+        model_connection="tradingagents_primary_model",
+        system_prompt="Use package-private MCP search and return JSON.",
+        workflow_key="mcp_flow",
+        workflow_name="MCP Flow",
+        flow={
+            "kind": "step",
+            "id": "mcp_step",
+            "slot": "result",
+            "uses": "mcp_agent",
+            "with": {},
+        },
+        workflow_output={"from": "${{ nodes.mcp_step.outputs.result }}"},
+    )
 
 
 def test_digital_oracle_guidance_launch_persists_digital_oracle_extension_dependencies(

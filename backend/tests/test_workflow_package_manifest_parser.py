@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
+from tests.fixtures.workflow_manifests import (
+    base_manifest,
+    dump_manifest,
+    tradingagents_research_manifest,
+    tradingagents_research_manifest_data,
+)
 
 _DIGITAL_ORACLE_RESEARCHER_DEMO = (
     Path(__file__).resolve().parents[2] / "demo" / "digital_oracle_researcher.yaml"
@@ -14,143 +21,86 @@ _DIGITAL_ORACLE_RESEARCHER_DEMO = (
 
 
 def _valid_package_manifest_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: tradingagents_research
-  name: TradingAgents Research Package
-  description: Portable package for the representative research workflow.
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-    required: [ticker]
-  capabilityProfiles:
-    - key: market_research_tools
-      name: Market Research Tools
-      description: Uses server-declared market data tools.
-      toolKeys:
-        - signaldeck.finance.market_data.quote_lookup
-  outputSchemas:
-    - key: trading_decision
-      name: Trading Decision
-      description: Final research-only portfolio decision.
-      jsonSchema:
-        type: object
-        properties:
-          action:
-            type: string
-          rationale:
-            type: string
-        required: [action, rationale]
-  mcpServers:
-    - key: research_context
-      name: Research Context
-      description: Local context server declaration.
-      transport: stdio
-      command: python
-      args: [server.py]
-      env:
-        RESEARCH_CONTEXT_TOKEN: local-token
-      toolKeys:
-        - research_context.search
-  agents:
-    - key: market_analyst
-      name: Market Analyst
-      description: Produces market research.
-      modelConnection: tradingagents_primary_model
-      systemPrompt: |
-        Use provided tools and return structured output.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-      outputSchema: trading_decision
-      capabilityProfiles: [market_research_tools]
-      mcpServers: [research_context]
-  workflows:
-    - key: daily_research
-      name: Daily Research
-      description: Runs the market analyst.
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-      flow:
-        kind: step
-        id: market_analysis
-        slot: decision
-        uses: market_analyst
-        with:
-          ticker: ${{ inputs.ticker }}
-      output:
-        from: ${{ nodes.market_analysis.outputs.decision }}
-"""
+    return tradingagents_research_manifest()
+
+
+def _updated_valid_manifest(mutator: Callable[[dict[str, Any]], None]) -> str:
+    data = tradingagents_research_manifest_data()
+    mutator(data)
+    return dump_manifest(data)
 
 
 def _valid_http_sse_package_manifest_source() -> str:
-    return _valid_package_manifest_source().replace(
-        """      transport: stdio
-      command: python
-      args: [server.py]
-      env:
-        RESEARCH_CONTEXT_TOKEN: local-token
-""",
-        """      transport: http-sse
-      url: https://mcp.example.test/sse
-      headers:
-        Authorization: Bearer test-token
-      query:
-        api_key: test-api-key
-""",
-        1,
-    )
+    data = _valid_http_sse_package_manifest_data()
+    return dump_manifest(data)
+
+
+def _valid_http_sse_package_manifest_data() -> dict[str, Any]:
+    data = tradingagents_research_manifest_data()
+    data["spec"]["mcpServers"][0] = {
+        "key": "research_context",
+        "name": "Research Context",
+        "description": "Local context server declaration.",
+        "transport": "http-sse",
+        "url": "https://mcp.example.test/sse",
+        "headers": {"Authorization": "Bearer test-token"},
+        "query": {"api_key": "test-api-key"},
+        "toolKeys": ["research_context.search"],
+    }
+    return data
+
+
+def _updated_http_sse_manifest(mutator: Callable[[dict[str, Any]], None]) -> str:
+    data = _valid_http_sse_package_manifest_data()
+    mutator(data)
+    return dump_manifest(data)
 
 
 def _with_duplicate_output_schema() -> str:
-    duplicate_schema = """    - key: trading_decision
-      name: Trading Decision Duplicate
-      jsonSchema:
-        type: object
-  mcpServers:
-"""
-    return _valid_package_manifest_source().replace("  mcpServers:\n", duplicate_schema, 1)
+    data = tradingagents_research_manifest_data()
+    data["spec"]["outputSchemas"].append(
+        {
+            "key": "trading_decision",
+            "name": "Trading Decision Duplicate",
+            "jsonSchema": {"type": "object"},
+        }
+    )
+    return dump_manifest(data)
 
 
 def _with_duplicate_agent() -> str:
-    duplicate_agent = """    - key: market_analyst
-      name: Market Analyst Duplicate
-      modelConnection: tradingagents_primary_model
-      systemPrompt: Test
-      inputSchema:
-        type: object
-      outputSchema: trading_decision
-  workflows:
-"""
-    return _valid_package_manifest_source().replace("  workflows:\n", duplicate_agent, 1)
+    data = tradingagents_research_manifest_data()
+    data["spec"]["agents"].append(
+        {
+            "key": "market_analyst",
+            "name": "Market Analyst Duplicate",
+            "modelConnection": "tradingagents_primary_model",
+            "systemPrompt": "Test",
+            "inputSchema": {"type": "object"},
+            "outputSchema": "trading_decision",
+        }
+    )
+    return dump_manifest(data)
 
 
 def _with_duplicate_workflow() -> str:
-    duplicate_workflow = """    - key: daily_research
-      name: Duplicate Daily Research
-      inputSchema:
-        type: object
-      flow:
-        kind: step
-        id: duplicate_research
-        slot: duplicate_decision
-        uses: market_analyst
-      output:
-        from: ${{ nodes.duplicate_research.outputs.duplicate_decision }}
-    - key: daily_research
-"""
-    return _valid_package_manifest_source().replace(
-        "    - key: daily_research\n", duplicate_workflow, 1
+    data = tradingagents_research_manifest_data()
+    data["spec"]["workflows"].insert(
+        0,
+        {
+            "key": "daily_research",
+            "name": "Duplicate Daily Research",
+            "inputSchema": {"type": "object"},
+            "flow": {
+                "kind": "step",
+                "id": "duplicate_research",
+                "slot": "duplicate_decision",
+                "uses": "market_analyst",
+            },
+            "output": {"from": "${{ nodes.duplicate_research.outputs.duplicate_decision }}"},
+        },
     )
+    return dump_manifest(data)
 
 
 def _single_diagnostic(source: str):
@@ -163,61 +113,61 @@ def _single_diagnostic(source: str):
     return diagnostic
 
 
-def _graph_package_manifest_source(*, flow: str, output_reference: str) -> str:
-    return f"""apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: graph_package
-  name: Graph Package
-spec:
-  inputs:
-    type: object
-    properties:
-      ticker:
-        type: string
-  outputSchemas:
-    - key: graph_note
-      name: Graph Note
-      jsonSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-  agents:
-    - key: market_agent
-      name: Market Agent
-      modelConnection: graph_model
-      systemPrompt: Return market output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-    - key: news_agent
-      name: News Agent
-      modelConnection: graph_model
-      systemPrompt: Return news output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-    - key: decision_agent
-      name: Decision Agent
-      modelConnection: graph_model
-      systemPrompt: Return final output.
-      inputSchema:
-        type: object
-      outputSchema: graph_note
-  workflows:
-    - key: advisory_research
-      name: Advisory Research
-      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-      flow:
-{flow}
-      output:
-        from: {output_reference}
-"""
+def _graph_package_manifest_source(*, flow: dict[str, Any], output_reference: str) -> str:
+    input_schema = {"type": "object", "properties": {"ticker": {"type": "string"}}}
+    agents = [
+        {
+            "key": "market_agent",
+            "name": "Market Agent",
+            "modelConnection": "graph_model",
+            "systemPrompt": "Return market output.",
+            "inputSchema": {"type": "object"},
+            "outputSchema": "graph_note",
+        },
+        {
+            "key": "news_agent",
+            "name": "News Agent",
+            "modelConnection": "graph_model",
+            "systemPrompt": "Return news output.",
+            "inputSchema": {"type": "object"},
+            "outputSchema": "graph_note",
+        },
+        {
+            "key": "decision_agent",
+            "name": "Decision Agent",
+            "modelConnection": "graph_model",
+            "systemPrompt": "Return final output.",
+            "inputSchema": {"type": "object"},
+            "outputSchema": "graph_note",
+        },
+    ]
+    return base_manifest(
+        package_key="graph_package",
+        package_name="Graph Package",
+        package_description=None,
+        input_schema=input_schema,
+        output_schema_key="graph_note",
+        output_schemas=[
+            {
+                "key": "graph_note",
+                "name": "Graph Note",
+                "jsonSchema": {
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                },
+            }
+        ],
+        agents=agents,
+        workflows=[
+            {
+                "key": "advisory_research",
+                "name": "Advisory Research",
+                "inputSchema": input_schema,
+                "flow": flow,
+                "output": {"from": output_reference},
+            }
+        ],
+    )
 
 
 def test_parse_valid_workflow_package_manifest_returns_typed_manifest() -> None:
@@ -370,10 +320,10 @@ def test_parse_rejects_package_schema_additional_properties_keyword() -> None:
 
 
 def test_parse_rejects_package_schema_allow_additional_properties_keyword() -> None:
-    source = _valid_package_manifest_source().replace(
-        "        properties:\n          action:\n",
-        "        allowAdditionalProperties: true\n        properties:\n          action:\n",
-        1,
+    source = _updated_valid_manifest(
+        lambda data: data["spec"]["outputSchemas"][0]["jsonSchema"].__setitem__(
+            "allowAdditionalProperties", True
+        )
     )
 
     result = parse_workflow_package_manifest(source)
@@ -404,21 +354,21 @@ def test_parse_http_sse_mcp_server_accepts_headers_and_query() -> None:
     ("source", "expected_message"),
     [
         (
-            _valid_package_manifest_source().replace(
-                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      toolKeys:\n",
-                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n"
-                + "      headers:\n        Authorization: Bearer test-token\n"
-                + "      query:\n        api_key: test-api-key\n"
-                + "      toolKeys:\n",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["mcpServers"][0].update(
+                    {
+                        "headers": {"Authorization": "Bearer test-token"},
+                        "query": {"api_key": "test-api-key"},
+                    }
+                )
             ),
             "stdio MCP servers only support inline env values; unsupported fields: headers, query",
         ),
         (
-            _valid_http_sse_package_manifest_source().replace(
-                "      headers:\n",
-                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      headers:\n",
-                1,
+            _updated_http_sse_manifest(
+                lambda data: data["spec"]["mcpServers"][0].__setitem__(
+                    "env", {"RESEARCH_CONTEXT_TOKEN": "local-token"}
+                )
             ),
             "http-sse MCP servers only support inline headers and query values; "
             + "unsupported fields: env",
@@ -455,17 +405,8 @@ metadata:
 
 def test_parse_package_agent_input_schema_must_be_object() -> None:
     diagnostic = _single_diagnostic(
-        _valid_package_manifest_source().replace(
-            """      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-""",
-            """      inputSchema:
-        type: string
-""",
-            1,
+        _updated_valid_manifest(
+            lambda data: data["spec"]["agents"][0].__setitem__("inputSchema", {"type": "string"})
         )
     )
 
@@ -475,19 +416,8 @@ def test_parse_package_agent_input_schema_must_be_object() -> None:
 
 def test_parse_package_workflow_input_schema_must_be_object() -> None:
     diagnostic = _single_diagnostic(
-        _valid_package_manifest_source().replace(
-            """      inputSchema:
-        type: object
-        properties:
-          ticker:
-            type: string
-      flow:
-""",
-            """      inputSchema:
-        type: string
-      flow:
-""",
-            1,
+        _updated_valid_manifest(
+            lambda data: data["spec"]["workflows"][0].__setitem__("inputSchema", {"type": "string"})
         )
     )
 
@@ -497,18 +427,15 @@ def test_parse_package_workflow_input_schema_must_be_object() -> None:
 
 def test_parse_workflow_package_manifest_rejects_compiled_only_fields() -> None:
     diagnostic = _single_diagnostic(
-        _valid_package_manifest_source().replace(
-            """      output:
-        from: ${{ nodes.market_analysis.outputs.decision }}
-""",
-            """      compiledGraph:
-        apiVersion: signaldeck.workflowPackage/v1
-        rootNodeId: market_analysis
-        nodes: []
-      output:
-        from: ${{ nodes.market_analysis.outputs.decision }}
-""",
-            1,
+        _updated_valid_manifest(
+            lambda data: data["spec"]["workflows"][0].__setitem__(
+                "compiledGraph",
+                {
+                    "apiVersion": "signaldeck.workflowPackage/v1",
+                    "rootNodeId": "market_analysis",
+                    "nodes": [],
+                },
+            )
         )
     )
 
@@ -521,56 +448,74 @@ def test_parse_workflow_package_manifest_rejects_compiled_only_fields() -> None:
     [
         (
             _graph_package_manifest_source(
-                flow="""        kind: step
-        id: research
-        slot: analysis
-        uses: market_agent
-        with:
-          prior: ${{ nodes.research.outputs.analysis }}""",
+                flow={
+                    "kind": "step",
+                    "id": "research",
+                    "slot": "analysis",
+                    "uses": "market_agent",
+                    "with": {"prior": "${{ nodes.research.outputs.analysis }}"},
+                },
                 output_reference="${{ nodes.research.outputs.analysis }}",
             ),
             "spec.workflows[0].flow.with.prior",
         ),
         (
             _graph_package_manifest_source(
-                flow="""        kind: sequence
-        id: root_sequence
-        nodes:
-          - kind: step
-            id: research
-            slot: analysis
-            uses: market_agent
-            with:
-              prior: ${{ nodes.decision.outputs.final }}
-          - kind: step
-            id: decision
-            slot: final
-            uses: decision_agent""",
+                flow={
+                    "kind": "sequence",
+                    "id": "root_sequence",
+                    "nodes": [
+                        {
+                            "kind": "step",
+                            "id": "research",
+                            "slot": "analysis",
+                            "uses": "market_agent",
+                            "with": {"prior": "${{ nodes.decision.outputs.final }}"},
+                        },
+                        {
+                            "kind": "step",
+                            "id": "decision",
+                            "slot": "final",
+                            "uses": "decision_agent",
+                        },
+                    ],
+                },
                 output_reference="${{ nodes.root_sequence.outputs.final }}",
             ),
             "spec.workflows[0].flow.nodes[0].with.prior",
         ),
         (
             _graph_package_manifest_source(
-                flow="""        kind: fanout
-        id: analyst_fanout
-        branches:
-          - id: market
-            node:
-              kind: step
-              id: market_analysis
-              slot: market_report
-              uses: market_agent
-              with:
-                ticker: ${{ inputs.ticker }}
-          - id: news
-            node:
-              kind: step
-              id: news_analysis
-              slot: news_report
-              uses: news_agent
-              with:
-                marketReport: ${{ nodes.market_analysis.outputs.market_report }}""",
+                flow={
+                    "kind": "fanout",
+                    "id": "analyst_fanout",
+                    "branches": [
+                        {
+                            "id": "market",
+                            "node": {
+                                "kind": "step",
+                                "id": "market_analysis",
+                                "slot": "market_report",
+                                "uses": "market_agent",
+                                "with": {"ticker": "${{ inputs.ticker }}"},
+                            },
+                        },
+                        {
+                            "id": "news",
+                            "node": {
+                                "kind": "step",
+                                "id": "news_analysis",
+                                "slot": "news_report",
+                                "uses": "news_agent",
+                                "with": {
+                                    "marketReport": (
+                                        "${{ nodes.market_analysis.outputs.market_report }}"
+                                    )
+                                },
+                            },
+                        },
+                    ],
+                },
                 output_reference="${{ nodes.analyst_fanout.outputs.news }}",
             ),
             "spec.workflows[0].flow.branches[1].node.with.marketReport",
@@ -592,21 +537,30 @@ def test_parse_package_workflow_graph_rejects_non_earlier_node_refs(
     [
         (
             _graph_package_manifest_source(
-                flow="""        kind: fanout
-        id: analyst_fanout
-        branches:
-          - id: market
-            node:
-              kind: step
-              id: market_analysis
-              slot: analysis
-              uses: market_agent
-          - id: market
-            node:
-              kind: step
-              id: news_analysis
-              slot: news
-              uses: news_agent""",
+                flow={
+                    "kind": "fanout",
+                    "id": "analyst_fanout",
+                    "branches": [
+                        {
+                            "id": "market",
+                            "node": {
+                                "kind": "step",
+                                "id": "market_analysis",
+                                "slot": "analysis",
+                                "uses": "market_agent",
+                            },
+                        },
+                        {
+                            "id": "market",
+                            "node": {
+                                "kind": "step",
+                                "id": "news_analysis",
+                                "slot": "news",
+                                "uses": "news_agent",
+                            },
+                        },
+                    ],
+                },
                 output_reference="${{ nodes.analyst_fanout.outputs.analysis }}",
             ),
             "spec.workflows[0].flow.branches[1].id",
@@ -614,17 +568,24 @@ def test_parse_package_workflow_graph_rejects_non_earlier_node_refs(
         ),
         (
             _graph_package_manifest_source(
-                flow="""        kind: sequence
-        id: root_sequence
-        nodes:
-          - kind: step
-            id: research
-            slot: analysis
-            uses: market_agent
-          - kind: step
-            id: research
-            slot: final
-            uses: decision_agent""",
+                flow={
+                    "kind": "sequence",
+                    "id": "root_sequence",
+                    "nodes": [
+                        {
+                            "kind": "step",
+                            "id": "research",
+                            "slot": "analysis",
+                            "uses": "market_agent",
+                        },
+                        {
+                            "kind": "step",
+                            "id": "research",
+                            "slot": "final",
+                            "uses": "decision_agent",
+                        },
+                    ],
+                },
                 output_reference="${{ nodes.root_sequence.outputs.analysis }}",
             ),
             "spec.workflows[0].flow.nodes[1].id",
@@ -632,17 +593,24 @@ def test_parse_package_workflow_graph_rejects_non_earlier_node_refs(
         ),
         (
             _graph_package_manifest_source(
-                flow="""        kind: sequence
-        id: root_sequence
-        nodes:
-          - kind: step
-            id: research
-            slot: analysis
-            uses: market_agent
-          - kind: step
-            id: decision
-            slot: analysis
-            uses: decision_agent""",
+                flow={
+                    "kind": "sequence",
+                    "id": "root_sequence",
+                    "nodes": [
+                        {
+                            "kind": "step",
+                            "id": "research",
+                            "slot": "analysis",
+                            "uses": "market_agent",
+                        },
+                        {
+                            "kind": "step",
+                            "id": "decision",
+                            "slot": "analysis",
+                            "uses": "decision_agent",
+                        },
+                    ],
+                },
                 output_reference="${{ nodes.root_sequence.outputs.analysis }}",
             ),
             "spec.workflows[0].flow.nodes[1].slot",
@@ -730,10 +698,8 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
             False,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "      mcpServers: [research_context]\n",
-                "      mcpServers: [research_context]\n      unexpectedOption: true\n",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__("unexpectedOption", True)
             ),
             "spec.agents[0].unexpectedOption",
             "Extra inputs are not permitted",
@@ -758,70 +724,60 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "modelConnection: tradingagents_primary_model",
-                "modelConnectionId: 42",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__("modelConnectionId", 42)
             ),
             "spec.agents[0].modelConnectionId",
             "modelConnectionId is not allowed",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "outputSchema: trading_decision",
-                "outputSchemaId: 42",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__("outputSchemaId", 42)
             ),
             "spec.agents[0].outputSchemaId",
             "outputSchemaId is not allowed",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "      capabilityProfiles: [market_research_tools]",
-                "      capabilityId: 42",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__("capabilityId", 42)
             ),
             "spec.agents[0].capabilityId",
             "capabilityId is not allowed",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "      mcpServers: [research_context]",
-                "      mcpServerId: 42",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__("mcpServerId", 42)
             ),
             "spec.agents[0].mcpServerId",
             "mcpServerId is not allowed",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "modelConnection: tradingagents_primary_model",
-                "apiKey: sk-raw-manifest-secret",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__(
+                    "apiKey", "sk-raw-manifest-secret"
+                )
             ),
             "spec.agents[0].apiKey",
             "apiKey is not allowed",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "modelConnection: tradingagents_primary_model",
-                "secretPayload: {apiKey: sk-raw-manifest-secret}",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__(
+                    "secretPayload", {"apiKey": "sk-raw-manifest-secret"}
+                )
             ),
             "spec.agents[0].secretPayload",
             "secretPayload is not allowed",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "modelConnection: tradingagents_primary_model",
-                "password: raw-password",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__("password", "raw-password")
             ),
             "spec.agents[0].password",
             "password is not allowed",
@@ -848,24 +804,20 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      toolKeys:\n",
-                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n"
-                + "      secretRefs:\n        env: [RESEARCH_CONTEXT_TOKEN]\n"
-                + "      toolKeys:\n",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["mcpServers"][0].__setitem__(
+                    "secretRefs", {"env": ["RESEARCH_CONTEXT_TOKEN"]}
+                )
             ),
             "spec.mcpServers[0].secretRefs",
             "Extra inputs are not permitted",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n      toolKeys:\n",
-                "      env:\n        RESEARCH_CONTEXT_TOKEN: local-token\n"
-                + "      requiredBindings:\n        - env.RESEARCH_CONTEXT_TOKEN\n"
-                + "      toolKeys:\n",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["mcpServers"][0].__setitem__(
+                    "requiredBindings", ["env.RESEARCH_CONTEXT_TOKEN"]
+                )
             ),
             "spec.mcpServers[0].requiredBindings",
             "Extra inputs are not permitted",
@@ -900,28 +852,30 @@ def test_parse_package_workflow_graph_preserves_duplicate_diagnostics(
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "outputSchema: trading_decision",
-                "outputSchema: trading_decision@1",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["agents"][0].__setitem__(
+                    "outputSchema", "trading_decision@1"
+                )
             ),
             "spec.agents[0].outputSchema",
             "package-local key without @version",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "uses: market_analyst", "uses: market_analyst@1", 1
+            _updated_valid_manifest(
+                lambda data: data["spec"]["workflows"][0]["flow"].__setitem__(
+                    "uses", "market_analyst@1"
+                )
             ),
             "spec.workflows[0].flow.uses",
             "package-local key without @version",
             True,
         ),
         (
-            _valid_package_manifest_source().replace(
-                "          action:\n            type: string",
-                "          encrypted:\n            type: string",
-                1,
+            _updated_valid_manifest(
+                lambda data: data["spec"]["outputSchemas"][0]["jsonSchema"][
+                    "properties"
+                ].__setitem__("encrypted", {"type": "string"})
             ),
             "spec.outputSchemas[0].jsonSchema.properties.encrypted",
             "encrypted is not allowed",

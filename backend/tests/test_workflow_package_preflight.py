@@ -38,6 +38,7 @@ from app.services.workflow_package_schedule_service import (
     ScheduleFireMetadata,
     WorkflowPackageScheduleService,
 )
+from tests.fixtures.workflow_manifests import base_manifest
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 _FIXTURE = (
@@ -93,73 +94,59 @@ def _digital_oracle_researcher_demo_source() -> str:
     return _canonicalize_live_tool_keys(_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text())
 
 
+def _research_question_input_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "required": ["researchQuestion"],
+        "properties": {"researchQuestion": {"type": "string"}},
+    }
+
+
+def _digital_oracle_report_schema() -> dict[str, object]:
+    return {
+        "key": "digital_oracle_report",
+        "name": "Digital Oracle Report",
+        "jsonSchema": {
+            "type": "object",
+            "required": ["summary"],
+            "properties": {"summary": {"type": "string"}},
+        },
+    }
+
+
+def _digital_oracle_phase1_profile() -> dict[str, object]:
+    return {
+        "key": "digital_oracle_phase1_tools",
+        "name": "Digital Oracle Phase 1 Tools",
+        "description": "Grants Digital Oracle-owned phase-1 research tools.",
+        "toolKeys": list(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS),
+    }
+
+
 def _digital_oracle_phase1_package_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: digital_oracle_phase1_fixture
-  name: Digital Oracle Phase 1 Fixture
-  description: Deterministic package fixture for Digital Oracle phase-1 tools.
-spec:
-  inputs:
-    type: object
-    required: [researchQuestion]
-    properties:
-      researchQuestion:
-        type: string
-  capabilityProfiles:
-    - key: digital_oracle_phase1_tools
-      name: Digital Oracle Phase 1 Tools
-      description: Grants Digital Oracle-owned phase-1 research tools.
-      toolKeys:
-        - signaldeck.digital_oracle.cftc_positioning.lookup
-        - signaldeck.digital_oracle.crypto_derivatives.lookup
-        - signaldeck.digital_oracle.macro_rates.lookup
-        - signaldeck.digital_oracle.market_sentiment.lookup
-        - signaldeck.digital_oracle.options.lookup
-        - signaldeck.digital_oracle.prediction_markets.lookup
-        - signaldeck.digital_oracle.sec_filings.lookup
-  outputSchemas:
-    - key: digital_oracle_report
-      name: Digital Oracle Report
-      jsonSchema:
-        type: object
-        required: [summary]
-        properties:
-          summary:
-            type: string
-  agents:
-    - key: digital_oracle_researcher
-      name: Digital Oracle Researcher
-      modelConnection: tradingagents_primary_model
-      systemPrompt: Use the granted Digital Oracle tools and return JSON.
-      inputSchema:
-        type: object
-        required: [researchQuestion]
-        properties:
-          researchQuestion:
-            type: string
-      outputSchema: digital_oracle_report
-      capabilityProfiles: [digital_oracle_phase1_tools]
-  workflows:
-    - key: research
-      name: Research
-      inputSchema:
-        type: object
-        required: [researchQuestion]
-        properties:
-          researchQuestion:
-            type: string
-      flow:
-        kind: step
-        id: research_step
-        slot: report
-        uses: digital_oracle_researcher
-        with:
-          researchQuestion: ${{ inputs.researchQuestion }}
-      output:
-        from: ${{ nodes.research_step.outputs.report }}
-"""
+    return base_manifest(
+        package_key="digital_oracle_phase1_fixture",
+        package_name="Digital Oracle Phase 1 Fixture",
+        package_description="Deterministic package fixture for Digital Oracle phase-1 tools.",
+        input_schema=_research_question_input_schema(),
+        capability_profiles=[_digital_oracle_phase1_profile()],
+        output_schema_key="digital_oracle_report",
+        output_schemas=[_digital_oracle_report_schema()],
+        agent_key="digital_oracle_researcher",
+        agent_name="Digital Oracle Researcher",
+        model_connection="tradingagents_primary_model",
+        system_prompt="Use the granted Digital Oracle tools and return JSON.",
+        workflow_key="research",
+        workflow_name="Research",
+        flow={
+            "kind": "step",
+            "id": "research_step",
+            "slot": "report",
+            "uses": "digital_oracle_researcher",
+            "with": {"researchQuestion": "${{ inputs.researchQuestion }}"},
+        },
+        workflow_output={"from": "${{ nodes.research_step.outputs.report }}"},
+    )
 
 
 def _digital_oracle_phase1_parameters() -> dict[str, object]:
@@ -178,78 +165,43 @@ def _tool_required_parameters() -> dict[str, object]:
 
 
 def _mixed_extension_research_package_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: mixed_extension_research_fixture
-  name: Mixed Extension Research Fixture
-  description: Package-level composition of Finance market context and Digital Oracle tools.
-spec:
-  inputs:
-    type: object
-    required: [researchQuestion]
-    properties:
-      researchQuestion:
-        type: string
-  capabilityProfiles:
-    - key: finance_market_context_tools
-      name: Finance Market Context Tools
-      description: Grants Finance-owned market-context tools for package-level research.
-      toolKeys:
-        - signaldeck.finance.market_data.history_lookup
-        - signaldeck.finance.market_data.ohlcv_lookup
-    - key: digital_oracle_phase1_tools
-      name: Digital Oracle Phase 1 Tools
-      description: Grants Digital Oracle-owned phase-1 research tools.
-      toolKeys:
-        - signaldeck.digital_oracle.cftc_positioning.lookup
-        - signaldeck.digital_oracle.crypto_derivatives.lookup
-        - signaldeck.digital_oracle.macro_rates.lookup
-        - signaldeck.digital_oracle.market_sentiment.lookup
-        - signaldeck.digital_oracle.options.lookup
-        - signaldeck.digital_oracle.prediction_markets.lookup
-        - signaldeck.digital_oracle.sec_filings.lookup
-  outputSchemas:
-    - key: digital_oracle_report
-      name: Digital Oracle Report
-      jsonSchema:
-        type: object
-        required: [summary]
-        properties:
-          summary:
-            type: string
-  agents:
-    - key: mixed_extension_researcher
-      name: Mixed Extension Researcher
-      modelConnection: mixed_extension_primary_model
-      systemPrompt: Use package-level Finance market context and Digital Oracle tools; return JSON.
-      inputSchema:
-        type: object
-        required: [researchQuestion]
-        properties:
-          researchQuestion:
-            type: string
-      outputSchema: digital_oracle_report
-      capabilityProfiles: [finance_market_context_tools, digital_oracle_phase1_tools]
-  workflows:
-    - key: research
-      name: Research
-      inputSchema:
-        type: object
-        required: [researchQuestion]
-        properties:
-          researchQuestion:
-            type: string
-      flow:
-        kind: step
-        id: research_step
-        slot: report
-        uses: mixed_extension_researcher
-        with:
-          researchQuestion: ${{ inputs.researchQuestion }}
-      output:
-        from: ${{ nodes.research_step.outputs.report }}
-"""
+    return base_manifest(
+        package_key="mixed_extension_research_fixture",
+        package_name="Mixed Extension Research Fixture",
+        package_description=(
+            "Package-level composition of Finance market context and Digital Oracle tools."
+        ),
+        input_schema=_research_question_input_schema(),
+        capability_profiles=[
+            {
+                "key": "finance_market_context_tools",
+                "name": "Finance Market Context Tools",
+                "description": (
+                    "Grants Finance-owned market-context tools for package-level research."
+                ),
+                "toolKeys": list(_FINANCE_MARKET_CONTEXT_TOOL_KEYS),
+            },
+            _digital_oracle_phase1_profile(),
+        ],
+        output_schema_key="digital_oracle_report",
+        output_schemas=[_digital_oracle_report_schema()],
+        agent_key="mixed_extension_researcher",
+        agent_name="Mixed Extension Researcher",
+        model_connection="mixed_extension_primary_model",
+        system_prompt=(
+            "Use package-level Finance market context and Digital Oracle tools; return JSON."
+        ),
+        workflow_key="research",
+        workflow_name="Research",
+        flow={
+            "kind": "step",
+            "id": "research_step",
+            "slot": "report",
+            "uses": "mixed_extension_researcher",
+            "with": {"researchQuestion": "${{ inputs.researchQuestion }}"},
+        },
+        workflow_output={"from": "${{ nodes.research_step.outputs.report }}"},
+    )
 
 
 def _project_blocking_diagnostics(
@@ -264,132 +216,129 @@ def _project_blocking_diagnostics(
 
 
 def _mixed_capability_package_source() -> str:
-    return """apiVersion: signaldeck.workflowPackage/v1
-kind: WorkflowPackage
-metadata:
-  key: mixed_capability_fixture
-  name: Mixed Capability Fixture
-  description: Multi-agent fixture for scoped capability requirements.
-spec:
-  inputs:
-    type: object
-    required: [topic]
-    properties:
-      topic:
-        type: string
-  capabilityProfiles:
-    - key: tool_required
-      name: Tool Required
-      toolKeys:
-        - signaldeck.finance.market_data.quote_lookup
-  outputSchemas:
-    - key: report
-      name: Report
-      jsonSchema:
-        type: object
-        required: [summary]
-        properties:
-          summary:
-            type: string
-  mcpServers: []
-  agents:
-    - key: tool_analyst
-      name: Tool Analyst
-      modelConnection: tool_capable_model
-      systemPrompt: Use tools and return JSON.
-      inputSchema:
-        type: object
-        required: [topic]
-        properties:
-          topic:
-            type: string
-      outputSchema: report
-      capabilityProfiles: [tool_required]
-      mcpServers: []
-    - key: summary_writer
-      name: Summary Writer
-      modelConnection: no_tool_model
-      systemPrompt: Return JSON without tools.
-      inputSchema:
-        type: object
-        required: [topic]
-        properties:
-          topic:
-            type: string
-      outputSchema: report
-      capabilityProfiles: []
-      mcpServers: []
-    - key: unused_critic
-      name: Unused Critic
-      modelConnection: unused_bad_model
-      systemPrompt: This agent is not in the selected workflow.
-      inputSchema:
-        type: object
-        required: [topic]
-        properties:
-          topic:
-            type: string
-      outputSchema: report
-      capabilityProfiles: []
-      mcpServers: []
-  workflows:
-    - key: main
-      name: Main
-      inputSchema:
-        type: object
-        required: [topic]
-        properties:
-          topic:
-            type: string
-      flow:
-        kind: sequence
-        id: main_sequence
-        nodes:
-          - kind: step
-            id: analyze
-            slot: analysis
-            uses: tool_analyst
-            with:
-              topic: ${{ inputs.topic }}
-          - kind: step
-            id: summarize
-            slot: summary
-            uses: summary_writer
-            with:
-              topic: ${{ inputs.topic }}
-      output:
-        from: ${{ nodes.summarize.outputs.summary }}
-    - key: fanout
-      name: Fanout
-      inputSchema:
-        type: object
-        required: [topic]
-        properties:
-          topic:
-            type: string
-      flow:
-        kind: fanout
-        id: fanout_tools
-        branches:
-          - id: tool
-            node:
-              kind: step
-              id: tool_branch
-              slot: tool_report
-              uses: tool_analyst
-              with:
-                topic: ${{ inputs.topic }}
-          - id: plain
-            node:
-              kind: step
-              id: plain_branch
-              slot: plain_report
-              uses: summary_writer
-              with:
-                topic: ${{ inputs.topic }}
-      output:
-        from: ${{ nodes.fanout_tools.outputs.tool_report }}
-"""
+    input_schema = {
+        "type": "object",
+        "required": ["topic"],
+        "properties": {"topic": {"type": "string"}},
+    }
+    report_schema = {
+        "key": "report",
+        "name": "Report",
+        "jsonSchema": {
+            "type": "object",
+            "required": ["summary"],
+            "properties": {"summary": {"type": "string"}},
+        },
+    }
+    agents = [
+        {
+            "key": "tool_analyst",
+            "name": "Tool Analyst",
+            "modelConnection": "tool_capable_model",
+            "systemPrompt": "Use tools and return JSON.",
+            "inputSchema": input_schema,
+            "outputSchema": "report",
+            "capabilityProfiles": ["tool_required"],
+            "mcpServers": [],
+        },
+        {
+            "key": "summary_writer",
+            "name": "Summary Writer",
+            "modelConnection": "no_tool_model",
+            "systemPrompt": "Return JSON without tools.",
+            "inputSchema": input_schema,
+            "outputSchema": "report",
+            "capabilityProfiles": [],
+            "mcpServers": [],
+        },
+        {
+            "key": "unused_critic",
+            "name": "Unused Critic",
+            "modelConnection": "unused_bad_model",
+            "systemPrompt": "This agent is not in the selected workflow.",
+            "inputSchema": input_schema,
+            "outputSchema": "report",
+            "capabilityProfiles": [],
+            "mcpServers": [],
+        },
+    ]
+    return base_manifest(
+        package_key="mixed_capability_fixture",
+        package_name="Mixed Capability Fixture",
+        package_description="Multi-agent fixture for scoped capability requirements.",
+        input_schema=input_schema,
+        capability_profiles=[
+            {
+                "key": "tool_required",
+                "name": "Tool Required",
+                "toolKeys": ["signaldeck.finance.market_data.quote_lookup"],
+            }
+        ],
+        output_schema_key="report",
+        output_schemas=[report_schema],
+        mcp_servers=[],
+        agents=agents,
+        workflows=[
+            {
+                "key": "main",
+                "name": "Main",
+                "inputSchema": input_schema,
+                "flow": {
+                    "kind": "sequence",
+                    "id": "main_sequence",
+                    "nodes": [
+                        {
+                            "kind": "step",
+                            "id": "analyze",
+                            "slot": "analysis",
+                            "uses": "tool_analyst",
+                            "with": {"topic": "${{ inputs.topic }}"},
+                        },
+                        {
+                            "kind": "step",
+                            "id": "summarize",
+                            "slot": "summary",
+                            "uses": "summary_writer",
+                            "with": {"topic": "${{ inputs.topic }}"},
+                        },
+                    ],
+                },
+                "output": {"from": "${{ nodes.summarize.outputs.summary }}"},
+            },
+            {
+                "key": "fanout",
+                "name": "Fanout",
+                "inputSchema": input_schema,
+                "flow": {
+                    "kind": "fanout",
+                    "id": "fanout_tools",
+                    "branches": [
+                        {
+                            "id": "tool",
+                            "node": {
+                                "kind": "step",
+                                "id": "tool_branch",
+                                "slot": "tool_report",
+                                "uses": "tool_analyst",
+                                "with": {"topic": "${{ inputs.topic }}"},
+                            },
+                        },
+                        {
+                            "id": "plain",
+                            "node": {
+                                "kind": "step",
+                                "id": "plain_branch",
+                                "slot": "plain_report",
+                                "uses": "summary_writer",
+                                "with": {"topic": "${{ inputs.topic }}"},
+                            },
+                        },
+                    ],
+                },
+                "output": {"from": "${{ nodes.fanout_tools.outputs.tool_report }}"},
+            },
+        ],
+    )
 
 
 def _delete_existing_package(client: TestClient, key: str) -> None:
@@ -1686,7 +1635,7 @@ def _schedule_render_validation_package(session: Session) -> WorkflowPackage:
         key="schedule_render_validation_package",
         name="Schedule Render Validation Package",
         description="Package used for scheduled input render validation.",
-        manifest_source="apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n",
+        manifest_source=base_manifest(package_key="schedule_render_validation_package"),
         manifest_hash="c" * 64,
         package_definition={
             "metadata": {
