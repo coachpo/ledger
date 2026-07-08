@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
 from sqlalchemy import inspect, text
 
+import app.db.session as db_session
 from app.db.session import get_engine, init_db
 from app.db.startup_recovery import fail_inflight_runs
 
@@ -286,3 +290,127 @@ def test_startup_recovery_fails_running_run_without_lease_expiration(
         ).one()
 
     assert run == ("failed", True, True)
+
+
+def test_init_db_serializes_bootstrap_with_advisory_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class FakeConnection:
+        def __enter__(self) -> FakeConnection:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def execute(self, statement: object, params: dict[str, int] | None = None) -> None:
+            assert params == {"lock_key": db_session._INIT_DB_ADVISORY_LOCK_KEY}
+            sql = str(statement)
+            if "pg_advisory_lock" in sql:
+                calls.append("lock")
+                return
+            if "pg_advisory_unlock" in sql:
+                calls.append("unlock")
+                return
+            raise AssertionError(sql)
+
+    class FakeEngine:
+        dialect = SimpleNamespace(name="postgresql")
+
+        def connect(self) -> FakeConnection:
+            return FakeConnection()
+
+    engine = FakeEngine()
+
+    monkeypatch.setattr(db_session, "get_engine", lambda database_url=None: engine)
+    monkeypatch.setattr(
+        db_session,
+        "validate_supported_database_engine",
+        lambda candidate: calls.append(f"validate:{candidate is engine}"),
+    )
+    monkeypatch.setattr(
+        db_session.Base.metadata,
+        "create_all",
+        lambda *, bind: calls.append(f"create_all:{bind is engine}"),
+    )
+    monkeypatch.setattr(
+        db_session,
+        "seed_preset_packages",
+        lambda candidate: calls.append(f"seed:{candidate is engine}"),
+    )
+    monkeypatch.setattr(
+        db_session,
+        "fail_inflight_runs",
+        lambda candidate: calls.append(f"recover:{candidate is engine}"),
+    )
+
+    init_db("postgresql+psycopg://example")
+
+    assert calls == [
+        "validate:True",
+        "lock",
+        "create_all:True",
+        "seed:True",
+        "recover:True",
+        "unlock",
+    ]
+
+
+def test_init_db_releases_advisory_lock_on_bootstrap_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class FakeConnection:
+        def __enter__(self) -> FakeConnection:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def execute(self, statement: object, params: dict[str, int] | None = None) -> None:
+            assert params == {"lock_key": db_session._INIT_DB_ADVISORY_LOCK_KEY}
+            sql = str(statement)
+            if "pg_advisory_lock" in sql:
+                calls.append("lock")
+                return
+            if "pg_advisory_unlock" in sql:
+                calls.append("unlock")
+                return
+            raise AssertionError(sql)
+
+    class FakeEngine:
+        dialect = SimpleNamespace(name="postgresql")
+
+        def connect(self) -> FakeConnection:
+            return FakeConnection()
+
+    engine = FakeEngine()
+
+    monkeypatch.setattr(db_session, "get_engine", lambda database_url=None: engine)
+    monkeypatch.setattr(db_session, "validate_supported_database_engine", lambda _: None)
+    monkeypatch.setattr(
+        db_session.Base.metadata,
+        "create_all",
+        lambda *, bind: calls.append(f"create_all:{bind is engine}"),
+    )
+    monkeypatch.setattr(
+        db_session,
+        "seed_preset_packages",
+        lambda candidate: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    monkeypatch.setattr(
+        db_session,
+        "fail_inflight_runs",
+        lambda candidate: calls.append(f"recover:{candidate is engine}"),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        init_db("postgresql+psycopg://example")
+
+    assert calls == [
+        "lock",
+        "create_all:True",
+        "unlock",
+    ]
