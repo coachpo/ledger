@@ -19,3 +19,4 @@
 | 6.5.3 | done | Commit `9c448143`; backend full validation passed (748 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 7.1 | done | Commit `7adddd1e`; backend full validation passed (751 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 7.2 | done | Commit `14b34cad`; backend full validation passed (757 tests); frontend lint/typecheck/test:run/build passed (383 tests); e2e with ambient `SIGNALDECK_API_TOKEN` passed (24 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
+| 7.3 | done | Commit `e50f685c`; backend full validation passed (761 tests); frontend lint/typecheck/test:run/build passed (389 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
