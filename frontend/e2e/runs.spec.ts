@@ -220,7 +220,6 @@ test.describe("Runs inventory monitor", () => {
       ["input", "Input"],
       ["runtime", "Runtime"],
       ["usage", "Usage"],
-      ["lineage", "Lineage"],
     ] as const;
     const tabList = tabs.getByRole("tablist", { name: /run detail sections/i });
     const triggers = expectedTabs.map(([key]) =>
@@ -248,7 +247,6 @@ test.describe("Runs inventory monitor", () => {
     await expect(page.getByRole("heading", { name: "Input provenance" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Runtime profile" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Token accounting" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Lineage" })).toHaveCount(0);
     await expect(page.getByTestId("runs-detail-section-metadata")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /^Metadata$/ })).toHaveCount(0);
 
@@ -272,15 +270,6 @@ test.describe("Runs inventory monitor", () => {
     await expect(page.getByRole("heading", { name: "Selected strategies" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Capability matrix" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Run input" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);
-
-    await page.getByTestId("runs-detail-tab-trigger-lineage").click();
-    await expect(page.getByTestId("runs-detail-tab-panel-lineage")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Lineage", exact: true }),
-    ).toBeVisible();
-    await expect(page.getByTestId("runs-lineage-workspace")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Runtime profile" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Final output" })).toHaveCount(0);
 
     await page.getByTestId("runs-detail-rerun").click();

@@ -240,7 +240,6 @@ def _run_read_payload(*, target_kind: str) -> dict[str, object]:
         "targetId": target_id,
         "targetKey": target_key,
         "input": {"ticker": "AAPL"},
-        "resumeStepIndex": 1,
         "finalOutput": None,
         "status": "queued",
         "progress": {

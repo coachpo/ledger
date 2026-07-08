@@ -18,7 +18,6 @@ describe("run detail tab contract", () => {
       "input",
       "runtime",
       "usage",
-      "lineage",
     ]);
   });
 
@@ -30,7 +29,6 @@ describe("run detail tab contract", () => {
       input: "Input",
       runtime: "Runtime",
       usage: "Usage",
-      lineage: "Lineage",
     });
   });
 
@@ -41,7 +39,7 @@ describe("run detail tab contract", () => {
     expect(parseRunDetailTab("input")).toBe("input");
     expect(parseRunDetailTab("runtime")).toBe("runtime");
     expect(parseRunDetailTab("usage")).toBe("usage");
-    expect(parseRunDetailTab("lineage")).toBe("lineage");
+    expect(parseRunDetailTab("audit")).toBeNull();
     expect(parseRunDetailTab("summary")).toBeNull();
     expect(parseRunDetailTab("audit")).toBeNull();
     expect(parseRunDetailTab("diagnostics")).toBeNull();
@@ -54,13 +52,13 @@ describe("run detail tab contract", () => {
   it("prefers a valid raw tab over all other hints", () => {
     expect(
       resolveRunDetailTab({
-        rawTab: "lineage",
+        rawTab: "runtime",
         rawMode: "summary",
         rawPane: "error",
         rawInspect: "step:1",
         rawHash: "#invocation-9",
       }),
-    ).toBe("lineage");
+    ).toBe("runtime");
   });
 
   it("falls back from an invalid raw tab to hint inference", () => {
@@ -193,9 +191,9 @@ describe("run detail tab contract", () => {
 
   it("preserves unrelated query params when switching tabs", () => {
     const current = new URLSearchParams("foo=bar&tab=overview&pane=error&mode=summary");
-    const next = withRunDetailTab(current, "lineage");
+    const next = withRunDetailTab(current, "runtime");
 
-    expect(next.toString()).toBe("foo=bar&tab=lineage&pane=error&mode=summary");
+    expect(next.toString()).toBe("foo=bar&tab=runtime&pane=error&mode=summary");
     expect(current.toString()).toBe("foo=bar&tab=overview&pane=error&mode=summary");
   });
 });

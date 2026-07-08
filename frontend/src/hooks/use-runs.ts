@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
-  createRunFork,
   createRunRerun,
   getRun,
-  getRunForkDraft,
   getRunRerunDraft,
   listRuns,
 } from "@/lib/api/runs";
@@ -11,8 +9,6 @@ import type { IdParam } from "@/lib/api-client";
 import { queryKeys } from "@/lib/query-keys";
 import type {
   RunCreatedRead,
-  RunForkCreateRequest,
-  RunForkDraftRead,
   RunListParams,
   RunListRead,
   RunRead,
@@ -50,11 +46,6 @@ function hasActiveDetailRun(data: RunRead | undefined): boolean {
 export type CreateRunRerunVariables = {
   runId: IdParam;
   payload: RunRerunCreateRequest;
-};
-
-export type CreateRunForkVariables = {
-  runId: IdParam;
-  payload: RunForkCreateRequest;
 };
 
 export function useRuns(
@@ -116,38 +107,3 @@ export function useCreateRunRerun() {
     },
   });
 }
-
-export function useRunForkDraft(
-  runId: IdParam | undefined,
-  sourceInvocationId: number | undefined,
-  options: DraftQueryOptions = {},
-): UseQueryResult<RunForkDraftRead, Error> {
-  const resolvedRunId = runId ?? "";
-  const resolvedSourceInvocationId = sourceInvocationId ?? 0;
-
-  return useQuery({
-    queryKey: queryKeys.platform.runs.forkDraft(resolvedRunId, resolvedSourceInvocationId),
-    queryFn: ({ signal }) => getRunForkDraft(resolvedRunId, resolvedSourceInvocationId, signal),
-    enabled: Boolean(runId) && sourceInvocationId !== undefined && (options.enabled ?? true),
-    refetchInterval: options.refetchInterval,
-  });
-}
-
-export function useCreateRunFork() {
-  const queryClient = useQueryClient();
-
-  return useMutation<RunCreatedRead, Error, CreateRunForkVariables>({
-    mutationFn: ({ runId, payload }) => createRunFork(runId, payload),
-    onSuccess: async (createdRun, variables) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(variables.runId) }),
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.platform.runs.forkDraft(variables.runId, variables.payload.sourceInvocationId),
-        }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(createdRun.id) }),
-      ]);
-    },
-  });
-}
-

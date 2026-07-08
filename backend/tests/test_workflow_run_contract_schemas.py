@@ -3,10 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import run as run_schemas
 from app.schemas.run import (
-    RunForkCreateRequest,
-    RunForkDraftRead,
     RunRead,
     RunRerunCreateRequest,
     RunRerunDraftRead,
@@ -49,69 +46,16 @@ def test_rerun_contracts_use_parameters_object_and_reject_extra_fields() -> None
         _ = RunRerunCreateRequest.model_validate({"parameters": "MSFT"})
 
 
-def test_fork_contracts_use_source_invocation_input_and_reject_extra_fields() -> None:
-    expected_contract_names = {"RunForkDraftRead", "RunForkCreateRequest"}
-    exported_contract_names = set(getattr(run_schemas, "__all__", ()))
-    assert expected_contract_names <= exported_contract_names
-
-    draft_payload = {
-        "sourceRunId": 11,
-        "sourceInvocationId": 77,
-        "targetKind": RunTargetKind.WORKFLOW_PACKAGE.value,
-        "targetId": 42,
-        "targetKey": "portfolio_review",
-        "invocationInput": {"ticker": "MSFT", "notes": "adjust thesis"},
-        "ready": True,
-        "blockingErrors": [],
-        "warnings": [],
-        "packageProvenance": None,
-    }
-
-    draft = RunForkDraftRead.model_validate(draft_payload)
-    create = RunForkCreateRequest.model_validate(
-        {"sourceInvocationId": 77, "invocationInput": {"ticker": "MSFT"}}
-    )
-
-    assert draft.model_dump(by_alias=True, mode="json") == draft_payload
-    assert create.model_dump(by_alias=True, mode="json") == {
-        "sourceInvocationId": 77,
-        "invocationInput": {"ticker": "MSFT"},
-    }
-    with pytest.raises(ValidationError):
-        _ = RunForkCreateRequest.model_validate(
-            {
-                "sourceInvocationId": 77,
-                "invocationInput": {"ticker": "MSFT"},
-                "unexpected": True,
-            }
-        )
-    with pytest.raises(ValidationError):
-        _ = RunForkCreateRequest.model_validate(
-            {"sourceInvocationId": 77, "invocationInput": "MSFT"}
-        )
-    with pytest.raises(ValidationError):
-        _ = RunForkCreateRequest.model_validate(
-            {"sourceInvocationId": 77, "parameters": {"ticker": "MSFT"}}
-        )
-    with pytest.raises(ValidationError):
-        _ = RunForkCreateRequest.model_validate(
-            {"replayStepIndex": 2, "invocationInput": {"ticker": "MSFT"}}
-        )
-
-
 def test_run_read_rejects_non_package_target_kinds() -> None:
     timestamp = "2026-05-03T12:00:00Z"
-    historical_lineage_payload: dict[str, object] = {
+    run_payload: dict[str, object] = {
         "id": 99,
         "targetKind": "workflow",
         "targetId": 42,
         "targetKey": "portfolio_review",
         "input": {"ticker": "TSLA"},
         "sourceRunId": 11,
-        "lineageRootRunId": 11,
-        "replayStepIndex": 2,
-        "resumeStepIndex": 2,
-        "finalOutput": {"summary": "historical lineage output"},
+        "finalOutput": {"summary": "run output"},
         "status": RunStatus.SUCCEEDED.value,
         "progress": {
             "unit": "invocation",
@@ -122,7 +66,7 @@ def test_run_read_rejects_non_package_target_kinds() -> None:
         "totalTokens": 12,
         "inheritedTokens": 5,
         "executedTokens": 7,
-        "traceId": "trace-historical-lineage",
+        "traceId": "trace-run",
         "error": None,
         "queuedAt": timestamp,
         "startedAt": timestamp,
@@ -135,10 +79,7 @@ def test_run_read_rejects_non_package_target_kinds() -> None:
                 "runId": 99,
                 "index": 1,
                 "status": "succeeded",
-                "origin": "copied",
-                "sourceRunStepId": 101,
-                "sourceRunId": 11,
-                "sourceStepIndex": 1,
+                "origin": "planned",
                 "graphMetadata": None,
                 "error": None,
                 "startedAt": timestamp,
@@ -175,16 +116,15 @@ def test_run_read_rejects_non_package_target_kinds() -> None:
                         "optional": False,
                         "status": "succeeded",
                         "resolvedInput": {"ticker": "MSFT"},
-                        "resolvedInputOrigin": "copied",
-                        "output": {"summary": "copied source output"},
-                        "outputOrigin": "copied",
+                        "resolvedInputOrigin": "derived",
+                        "output": {"summary": "source output"},
+                        "outputOrigin": "executed",
                         "errorCode": None,
                         "errorMessage": None,
                         "errorDetails": [],
                         "tokens": 5,
                         "durationMs": 17,
-                        "traceSpanId": "span-historical-lineage",
-                        "sourceInvocationId": 77,
+                        "traceSpanId": "span-run",
                         "startedAt": timestamp,
                         "finishedAt": timestamp,
                         "persistedAt": timestamp,
@@ -200,4 +140,4 @@ def test_run_read_rejects_non_package_target_kinds() -> None:
     }
 
     with pytest.raises(ValidationError):
-        _ = RunRead.model_validate(historical_lineage_payload)
+        _ = RunRead.model_validate(run_payload)

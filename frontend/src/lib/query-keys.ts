@@ -317,15 +317,6 @@ const platformQueryKeys = {
     rerunDraft: (runId: IdParam) =>
       [...platformApiRoot, "runs", "rerunDraft", normalizeId(runId)] as const,
     rerunDrafts: () => [...platformApiRoot, "runs", "rerunDraft"] as const,
-    forkDraft: (runId: IdParam, sourceInvocationId: number) =>
-      [
-        ...platformApiRoot,
-        "runs",
-        "forkDraft",
-        normalizeId(runId),
-        { sourceInvocationId },
-      ] as const,
-    forkDrafts: () => [...platformApiRoot, "runs", "forkDraft"] as const,
     list: (params: RunListParams = {}) =>
       [
         ...platformApiRoot,

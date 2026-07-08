@@ -37,7 +37,6 @@ class RunStepStatus(str, Enum):  # noqa: UP042
 
 class RunStepOrigin(str, Enum):  # noqa: UP042
     PLANNED = "planned"
-    COPIED = "copied"
 
 
 class RunInvocationInputMode(str, Enum):  # noqa: UP042
@@ -47,15 +46,11 @@ class RunInvocationInputMode(str, Enum):  # noqa: UP042
 
 class RunInvocationResolvedInputOrigin(str, Enum):  # noqa: UP042
     DERIVED = "derived"
-    EDITED = "edited"
-    COPIED = "copied"
     PASSTHROUGH = "passthrough"
 
 
 class RunInvocationOutputOrigin(str, Enum):  # noqa: UP042
     EXECUTED = "executed"
-    EDITED = "edited"
-    COPIED = "copied"
 
 
 class RunInvocationResourceScope(str, Enum):  # noqa: UP042
@@ -194,7 +189,6 @@ class RunAgentInvocationRead(CamelModel):
     tokens: int = Field(ge=0)
     duration_ms: int | None = Field(default=None, ge=0)
     trace_span_id: str | None = None
-    source_invocation_id: int | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     persisted_at: datetime | None = None
@@ -285,10 +279,6 @@ class RunOperationInvocationRead(CamelModel):
     error_details: list[dict[str, Any]] = Field(default_factory=list)
     duration_ms: int | None = Field(default=None, ge=0)
     trace_span_id: str | None = None
-    source_operation_invocation_id: int | None = None
-    source_run_id: int | None = None
-    source_run_step_id: int | None = None
-    source_step_index: int | None = Field(default=None, ge=1)
     started_at: datetime | None = None
     finished_at: datetime | None = None
     persisted_at: datetime | None = None
@@ -344,9 +334,6 @@ class RunStepRead(CamelModel):
     index: int = Field(ge=1)
     status: RunStepStatus
     origin: RunStepOrigin
-    source_run_step_id: int | None = None
-    source_run_id: int | None = None
-    source_step_index: int | None = Field(default=None, ge=1)
     graph_metadata: dict[str, Any] | None = None
     error: str | None = None
     started_at: datetime | None = None
@@ -527,9 +514,6 @@ class RunRead(CamelModel):
     target_key: str
     input: dict[str, Any]
     source_run_id: int | None = None
-    lineage_root_run_id: int | None = None
-    replay_step_index: int | None = Field(default=None, ge=1)
-    resume_step_index: int = Field(ge=1)
     final_output: Any | None = None
     status: RunStatus
     progress: RunProgressRead
@@ -592,24 +576,6 @@ class RunRerunCreateRequest(CamelModel):
     parameters: dict[str, object]
 
 
-class RunForkDraftRead(CamelModel):
-    source_run_id: int
-    source_invocation_id: int = Field(ge=1)
-    target_kind: RunTargetKind
-    target_id: int
-    target_key: str
-    invocation_input: dict[str, object]
-    ready: bool
-    blocking_errors: list[dict[str, Any]] = Field(default_factory=list)
-    warnings: list[dict[str, Any]] = Field(default_factory=list)
-    package_provenance: RunPackageProvenanceRead | None = None
-
-
-class RunForkCreateRequest(CamelModel):
-    source_invocation_id: int = Field(ge=1)
-    invocation_input: dict[str, object]
-
-
 __all__ = [
     "RunAgentErrorRead",
     "RunAgentInvocationRead",
@@ -637,8 +603,6 @@ __all__ = [
     "RunScheduleProvenanceRead",
     "RunRerunCreateRequest",
     "RunRerunDraftRead",
-    "RunForkCreateRequest",
-    "RunForkDraftRead",
     "RunStatus",
     "RunStepOrigin",
     "RunStepRead",

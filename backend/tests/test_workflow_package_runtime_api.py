@@ -23,7 +23,6 @@ from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENS
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
-from app.models.run_fork import RunFork
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
@@ -4695,7 +4694,6 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
     source_detail = _wait_for_run(client, source_run_id)
     assert source_detail["status"] == "succeeded"
     source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
-    source_invocation_id = int(source_invocation["id"])
     assert source_invocation["resolvedInput"] == {"ticker": "MSFT"}
 
     rerun = client.post(
@@ -4705,62 +4703,7 @@ def test_runtime_input_history_on_launch_persists_validated_payload_source_run_a
     assert rerun.status_code == 201, rerun.json()
     assert len(_runtime_input_history_entries(client, package_id)) == 1
     _drain_run_queue(session_factory)
-
-    fork_draft = client.get(
-        f"/api/runs/{source_run_id}/fork-draft",
-        params={"sourceInvocationId": source_invocation_id},
-    )
-    fork = client.post(
-        f"/api/runs/{source_run_id}/forks",
-        json={
-            "sourceInvocationId": source_invocation_id,
-            "invocationInput": {"ticker": "TSLA"},
-        },
-    )
-    assert fork_draft.status_code == 200, fork_draft.json()
-    fork_draft_body = cast(dict[str, Any], fork_draft.json())
-    assert fork_draft_body["sourceRunId"] == source_run_id
-    assert fork_draft_body["sourceInvocationId"] == source_invocation_id
-    assert fork_draft_body["invocationInput"] == {"ticker": "MSFT"}
-    assert fork.status_code == 201, fork.json()
-    fork_id = int(fork.json()["id"])
     assert len(_runtime_input_history_entries(client, package_id)) == 1
-
-    with session_factory() as session:
-        source_run = session.get(Run, source_run_id)
-        fork_run = session.get(Run, fork_id)
-        source_snapshot = session.get(RunWorkflowPackageSnapshot, source_run_id)
-        fork_snapshot = session.get(RunWorkflowPackageSnapshot, fork_id)
-        fork_artifact = session.get(RunFork, fork_id)
-        target_invocation = (
-            session.query(RunAgentInvocation)
-            .filter_by(run_id=fork_id, step_index=1, slot="analysis")
-            .one()
-        )
-        assert source_run is not None
-        assert fork_run is not None
-        assert source_snapshot is not None
-        assert fork_snapshot is not None
-        assert fork_artifact is not None
-        assert fork_run.input == source_run.input == expected_validated_payload
-        assert fork_snapshot.launch_parameters == source_snapshot.launch_parameters
-        assert fork_artifact.source_run_id == source_run_id
-        assert fork_artifact.lineage_root_run_id == source_run_id
-        assert fork_artifact.source_invocation_id == source_invocation_id
-        assert fork_artifact.source_step_index == 1
-        assert fork_artifact.resume_step_index == 1
-        assert fork_artifact.invocation_input == {"ticker": "TSLA"}
-        assert target_invocation.source_invocation_id == source_invocation_id
-        assert target_invocation.resolved_input == {"ticker": "TSLA"}
-        assert target_invocation.resolved_input_origin == "edited"
-
-    with session_factory() as session:
-        RunService(session, session_factory).execute_run(fork_id)
-    fork_detail = _wait_for_run(client, fork_id)
-    fork_invocation = cast(dict[str, Any], fork_detail["steps"][0]["invocations"][0])
-    assert fork_detail["input"] == expected_validated_payload
-    assert fork_invocation["resolvedInput"] == {"ticker": "TSLA"}
-    assert fork_invocation["resolvedInputOrigin"] == "edited"
 
     for index in range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT):
         next_launch = client.post(
@@ -5234,7 +5177,7 @@ def test_tradingagents_materializer_queues_canonical_schedules_without_provider_
     assert _RuntimeRecordingOpenAIClient.create_calls == []
 
 
-def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_descendants(
+def test_schedule_api_run_now_persists_schedule_provenance_and_rerun_descendants(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -5331,8 +5274,6 @@ def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_desc
     _drain_run_queue(session_factory)
     source_detail = _wait_for_run(client, int(run_body["id"]))
     assert source_detail["status"] == "succeeded"
-    source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
-    source_invocation_id = int(source_invocation["id"])
 
     repeated = client.post(
         f"/api/schedules/{schedule_id}/run-now",
@@ -5353,17 +5294,8 @@ def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_desc
         f"/api/runs/{run_body['id']}/reruns",
         json={"parameters": {"ticker": "AAPL"}},
     )
-    fork = client.post(
-        f"/api/runs/{run_body['id']}/forks",
-        json={
-            "sourceInvocationId": source_invocation_id,
-            "invocationInput": {"ticker": "TSLA"},
-        },
-    )
     assert rerun.status_code == 201, rerun.json()
-    assert fork.status_code == 201, fork.json()
     rerun_id = int(rerun.json()["id"])
-    fork_id = int(fork.json()["id"])
 
     with session_factory() as session:
         runs = session.query(Run).filter(Run.schedule_id == schedule_id).all()
@@ -5374,13 +5306,11 @@ def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_desc
         )
         source_run = session.get(Run, int(run_body["id"]))
         rerun_run = session.get(Run, rerun_id)
-        fork_run = session.get(Run, fork_id)
         schedule_row = session.get(WorkflowPackageSchedule, schedule_id)
         assert len(runs) == 1
         assert fires_count == 1
         assert source_run is not None
         assert rerun_run is not None
-        assert fork_run is not None
         assert schedule_row is not None
         assert source_run.schedule_reason == "manual"
         assert source_run.input == {"ticker": "MSFT"}
@@ -5402,12 +5332,11 @@ def test_schedule_api_run_now_persists_schedule_provenance_and_lineage_only_desc
             "materializedAt": fire_body["materializedAt"],
             "scheduleDeletedAt": None,
         }
-        for descendant in (rerun_run, fork_run):
-            assert descendant.schedule_id is None
-            assert descendant.schedule_fire_id is None
-            assert descendant.scheduled_for is None
-            assert descendant.schedule_reason is None
-            assert descendant.schedule_provenance is None
+        assert rerun_run.schedule_id is None
+        assert rerun_run.schedule_fire_id is None
+        assert rerun_run.scheduled_for is None
+        assert rerun_run.schedule_reason is None
+        assert rerun_run.schedule_provenance is None
 
 
 def test_scheduled_input_preview_returns_canonical_workflow_parameters(

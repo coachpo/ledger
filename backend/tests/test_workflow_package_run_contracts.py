@@ -811,34 +811,15 @@ def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifa
             status="queued",
             queued_at=materialized_at,
             source_run_id=direct_queued.id,
-            lineage_root_run_id=direct_queued.id,
-        )
-        fork_descendant = Run(
-            target_kind="workflowPackage",
-            target_id=package.id,
-            target_key=package.key,
-            target_version=1,
-            workflow_package_id=package.id,
-            workflow_package_key=package.key,
-            workflow_package_workflow_key="runtime_workflow",
-            input={"ticker": "META"},
-            status="queued",
-            queued_at=materialized_at,
-            source_run_id=direct_running.id,
-            lineage_root_run_id=direct_running.id,
-            forked_from_step_index=1,
-            resume_step_index=1,
         )
         _attach_snapshot(rerun_descendant, launch_parameters={"ticker": "AMZN"})
-        _attach_snapshot(fork_descendant, launch_parameters={"ticker": "META"})
-        session.add_all([rerun_descendant, fork_descendant])
+        session.add(rerun_descendant)
         session.flush()
 
         session.commit()
         direct_queued_id = direct_queued.id
         direct_running_id = direct_running.id
         rerun_descendant_id = rerun_descendant.id
-        fork_descendant_id = fork_descendant.id
 
         schedule_service.delete_schedule(schedule.id)
         session.expunge_all()
@@ -846,7 +827,6 @@ def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifa
         detached_direct_queued = session.get(Run, direct_queued_id)
         detached_direct_running = session.get(Run, direct_running_id)
         detached_rerun_descendant = session.get(Run, rerun_descendant_id)
-        detached_fork_descendant = session.get(Run, fork_descendant_id)
         remaining_fire_count = (
             session.query(WorkflowPackageScheduleFire)
             .filter(WorkflowPackageScheduleFire.schedule_id == schedule.id)
@@ -856,7 +836,6 @@ def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifa
         assert detached_direct_queued is not None
         assert detached_direct_running is not None
         assert detached_rerun_descendant is not None
-        assert detached_fork_descendant is not None
         assert detached_direct_queued.schedule_id is None
         assert detached_direct_queued.schedule_fire_id is None
         assert detached_direct_running.schedule_id is None
@@ -870,7 +849,6 @@ def test_schedule_delete_preserves_direct_runs_descendants_and_run_linked_artifa
         direct_running_deleted_at = detached_direct_running.schedule_provenance["scheduleDeletedAt"]
         assert direct_running_deleted_at == preserved_deleted_at
         assert detached_rerun_descendant.schedule_provenance is None
-        assert detached_fork_descendant.schedule_provenance is None
         assert remaining_fire_count == 0
 
 
@@ -1168,31 +1146,20 @@ def _assert_current_readiness_create_rejected(
     client: TestClient,
     *,
     run_id: int,
-    source_invocation_id: int,
     expected_detail_field: str,
 ) -> None:
-    responses = [
-        client.post(
-            f"/api/runs/{run_id}/reruns",
-            json={"parameters": {"ticker": "AAPL"}},
-        ),
-        client.post(
-            f"/api/runs/{run_id}/forks",
-            json={
-                "sourceInvocationId": source_invocation_id,
-                "invocationInput": {"ticker": "TSLA"},
-            },
-        ),
-    ]
-    for response in responses:
-        body = response.json()
-        assert response.status_code == 422, body
-        assert body["code"] == "validation_error"
-        assert body["message"] == "Run descendant validation failed"
-        assert any(
-            detail.get("field") == expected_detail_field
-            for detail in cast(list[dict[str, Any]], body["details"])
-        )
+    response = client.post(
+        f"/api/runs/{run_id}/reruns",
+        json={"parameters": {"ticker": "AAPL"}},
+    )
+    body = response.json()
+    assert response.status_code == 422, body
+    assert body["code"] == "validation_error"
+    assert body["message"] == "Run descendant validation failed"
+    assert any(
+        detail.get("field") == expected_detail_field
+        for detail in cast(list[dict[str, Any]], body["details"])
+    )
 
 
 def test_rerun_records_canonical_required_workflow_inputs(
@@ -1263,57 +1230,6 @@ def test_rerun_rejects_non_nullable_null(
     assert any(detail["field"] == "sector" for detail in body["details"])
     with session_factory() as session:
         assert session.query(Run).count() == runs_before
-
-
-def test_fork_invocation_input_preserves_nullable_null(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _RuntimeRecordingOpenAIClient.reset()
-    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    _seed_model_connection(session_factory)
-    created = client.post(
-        "/api/workflow-packages",
-        json={
-            "manifestSource": _package_source_with_optional_contract_inputs(
-                package_key="fork_nullable_invocation_input_package",
-                agent_sector_nullable=True,
-            )
-        },
-    )
-    assert created.status_code == 201, created.json()
-    package = cast(dict[str, object], created.json())
-    source = _launch_package_run(client, package, ticker="MSFT")
-    source_run_id = int(source["id"])
-    _drain_run_queue(session_factory)
-    source_detail = _wait_for_run(client, source_run_id)
-    assert source_detail["status"] == "succeeded"
-    source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
-    source_invocation_id = int(source_invocation["id"])
-    assert source_invocation["resolvedInput"] == {"ticker": "MSFT"}
-
-    fork = client.post(
-        f"/api/runs/{source_run_id}/forks",
-        json={
-            "sourceInvocationId": source_invocation_id,
-            "invocationInput": {"ticker": "TSLA", "sector": None},
-        },
-    )
-
-    assert fork.status_code == 201, fork.json()
-    fork_id = int(fork.json()["id"])
-    fork_detail = client.get(f"/api/runs/{fork_id}")
-    assert fork_detail.status_code == 200, fork_detail.json()
-    fork_invocation = cast(dict[str, Any], fork_detail.json()["steps"][0]["invocations"][0])
-    assert fork_invocation["resolvedInput"] == {"ticker": "TSLA", "sector": None}
-    with session_factory() as session:
-        target_invocation = (
-            session.query(RunAgentInvocation)
-            .filter_by(run_id=fork_id, step_index=1, slot="analysis")
-            .one()
-        )
-        assert target_invocation.resolved_input == {"ticker": "TSLA", "sector": None}
 
 
 def test_operation_invocation_read_shape_for_http_package_run_is_secret_safe(
@@ -1496,68 +1412,6 @@ def test_secret_binding_delete_preserves_historical_detail_and_blocks_future_rea
         assert session.get(RunWorkflowPackageSnapshot, run_id) is not None
 
 
-def test_fork_rejects_operation_invocation_target_without_creating_run(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    create_response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": http_node_package_source()},
-    )
-    assert create_response.status_code == 201, create_response.json()
-    package = cast(dict[str, Any], create_response.json())
-    for key, value in {
-        "slack_webhook_token": "slack-secret-value",
-        "body_token": "body-secret-value",
-    }.items():
-        secret_response = client.put(
-            f"/api/workflow-packages/{package['id']}/secret-bindings/{key}",
-            json={"value": value},
-        )
-        assert secret_response.status_code == 200, secret_response.json()
-
-    launch_response = client.post(
-        f"/api/workflow-packages/{package['id']}/launches",
-        json={
-            "workflowKey": "notify",
-            "parameters": {"webhookUrl": "https://example.test/hook", "ticker": "MSFT"},
-        },
-    )
-    assert launch_response.status_code == 201, launch_response.json()
-    run_id = int(launch_response.json()["id"])
-    detail_response = client.get(f"/api/runs/{run_id}")
-    assert detail_response.status_code == 200, detail_response.json()
-    operation = cast(
-        dict[str, Any],
-        detail_response.json()["steps"][0]["operationInvocations"][0],
-    )
-    operation_id = int(operation["id"])
-
-    with session_factory() as session:
-        run = session.get(Run, run_id)
-        assert run is not None
-        run.status = "succeeded"
-        session.commit()
-        runs_before = session.query(Run).count()
-
-    draft_response = client.get(
-        f"/api/runs/{run_id}/fork-draft",
-        params={"sourceInvocationId": operation_id},
-    )
-    create_fork_response = client.post(
-        f"/api/runs/{run_id}/forks",
-        json={"sourceInvocationId": operation_id, "invocationInput": {}},
-    )
-
-    assert draft_response.status_code == 400, draft_response.json()
-    assert draft_response.json()["code"] == "run_fork_target_unsupported"
-    assert create_fork_response.status_code == 400, create_fork_response.json()
-    assert create_fork_response.json()["code"] == "run_fork_target_unsupported"
-    with session_factory() as session:
-        assert session.query(Run).count() == runs_before
-
-
 def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -1679,7 +1533,7 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     ).model_dump(mode="json", by_alias=True)
 
 
-def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_lineage(
+def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_rerun(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -1820,51 +1674,29 @@ def test_package_deletion_deletes_owned_runs(
     _drain_run_queue(session_factory)
     succeeded_detail = _wait_for_run(client, run_id)
     assert succeeded_detail["status"] == "succeeded"
-    source_invocation = cast(
-        dict[str, Any],
-        succeeded_detail["steps"][0]["invocations"][0],
-    )
-    source_invocation_id = int(source_invocation["id"])
+    source_invocation = cast(dict[str, Any], succeeded_detail["steps"][0]["invocations"][0])
     assert source_invocation["resolvedInput"] == {"ticker": "NVDA"}
 
-    fork_response = client.post(
-        f"/api/runs/{run_id}/forks",
-        json={
-            "sourceInvocationId": source_invocation_id,
-            "invocationInput": {"ticker": "TSLA"},
-        },
-    )
-    assert fork_response.status_code == 201, fork_response.json()
-    fork_id = int(fork_response.json()["id"])
     with session_factory() as session:
         source_run = session.get(Run, run_id)
-        fork_run = session.get(Run, fork_id)
         assert source_run is not None
-        assert fork_run is not None
         assert source_run.workflow_package_id == package_id
-        assert fork_run.workflow_package_id == package_id
         assert session.query(RunStep).filter_by(run_id=run_id).count() > 0
         assert session.query(RunAgentInvocation).filter_by(run_id=run_id).count() > 0
-        fork_run.status = "running"
         session.commit()
 
     deleted = client.delete(f"/api/workflow-packages/{package_id}")
     assert deleted.status_code == 204, deleted.text
     assert deleted.content == b""
     assert client.get(f"/api/runs/{run_id}").status_code == 404
-    assert client.get(f"/api/runs/{fork_id}").status_code == 404
 
     with session_factory() as session:
         assert session.get(WorkflowPackage, package_id) is None
         assert session.get(Run, run_id) is None
-        assert session.get(Run, fork_id) is None
         assert session.get(RunWorkflowPackageSnapshot, run_id) is None
-        assert session.get(RunWorkflowPackageSnapshot, fork_id) is None
-        assert session.query(RunStep).filter(RunStep.run_id.in_([run_id, fork_id])).count() == 0
+        assert session.query(RunStep).filter(RunStep.run_id == run_id).count() == 0
         assert (
-            session.query(RunAgentInvocation)
-            .filter(RunAgentInvocation.run_id.in_([run_id, fork_id]))
-            .count()
+            session.query(RunAgentInvocation).filter(RunAgentInvocation.run_id == run_id).count()
             == 0
         )
 
@@ -1886,8 +1718,6 @@ def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_
     _drain_run_queue(session_factory)
     succeeded_detail = _wait_for_run(client, run_id)
     assert succeeded_detail["status"] == "succeeded"
-    source_invocation = cast(dict[str, Any], succeeded_detail["steps"][0]["invocations"][0])
-    source_invocation_id = int(source_invocation["id"])
 
     with session_factory() as session:
         connection = session.query(ModelConnection).filter_by(key="package_runtime_model").one()
@@ -1929,20 +1759,15 @@ def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_
     )
 
     rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
-    fork_draft = client.get(
-        f"/api/runs/{run_id}/fork-draft",
-        params={"sourceInvocationId": source_invocation_id},
+    assert rerun_draft.status_code == 200, rerun_draft.json()
+    draft = cast(dict[str, Any], rerun_draft.json())
+    assert draft["ready"] is False
+    assert any(
+        detail.get("field") == "spec.agents[0].modelConnection"
+        for detail in cast(list[dict[str, Any]], draft["blockingErrors"])
     )
-    for draft_response in (rerun_draft, fork_draft):
-        assert draft_response.status_code == 200, draft_response.json()
-        draft = cast(dict[str, Any], draft_response.json())
-        assert draft["ready"] is False
-        assert any(
-            detail.get("field") == "spec.agents[0].modelConnection"
-            for detail in cast(list[dict[str, Any]], draft["blockingErrors"])
-        )
-        draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
-        assert draft_provenance["resolvedModelConnections"][0]["key"] == "package_runtime_model"
+    draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
+    assert draft_provenance["resolvedModelConnections"][0]["key"] == "package_runtime_model"
 
     with session_factory() as session:
         assert session.get(ModelConnection, connection_id) is None
@@ -1953,7 +1778,6 @@ def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_
     _assert_current_readiness_create_rejected(
         client,
         run_id=run_id,
-        source_invocation_id=source_invocation_id,
         expected_detail_field="spec.agents[0].modelConnection",
     )
 
@@ -1961,7 +1785,7 @@ def test_deleted_model_connection_preserves_historical_detail_and_blocks_future_
         assert session.query(Run).count() == runs_before
 
 
-def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connection_drift(
+def test_rerun_executes_frozen_runtime_profile_after_live_model_connection_drift(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -1977,8 +1801,6 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
     _drain_run_queue(session_factory)
     succeeded_detail = _wait_for_run(client, run_id)
     assert succeeded_detail["status"] == "succeeded"
-    source_invocation = cast(dict[str, Any], succeeded_detail["steps"][0]["invocations"][0])
-    source_invocation_id = int(source_invocation["id"])
 
     with session_factory() as session:
         source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -2015,38 +1837,24 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
     assert "gpt-package-live-drift" not in json.dumps(drifted_detail, sort_keys=True)
 
     rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
-    fork_draft = client.get(
-        f"/api/runs/{run_id}/fork-draft",
-        params={"sourceInvocationId": source_invocation_id},
-    )
-    for draft_response in (rerun_draft, fork_draft):
-        assert draft_response.status_code == 200, draft_response.json()
-        draft = cast(dict[str, Any], draft_response.json())
-        assert draft["ready"] is True
-        assert draft["blockingErrors"] == []
-        draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
-        assert draft_provenance["preflightSummary"]["ready"] is False
-        draft_profile = cast(dict[str, Any], draft_provenance["resolvedModelConnections"][0])
-        assert draft_profile["baseUrl"] == "https://provider-runtime.example.test/v1"
-        assert draft_profile["modelId"] == "gpt-package-v1"
-        assert draft_profile["reasoningEffort"] == "high"
-        assert draft_profile["timeoutSeconds"] == 31
+    assert rerun_draft.status_code == 200, rerun_draft.json()
+    draft = cast(dict[str, Any], rerun_draft.json())
+    assert draft["ready"] is True
+    assert draft["blockingErrors"] == []
+    draft_provenance = cast(dict[str, Any], draft["packageProvenance"])
+    assert draft_provenance["preflightSummary"]["ready"] is False
+    draft_profile = cast(dict[str, Any], draft_provenance["resolvedModelConnections"][0])
+    assert draft_profile["baseUrl"] == "https://provider-runtime.example.test/v1"
+    assert draft_profile["modelId"] == "gpt-package-v1"
+    assert draft_profile["reasoningEffort"] == "high"
+    assert draft_profile["timeoutSeconds"] == 31
 
     rerun_response = client.post(
         f"/api/runs/{run_id}/reruns",
         json={"parameters": {"ticker": "AAPL"}},
     )
-    fork_response = client.post(
-        f"/api/runs/{run_id}/forks",
-        json={
-            "sourceInvocationId": source_invocation_id,
-            "invocationInput": {"ticker": "TSLA"},
-        },
-    )
     assert rerun_response.status_code == 201, rerun_response.json()
-    assert fork_response.status_code == 201, fork_response.json()
     rerun_id = int(rerun_response.json()["id"])
-    fork_id = int(fork_response.json()["id"])
 
     _RuntimeRecordingOpenAIClient.reset()
     _RuntimeRecordingOpenAIClient.output_text = '{"summary": "drift rerun output"}'
@@ -2062,41 +1870,19 @@ def test_rerun_and_fork_execute_frozen_runtime_profile_after_live_model_connecti
     assert rerun_create_call["model"] == "gpt-package-v1"
     assert rerun_create_call["reasoning"]["effort"] == "high"
 
-    _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "drift fork output"}'
-    with session_factory() as session:
-        RunService(session, session_factory).execute_run(fork_id)
-    fork_detail = _wait_for_run(client, fork_id)
-    assert fork_detail["status"] == "succeeded"
-    fork_init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
-    assert fork_init_call["api_key"] == "sk-package-runtime-live"
-    assert fork_init_call["base_url"] == "https://provider-runtime.example.test/v1"
-    assert fork_init_call["timeout"] == 31.0
-    fork_create_call = _RuntimeRecordingOpenAIClient.create_calls[-1]
-    assert fork_create_call["model"] == "gpt-package-v1"
-    assert fork_create_call["reasoning"]["effort"] == "high"
-
     with session_factory() as session:
         rerun_snapshot = session.get(RunWorkflowPackageSnapshot, rerun_id)
-        fork_snapshot = session.get(RunWorkflowPackageSnapshot, fork_id)
         assert rerun_snapshot is not None
-        assert fork_snapshot is not None
         assert (
             rerun_snapshot.resolved_model_connections == source_snapshot.resolved_model_connections
         )
         assert (
-            fork_snapshot.resolved_model_connections == source_snapshot.resolved_model_connections
-        )
-        assert (
             rerun_snapshot.preflight_summary == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
         )
-        assert (
-            fork_snapshot.preflight_summary == _EXPECTED_CURRENT_READINESS_WITH_STRUCTURED_WARNING
-        )
-        assert session.query(Run).count() == runs_before + 2
+        assert session.query(Run).count() == runs_before + 1
 
 
-def test_rerun_and_fork_drift_keep_literal_custom_root_request_paths(
+def test_rerun_drift_keeps_literal_custom_root_request_paths(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -2110,8 +1896,6 @@ def test_rerun_and_fork_drift_keep_literal_custom_root_request_paths(
         _drain_run_queue(session_factory)
         source_detail = _wait_for_run(client, run_id)
         assert source_detail["status"] == "succeeded"
-        source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
-        source_invocation_id = int(source_invocation["id"])
 
         with session_factory() as session:
             source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -2129,17 +1913,8 @@ def test_rerun_and_fork_drift_keep_literal_custom_root_request_paths(
             f"/api/runs/{run_id}/reruns",
             json={"parameters": {"ticker": "AAPL"}},
         )
-        fork_response = client.post(
-            f"/api/runs/{run_id}/forks",
-            json={
-                "sourceInvocationId": source_invocation_id,
-                "invocationInput": {"ticker": "TSLA"},
-            },
-        )
         assert rerun_response.status_code == 201, rerun_response.json()
-        assert fork_response.status_code == 201, fork_response.json()
         rerun_id = int(rerun_response.json()["id"])
-        fork_id = int(fork_response.json()["id"])
 
         with session_factory() as session:
             RunService(session, session_factory).execute_run(rerun_id)
@@ -2147,23 +1922,13 @@ def test_rerun_and_fork_drift_keep_literal_custom_root_request_paths(
         assert rerun_detail["status"] == "succeeded"
 
         with session_factory() as session:
-            RunService(session, session_factory).execute_run(fork_id)
-        fork_detail = _wait_for_run(client, fork_id)
-        assert fork_detail["status"] == "succeeded"
-
-        with session_factory() as session:
             rerun_snapshot = session.get(RunWorkflowPackageSnapshot, rerun_id)
-            fork_snapshot = session.get(RunWorkflowPackageSnapshot, fork_id)
             assert rerun_snapshot is not None
-            assert fork_snapshot is not None
             rerun_profile = cast(dict[str, Any], rerun_snapshot.resolved_model_connections[0])
-            fork_profile = cast(dict[str, Any], fork_snapshot.resolved_model_connections[0])
             assert rerun_profile["baseUrl"] == base_url
-            assert fork_profile["baseUrl"] == base_url
 
     request_paths = [cast(str, entry["path"]) for entry in request_log]
     assert request_paths == [
-        "/codex/v1/responses",
         "/codex/v1/responses",
         "/codex/v1/responses",
     ]
@@ -2172,7 +1937,7 @@ def test_rerun_and_fork_drift_keep_literal_custom_root_request_paths(
     assert not any(path.endswith("/chat/completions") for path in request_paths)
 
 
-def test_rerun_and_fork_preserve_literal_trailing_slash_base_url_after_live_model_connection_drift(
+def test_rerun_preserves_literal_trailing_slash_base_url_after_live_model_connection_drift(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -2190,8 +1955,6 @@ def test_rerun_and_fork_preserve_literal_trailing_slash_base_url_after_live_mode
     _drain_run_queue(session_factory)
     succeeded_detail = _wait_for_run(client, run_id)
     assert succeeded_detail["status"] == "succeeded"
-    source_invocation = cast(dict[str, Any], succeeded_detail["steps"][0]["invocations"][0])
-    source_invocation_id = int(source_invocation["id"])
 
     with session_factory() as session:
         source_snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -2210,29 +1973,12 @@ def test_rerun_and_fork_preserve_literal_trailing_slash_base_url_after_live_mode
         f"/api/runs/{run_id}/reruns",
         json={"parameters": {"ticker": "AAPL"}},
     )
-    fork_response = client.post(
-        f"/api/runs/{run_id}/forks",
-        json={
-            "sourceInvocationId": source_invocation_id,
-            "invocationInput": {"ticker": "TSLA"},
-        },
-    )
     assert rerun_response.status_code == 201, rerun_response.json()
-    assert fork_response.status_code == 201, fork_response.json()
     rerun_id = int(rerun_response.json()["id"])
-    fork_id = int(fork_response.json()["id"])
 
     rerun_draft = client.get(f"/api/runs/{run_id}/rerun-draft")
-    fork_draft = client.get(
-        f"/api/runs/{run_id}/fork-draft",
-        params={"sourceInvocationId": source_invocation_id},
-    )
     assert rerun_draft.status_code == 200, rerun_draft.json()
-    assert fork_draft.status_code == 200, fork_draft.json()
     assert rerun_draft.json()["packageProvenance"]["resolvedModelConnections"][0]["baseUrl"] == (
-        literal_base_url
-    )
-    assert fork_draft.json()["packageProvenance"]["resolvedModelConnections"][0]["baseUrl"] == (
         literal_base_url
     )
 
@@ -2243,14 +1989,6 @@ def test_rerun_and_fork_preserve_literal_trailing_slash_base_url_after_live_mode
     assert rerun_detail["status"] == "succeeded"
     rerun_init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
     assert rerun_init_call["base_url"] == literal_base_url
-
-    _RuntimeRecordingOpenAIClient.reset()
-    with session_factory() as session:
-        RunService(session, session_factory).execute_run(fork_id)
-    fork_detail = _wait_for_run(client, fork_id)
-    assert fork_detail["status"] == "succeeded"
-    fork_init_call = _RuntimeRecordingOpenAIClient.init_calls[-1]
-    assert fork_init_call["base_url"] == literal_base_url
 
 
 def test_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
@@ -2319,9 +2057,6 @@ def test_runtime_profile_run_fixture_9201_exposes_secret_safe_provenance(
             input={"ticker": "MSFT"},
             status="succeeded",
             source_run_id=None,
-            lineage_root_run_id=None,
-            forked_from_step_index=None,
-            resume_step_index=1,
             final_output={"summary": "runtime profile fixture output"},
             total_tokens=17,
             inherited_tokens=0,

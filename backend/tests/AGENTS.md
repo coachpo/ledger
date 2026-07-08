@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `backend/tests/`.
 
 ## OVERVIEW
-`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind Finance Workspace gates; Digital Oracle runtime tools behind `signaldeck.digital_oracle`; extension registry/state behavior; current agent-platform APIs; database bootstrap; and run rerun/fork semantics. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
+`backend/tests/` is the behavioral spec for the shipped backend surface: preserved portfolio, template, report, trading, and market-data APIs behind Finance Workspace gates; Digital Oracle runtime tools behind `signaldeck.digital_oracle`; extension registry/state behavior; current agent-platform APIs; database bootstrap; and run rerun semantics. Tests run against isolated PostgreSQL databases and a real FastAPI app instance.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -24,9 +24,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | API regression coverage | `test_api.py` | preserved CRUD, templates, reports, trading rules, market-data fallback, extension gating, platform validation, and neutral stub workflow coverage |
 | Extension state coverage | `test_extensions_api.py`, `test_extension_registry.py`, `test_extension_lifecycle_matrix.py`, `test_tool_catalog_api.py` | slim statically resident extension state, private registry wiring, route/tool filtering, and lifecycle matrix behavior |
 | Package preflight, MCP, and tool-contract coverage | `test_workflow_package_preflight.py`, `test_mcp_runtime.py`, `test_runtime_tools.py`, `test_runtime_tools_social_sentiment.py`, `test_workflow_run_contract_schemas.py` | package validation, package-private MCP refs, duplicate tool keys, finance/Digital Oracle runtime tool contracts, runtime tool fail-closed behavior, and run payload schema rules |
-| Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_run_service_http_operations.py` | package execution, scheduler defaults/worker queue semantics, run detail/list progress and queue read models, model-binding provenance, reruns, invocation-input forks, HTTP/tool operations, and historical step replay read-lineage coverage |
+| Agent-platform run coverage | `test_workflow_package_runtime_api.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_run_service_http_operations.py` | package execution, scheduler defaults/worker queue semantics, run detail/list progress and queue read models, model-binding provenance, reruns, and HTTP/tool operations |
 | Runtime artifact coverage | `test_workflow_package_runtime_artifacts.py` | persisted step outputs and Logfire trace linkage |
-| Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, current-package persistence, run-fork persistence, and run-snapshot expectations |
+| Model and repository coverage | `test_runtime_models.py`, `test_runtime_repositories.py` | current agent-platform metadata, uniqueness, current-package persistence, and run-snapshot expectations |
 | DB bootstrap, export, and demo preset coverage | `test_db_bootstrap.py`, `test_workflow_package_export.py`, `test_workflow_package_export_security.py`, `test_workflow_package_demo_presets.py` | schema creation, startup recovery, export shape, and demo seed contracts |
 | Formatting helper coverage | `test_formatting.py` | decimal and portfolio cash formatting behavior |
 
@@ -56,4 +56,4 @@ uv run pytest
 - Pytest config is implicit through `backend/pyproject.toml`; there is no separate `pytest.ini`.
 - `test_api.py` covers preserved `/api/v1` behavior, finance extension gating, and current agent-platform validation paths.
 - Extension, tool-catalog, runtime-tool, and lifecycle tests lock statically resident `signaldeck.finance` and `signaldeck.digital_oracle` state, enabled-tool filtering, and provider/runtime-tool contracts.
-- `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_mcp_runtime.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_db_bootstrap.py` lock the current agent-platform persistence, Scheduled Task APIs/materialization, saved model-connection, trace metadata, MCP boundaries, run-fork behavior, bootstrap, and execution contracts.
+- `test_workflow_package_runtime_api.py`, `test_workflow_package_runtime_artifacts.py`, `test_workflow_package_run_contracts.py`, `test_run_operation_invocations.py`, `test_mcp_runtime.py`, `test_runtime_models.py`, `test_runtime_repositories.py`, and `test_db_bootstrap.py` lock the current agent-platform persistence, Scheduled Task APIs/materialization, saved model-connection, trace metadata, MCP boundaries, rerun behavior, bootstrap, and execution contracts.

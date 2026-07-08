@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, `/frontend/src/pages/AGENTS.md`, and `/frontend/src/pages/runs/AGENTS.md`.
 
 ## OVERVIEW
-`detail-sections/` owns the heavy run-detail presentation stack: tab workspaces, lineage diagrams, runtime capability/usage panes, JSON payload panes, and the invocation-specific fork dialog. The parent `runs/detail.tsx` should orchestrate data, URL state, and layout; this folder renders the detailed evidence surfaces.
+`detail-sections/` owns the heavy run-detail presentation stack: tab workspaces, source-run rerun provenance, runtime capability/usage panes, and JSON payload panes. The parent `runs/detail.tsx` should orchestrate data, URL state, and layout; this folder renders the detailed evidence surfaces.
 
 Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 
@@ -16,8 +16,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Section stack | `index.tsx` | tab workspaces, lineage graph, and inspection evidence |
-| Fork dialog | `fork-dialog.tsx` | invocation-input fork draft/load/edit/create flow |
+| Section stack | `index.tsx` | tab workspaces, source-run rerun provenance, and inspection evidence |
 | Runtime panes | `runtime.tsx`, `runtime-metadata.ts` | model gateway strategies, usage, resolved capabilities |
 | Payload panes | `payload-sections.tsx` | input/output/final-output/JSON evidence blocks |
 | Shared chrome | `shared.tsx`, `shared-helpers.ts` | detail section blocks, grids, empty states, status formatting |
@@ -27,17 +26,13 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `frontend/DESIGN.md` is the source of truth for status chrome, state panels, tokens, and management UI patterns inside the parent run-detail console.
 - The parent `/runs/:runId` route is metadata `console` and must keep `WorkspacePageShell`; detail sections must not introduce nested page shells, route-local colored status badges, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - Keep `detail.tsx` as the route orchestrator; do not move route params, polling, or URL-state parsing here.
-- Keep the fork dialog invocation-specific. It edits full replacement `invocationInput` for one source invocation and leaves root parameters to rerun.
-- Wide JSON, trace ids, lineage nodes, and operation URLs must wrap or use internal scroll; do not create document-level horizontal overflow.
+- Wide JSON, trace ids, and operation URLs must wrap or use internal scroll; do not create document-level horizontal overflow.
 - Expensive evidence panes may use `content-visibility`/deferred section sizing as local presentation optimization.
 - Shared helpers in this folder are route-detail helpers, not global UI primitives.
 
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
-- Do not flatten lineage evidence, runtime profiles, and payload JSON into one monolithic section.
-- Do not use `resumeStepIndex` alone as an editable fork target; invocation id is required.
-- Do not expose operation/tool invocation forks as live actions in phase 1.
-- Do not bypass `use-runs.ts` hooks for fork draft/create behavior.
+- Do not flatten source-run provenance, runtime profiles, and payload JSON into one monolithic section.
 
 ## VALIDATION
 ```bash

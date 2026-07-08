@@ -570,34 +570,6 @@ test.describe("Workflow packages", () => {
       expect.any(String),
     );
 
-    const runSteps = detail.steps as Array<{
-      index: number;
-      invocations: Array<{
-        id: number;
-        persistedAt: string | null;
-        slot: string;
-        status: string;
-      }>;
-    }>;
-    const forkTarget = runSteps
-      .flatMap((step) =>
-        step.invocations.map((invocation) => ({
-          invocation,
-          stepIndex: step.index,
-        })),
-      )
-      .find(
-        ({ invocation }) =>
-          invocation.status === "succeeded" && invocation.persistedAt,
-      );
-    if (!forkTarget) {
-      throw new Error(
-        `Run ${runId} did not expose a persisted agent invocation to fork.`,
-      );
-    }
-    const forkInvocationId = forkTarget.invocation.id;
-    const forkStepIndex = forkTarget.stepIndex;
-
     await page.reload();
     await expect(page.getByTestId("runs-detail-summary-line")).toContainText(
       "succeeded",
@@ -622,35 +594,6 @@ test.describe("Workflow packages", () => {
     await expect(rerunDialog).toContainText("Source run");
     await expect(rerunDialog).toContainText("Readiness");
     await page.getByTestId("run-rerun-submit").click();
-    await expect(page).toHaveURL(/\/runs\/\d+$/);
-
-    await page.goto(`/runs/${runId}?inspect=invocation:${forkInvocationId}`);
-    const forkAction = page.getByTestId(
-      `runs-invocation-${forkInvocationId}-fork-entry`,
-    );
-    await expect(forkAction).toContainText("Fork from this invocation");
-    await forkAction.evaluate((node) => {
-      node.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    });
-    const forkDialog = page.getByRole("dialog", {
-      name: /fork from .+ invocation/i,
-    });
-    await expect(forkDialog).toBeVisible();
-    await expect(
-      forkDialog.getByText(`Resume at Step ${forkStepIndex}`),
-    ).toBeVisible();
-    await expect(
-      forkDialog.getByText(`Invocation #${forkInvocationId}`),
-    ).toBeVisible();
-    await expect(
-      forkDialog.getByText(/edits only the selected agent invocation input/i),
-    ).toBeVisible();
-    await expect(page.getByLabel("Target invocation input JSON")).toHaveValue(
-      JSON.stringify({ ticker: "AAPL" }, null, 2),
-    );
-    await page.getByTestId("run-fork-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
   });
 

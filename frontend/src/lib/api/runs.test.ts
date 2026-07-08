@@ -131,23 +131,20 @@ describe("runs api", () => {
     expect(init?.body).toBe(JSON.stringify({ parameters: { ticker: "MSFT" } }));
   });
 
-  it("preserves historical lineage fields on run detail reads", async () => {
+  it("reads run details from the run endpoint", async () => {
     const { getRun } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
-    const historicalLineage = {
+    const runDetail = {
       createdAt: "2026-05-15T10:00:00Z",
       error: null,
       executedTokens: 7,
-      finalOutput: { summary: "historical lineage output" },
+      finalOutput: { summary: "run output" },
       finishedAt: "2026-05-15T10:02:00Z",
       id: 42,
-      inheritedTokens: 5,
+      inheritedTokens: 0,
       input: { ticker: "TSLA" },
-      lineageRootRunId: 11,
       extensionDependencies: [],
       packageProvenance: null,
       queuedAt: "2026-05-15T10:00:00Z",
-      replayStepIndex: 2,
-      resumeStepIndex: 2,
       sourceRunId: 11,
       startedAt: "2026-05-15T10:01:00Z",
       status: "succeeded",
@@ -155,13 +152,10 @@ describe("runs api", () => {
         {
           id: 201,
           index: 1,
-          invocations: [{ id: 301, resolvedInputOrigin: "copied", sourceInvocationId: 77 }],
+          invocations: [{ id: 301, resolvedInputOrigin: "passthrough" }],
           operationInvocations: [],
-          origin: "copied",
+          origin: "planned",
           runId: 42,
-          sourceRunId: 11,
-          sourceRunStepId: 101,
-          sourceStepIndex: 1,
           status: "succeeded",
         },
       ],
@@ -169,79 +163,16 @@ describe("runs api", () => {
       targetKey: "runtime_package",
       targetKind: "workflowPackage" as RunTargetKind,
       totalTokens: 12,
-      traceId: "trace-historical-lineage",
+      traceId: "trace-run-detail",
       updatedAt: "2026-05-15T10:00:00Z",
     };
-    fetchMock.mockResolvedValueOnce(jsonResponse(historicalLineage, 200));
+    fetchMock.mockResolvedValueOnce(jsonResponse(runDetail, 200));
 
-    await expect(getRun(42)).resolves.toEqual(historicalLineage);
+    await expect(getRun(42)).resolves.toEqual(runDetail);
 
     const { init, url } = getLastFetchCall(fetchMock);
 
     expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42");
     expect(init?.method).toBe("GET");
-    expect(historicalLineage.replayStepIndex).toBe(2);
-    expect(historicalLineage.resumeStepIndex).toBe(2);
-    expect(historicalLineage.steps[0].invocations[0].sourceInvocationId).toBe(77);
-  });
-
-  it("reads fork drafts with the source invocation query parameter", async () => {
-    const { getRunForkDraft } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(
-        {
-          sourceRunId: 42,
-          sourceInvocationId: 77,
-          targetKind: "workflowPackage",
-          targetId: 12,
-          targetKey: "runtime_package",
-          invocationInput: { ticker: "MSFT" },
-          packageProvenance: null,
-        },
-        200,
-      ),
-    );
-
-    await expect(getRunForkDraft(42, 77)).resolves.toEqual({
-      invocationInput: { ticker: "MSFT" },
-      packageProvenance: null,
-      sourceInvocationId: 77,
-      sourceRunId: 42,
-      targetId: 12,
-      targetKey: "runtime_package",
-      targetKind: "workflowPackage",
-    });
-
-    const { init, url } = getLastFetchCall(fetchMock);
-
-    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42/fork-draft");
-    expect(init?.method).toBe("GET");
-    expect(Object.fromEntries(url.searchParams.entries())).toEqual({ sourceInvocationId: "77" });
-  });
-
-  it("creates forks with source invocation input payloads", async () => {
-    const { createRunFork } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 100, status: "queued" }, 201));
-
-    await expect(
-      createRunFork(42, {
-        sourceInvocationId: 77,
-        invocationInput: { ticker: "TSLA" },
-      }),
-    ).resolves.toEqual({
-      id: 100,
-      status: "queued",
-    });
-
-    const { init, url } = getLastFetchCall(fetchMock);
-
-    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42/forks");
-    expect(init?.method).toBe("POST");
-    expect(init?.body).toBe(
-      JSON.stringify({
-        sourceInvocationId: 77,
-        invocationInput: { ticker: "TSLA" },
-      }),
-    );
   });
 });

@@ -21,14 +21,10 @@ export type RunStepStatus =
   | "succeeded"
   | "failed"
   | "skipped";
-export type RunStepOrigin = "planned" | "copied";
+export type RunStepOrigin = "planned";
 export type RunInvocationInputMode = "passthrough" | "wired";
-export type RunInvocationResolvedInputOrigin =
-  | "derived"
-  | "edited"
-  | "copied"
-  | "passthrough";
-export type RunInvocationOutputOrigin = "executed" | "edited" | "copied";
+export type RunInvocationResolvedInputOrigin = "derived" | "passthrough";
+export type RunInvocationOutputOrigin = "executed";
 export type RunOperationKind = "http";
 export type RunTargetKind = "workflowPackage";
 export type RunInvocationResourceScope = "global" | "packageLocal";
@@ -250,7 +246,6 @@ export interface RunAgentInvocationRead {
   tokens: number;
   durationMs: number | null;
   traceSpanId: string | null;
-  sourceInvocationId: number | null;
   startedAt: string | null;
   finishedAt: string | null;
   persistedAt: string | null;
@@ -283,10 +278,6 @@ export interface RunOperationInvocationRead {
   errorDetails: UnknownRecord[];
   durationMs: number | null;
   traceSpanId: string | null;
-  sourceOperationInvocationId: number | null;
-  sourceRunId: number | null;
-  sourceRunStepId: number | null;
-  sourceStepIndex: number | null;
   startedAt: string | null;
   finishedAt: string | null;
   persistedAt: string | null;
@@ -300,9 +291,6 @@ export interface RunStepRead {
   index: number;
   status: RunStepStatus;
   origin: RunStepOrigin;
-  sourceRunStepId: number | null;
-  sourceRunId: number | null;
-  sourceStepIndex: number | null;
   graphMetadata: RunGraphMetadata | null;
   error: string | null;
   startedAt: string | null;
@@ -347,9 +335,6 @@ export interface RunRead extends RunTargetIdentityRead {
   id: number;
   input: UnknownRecord;
   sourceRunId: number | null;
-  lineageRootRunId: number | null;
-  replayStepIndex: number | null;
-  resumeStepIndex: number;
   finalOutput: unknown | null;
   status: RunStatus;
   totalTokens: number;
@@ -385,21 +370,6 @@ export interface RunRerunDraftRead extends RunTargetIdentityRead {
 
 export interface RunRerunCreateRequest {
   parameters: UnknownRecord;
-}
-
-export interface RunForkDraftRead extends RunTargetIdentityRead {
-  sourceRunId: number;
-  sourceInvocationId: number;
-  invocationInput: UnknownRecord;
-  ready: boolean;
-  blockingErrors: UnknownRecord[];
-  warnings: UnknownRecord[];
-  packageProvenance: RunPackageProvenanceRead | null;
-}
-
-export interface RunForkCreateRequest {
-  sourceInvocationId: number;
-  invocationInput: UnknownRecord;
 }
 
 export interface RunListParams {

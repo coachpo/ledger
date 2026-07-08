@@ -81,10 +81,6 @@ class RunOperationInvocationRepository(BaseRepository[RunOperationInvocation]):
         status: str = "pending",
         output: Any | None = None,
         output_origin: str | None = None,
-        source_operation_invocation_id: int | None = None,
-        source_run_id: int | None = None,
-        source_run_step_id: int | None = None,
-        source_step_index: int | None = None,
     ) -> RunOperationInvocation:
         operation = self.model(
             run_step_id=run_step_id,
@@ -108,10 +104,6 @@ class RunOperationInvocationRepository(BaseRepository[RunOperationInvocation]):
             status=status,
             output=output,
             output_origin=output_origin,
-            source_operation_invocation_id=source_operation_invocation_id,
-            source_run_id=source_run_id,
-            source_run_step_id=source_run_step_id,
-            source_step_index=source_step_index,
         )
         return self.add(operation)
 
@@ -160,26 +152,6 @@ class RunOperationInvocationRepository(BaseRepository[RunOperationInvocation]):
                 self.model.position.asc(),
                 self.model.id.asc(),
             )
-        )
-        return self._list(statement)
-
-    def list_source_linked(
-        self,
-        *,
-        source_operation_invocation_id: int | None = None,
-    ) -> list[RunOperationInvocation]:
-        statement = select(self.model)
-        if source_operation_invocation_id is None:
-            statement = statement.where(self.model.source_operation_invocation_id.is_not(None))
-        else:
-            statement = statement.where(
-                self.model.source_operation_invocation_id == source_operation_invocation_id
-            )
-        statement = statement.order_by(
-            self.model.run_id.asc(),
-            self.model.step_index.asc(),
-            self.model.position.asc(),
-            self.model.id.asc(),
         )
         return self._list(statement)
 

@@ -38,7 +38,6 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
         status: str = "pending",
         output: Any | None = None,
         output_origin: str | None = None,
-        source_invocation_id: int | None = None,
     ) -> RunAgentInvocation:
         invocation = self.model(
             run_step_id=run_step_id,
@@ -60,7 +59,6 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
             status=status,
             output=output,
             output_origin=output_origin,
-            source_invocation_id=source_invocation_id,
         )
         return self.add(invocation)
 
@@ -126,36 +124,6 @@ class RunAgentInvocationRepository(BaseRepository[RunAgentInvocation]):
             )
         )
         return self._list(statement)
-
-    def list_source_linked(
-        self,
-        *,
-        source_invocation_id: int | None = None,
-    ) -> list[RunAgentInvocation]:
-        statement = select(self.model)
-        if source_invocation_id is None:
-            statement = statement.where(self.model.source_invocation_id.is_not(None))
-        else:
-            statement = statement.where(self.model.source_invocation_id == source_invocation_id)
-        statement = statement.order_by(
-            self.model.run_id.asc(),
-            self.model.step_index.asc(),
-            self.model.position.asc(),
-            self.model.id.asc(),
-        )
-        return self._list(statement)
-
-    def mark_edited_input(
-        self,
-        invocation: RunAgentInvocation,
-        *,
-        resolved_input: dict[str, Any],
-        source_invocation_id: int,
-    ) -> RunAgentInvocation:
-        invocation.resolved_input = resolved_input
-        invocation.resolved_input_origin = "edited"
-        invocation.source_invocation_id = source_invocation_id
-        return self.add(invocation)
 
     def mark_running(
         self,

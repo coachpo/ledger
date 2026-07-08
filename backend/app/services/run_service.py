@@ -33,14 +33,11 @@ from app.models.workflow_package_schedule import (
 )
 from app.repositories.run import RunRepository
 from app.repositories.run_agent_invocation import RunAgentInvocationRepository
-from app.repositories.run_fork import RunForkRepository
 from app.repositories.run_operation_invocation import RunOperationInvocationRepository
 from app.repositories.run_step import RunStepRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.run import (
     RunCreatedRead,
-    RunForkCreateRequest,
-    RunForkDraftRead,
     RunListItemRead,
     RunListRead,
     RunProgressRead,
@@ -104,7 +101,7 @@ from app.services.package_execution_plan_builder import (
 )
 from app.services.run_lifecycle import WorkflowPackageStartContext
 from app.services.run_read_projection import RunReadProjection
-from app.services.run_rerun_fork import PreparedRunFork, RunRerunForkPreparation
+from app.services.run_rerun import RunRerunPreparation
 from app.services.workflow_package_preflight import (
     WorkflowPackagePreflightResult,
     WorkflowPackagePreflightService,
@@ -223,7 +220,6 @@ class RunService:
         )
         self.run_step_repository = RunStepRepository(session)
         self.run_agent_invocation_repository = RunAgentInvocationRepository(session)
-        self.run_fork_repository = RunForkRepository(session)
         self.run_operation_invocation_repository = RunOperationInvocationRepository(session)
         self.agent_execution_service = AgentExecutionService(
             self.session_factory,
@@ -234,16 +230,12 @@ class RunService:
         self.model_connection_resolution_service = ModelConnectionResolutionService()
         self.schema_compiler = OutputSchemaCompiler()
         self._stored_schema_node_cache: dict[tuple[str, int], SchemaNode] = {}
-        self._run_rerun_fork_preparation = RunRerunForkPreparation(
-            session=session,
+        self._run_rerun_preparation = RunRerunPreparation(
             run_repository=self.run_repository,
-            run_agent_invocation_repository=self.run_agent_invocation_repository,
-            run_operation_invocation_repository=self.run_operation_invocation_repository,
             schema_compiler=self.schema_compiler,
             read_projection=self._run_read_projection,
             preflight_service=self.preflight_service,
             workflow_package_snapshot_for_run=self._workflow_package_snapshot_for_run,
-            resolve_runtime_agent=self._resolve_runtime_agent,
         )
 
     def list_runs(
@@ -621,7 +613,7 @@ class RunService:
             input_schema=deepcopy(plan.input_schema),
             launch_parameters=deepcopy(validated_input),
             # Capture the live effective runtime profile only when the run is created.
-            # Later rerun/fork provenance reads this frozen snapshot instead of rebinding.
+            # Later rerun provenance reads this frozen snapshot instead of rebinding.
             resolved_model_connections=[
                 self._model_binding_payload(binding)
                 for binding in sorted(preflight.model_bindings.values(), key=lambda item: item.key)
@@ -928,7 +920,6 @@ class RunService:
             status=_RUN_STATUS_QUEUED,
             queued_at=utcnow(),
             started_at=None,
-            resume_step_index=1,
             final_output=None,
             total_tokens=0,
             inherited_tokens=0,
@@ -972,14 +963,14 @@ class RunService:
         return self._to_created_read(run)
 
     def build_rerun_draft(self, source_run_id: int) -> RunRerunDraftRead:
-        return self._run_rerun_fork_preparation.build_rerun_draft(source_run_id)
+        return self._run_rerun_preparation.build_rerun_draft(source_run_id)
 
     def create_rerun(
         self,
         source_run_id: int,
         payload: RunRerunCreateRequest,
     ) -> RunCreatedRead:
-        prepared = self._run_rerun_fork_preparation.prepare_rerun_create(
+        prepared = self._run_rerun_preparation.prepare_rerun_create(
             source_run_id,
             payload,
         )
@@ -987,31 +978,6 @@ class RunService:
             source_run=prepared.source_run,
             plan=prepared.plan,
             validated_input=prepared.validated_input,
-            preflight=prepared.readiness,
-        )
-
-    def build_fork_draft(
-        self,
-        source_run_id: int,
-        source_invocation_id: int,
-    ) -> RunForkDraftRead:
-        return self._run_rerun_fork_preparation.build_fork_draft(
-            source_run_id,
-            source_invocation_id,
-        )
-
-    def create_fork(
-        self,
-        source_run_id: int,
-        payload: RunForkCreateRequest,
-    ) -> RunCreatedRead:
-        prepared = self._run_rerun_fork_preparation.prepare_fork_create(
-            source_run_id,
-            payload,
-        )
-        return self._create_queued_fork_run(
-            prepared=prepared.prepared_fork,
-            invocation_input=prepared.invocation_input,
             preflight=prepared.readiness,
         )
 
@@ -1044,9 +1010,6 @@ class RunService:
             queued_at=utcnow(),
             started_at=None,
             source_run_id=source_run.id,
-            lineage_root_run_id=source_run.lineage_root_run_id or source_run.id,
-            forked_from_step_index=None,
-            resume_step_index=1,
             final_output=None,
             total_tokens=0,
             inherited_tokens=0,
@@ -1055,7 +1018,7 @@ class RunService:
             error=None,
             finished_at=None,
         )
-        run.workflow_package_snapshot = self._lineage_workflow_package_snapshot(
+        run.workflow_package_snapshot = self._rerun_workflow_package_snapshot(
             source_run=source_run,
             launch_parameters=validated_input,
             preflight=preflight,
@@ -1076,110 +1039,7 @@ class RunService:
 
         return self._to_created_read(run)
 
-    def _create_queued_fork_run(
-        self,
-        *,
-        prepared: PreparedRunFork,
-        invocation_input: dict[str, Any],
-        preflight: WorkflowPackagePreflightResult,
-    ) -> RunCreatedRead:
-        source_run = prepared.source_run
-        source_invocation = prepared.source_invocation
-        resume_step_index = source_invocation.step_index
-        inherited_tokens = self._run_rerun_fork_preparation.copied_invocation_token_totals(
-            prepared.copied_steps
-        )
-        lineage_root_run_id = source_run.lineage_root_run_id or source_run.id
-        run = Run(
-            target_kind=source_run.target_kind,
-            target_id=source_run.target_id,
-            target_key=source_run.target_key,
-            target_version=source_run.target_version,
-            workflow_package_id=source_run.workflow_package_id,
-            workflow_package_key=source_run.workflow_package_key,
-            workflow_package_workflow_key=source_run.workflow_package_workflow_key,
-            schedule_id=None,
-            schedule_fire_id=None,
-            scheduled_for=None,
-            schedule_reason=None,
-            schedule_provenance=None,
-            extension_dependencies=ExtensionDependencyService.normalize_dependency_payloads(
-                source_run.extension_dependencies
-            ),
-            input=deepcopy(source_run.input),
-            status=_RUN_STATUS_QUEUED,
-            queued_at=utcnow(),
-            started_at=None,
-            source_run_id=source_run.id,
-            lineage_root_run_id=lineage_root_run_id,
-            forked_from_step_index=source_invocation.step_index,
-            resume_step_index=resume_step_index,
-            final_output=None,
-            total_tokens=inherited_tokens,
-            inherited_tokens=inherited_tokens,
-            executed_tokens=0,
-            trace_id=None,
-            error=None,
-            finished_at=None,
-        )
-        source_snapshot = self._workflow_package_snapshot_for_run(source_run)
-        run.workflow_package_snapshot = self._lineage_workflow_package_snapshot(
-            source_run=source_run,
-            launch_parameters=deepcopy(source_snapshot.launch_parameters),
-            preflight=preflight,
-        )
-        try:
-            _ = self.run_repository.add(run)
-            self.session.flush()
-            self._copy_lineage_context_rows(run=run, source_steps=prepared.copied_steps)
-            self._create_planned_run_rows(
-                run=run,
-                plan=prepared.plan,
-                validated_input=deepcopy(source_run.input),
-                min_step_index=resume_step_index,
-            )
-            self.session.flush()
-            target_invocation = self.run_agent_invocation_repository.get_by_run_step_slot(
-                run.id,
-                source_invocation.step_index,
-                source_invocation.slot,
-            )
-            if target_invocation is None:
-                raise business_rule_error(
-                    "run_fork_target_not_found",
-                    "Fork target invocation was not found in the planned descendant run",
-                    details=[
-                        {
-                            "field": "sourceInvocationId",
-                            "issue": (
-                                "Source invocation does not map to a planned target invocation"
-                            ),
-                        }
-                    ],
-                )
-            _ = self.run_agent_invocation_repository.mark_edited_input(
-                target_invocation,
-                resolved_input=deepcopy(invocation_input),
-                source_invocation_id=source_invocation.id,
-            )
-            _ = self.run_fork_repository.create_fork(
-                run_id=run.id,
-                source_run_id=source_run.id,
-                lineage_root_run_id=lineage_root_run_id,
-                source_invocation_id=source_invocation.id,
-                source_step_index=source_invocation.step_index,
-                resume_step_index=resume_step_index,
-                invocation_input=deepcopy(invocation_input),
-            )
-            self.session.commit()
-            self.session.refresh(run)
-        except Exception:
-            self.session.rollback()
-            raise
-
-        return self._to_created_read(run)
-
-    def _lineage_workflow_package_snapshot(
+    def _rerun_workflow_package_snapshot(
         self,
         *,
         source_run: Run,
@@ -1215,9 +1075,8 @@ class RunService:
         run: Run,
         plan: ExecutionPlan,
         validated_input: dict[str, Any],
-        min_step_index: int = 1,
     ) -> None:
-        plan_steps = [step for step in plan.steps if step.index >= min_step_index]
+        plan_steps = list(plan.steps)
         planned_steps = self.run_step_repository.create_planned_steps(
             run_id=run.id,
             step_indexes=(step.index for step in plan_steps),
@@ -1294,28 +1153,7 @@ class RunService:
         return {}, "derived"
 
     def _build_plan_for_run(self, run: Run) -> ExecutionPlan:
-        return self._run_rerun_fork_preparation.build_plan_for_run(run)
-
-    def _prepare_fork_source(
-        self,
-        source_run_id: int,
-        source_invocation_id: int,
-    ) -> PreparedRunFork:
-        return self._run_rerun_fork_preparation.prepare_fork_source(
-            source_run_id,
-            source_invocation_id,
-        )
-
-    def _copy_lineage_context_rows(
-        self,
-        *,
-        run: Run,
-        source_steps: list[RunStep],
-    ) -> None:
-        self._run_rerun_fork_preparation.copy_lineage_context_rows(
-            run=run,
-            source_steps=source_steps,
-        )
+        return self._run_rerun_preparation.build_plan_for_run(run)
 
     def execute_run(self, run_id: int) -> None:
         _ = self.queue_service_factory(
@@ -1386,8 +1224,6 @@ class RunService:
         executed_tokens = 0
 
         for step in plan.steps:
-            if step.index < run.resume_step_index:
-                continue
             if not self._run_claim_is_active(run, lease_owner=lease_owner):
                 return
             slot_outputs = self._hydrate_slot_outputs(run.id, before_step_index=step.index)
@@ -1793,15 +1629,10 @@ class RunService:
                 if not plan_agent.optional and fatal_error is None:
                     fatal_error = agent_failure.message
                 continue
-            resolved_input_origin = (
-                "edited"
-                if invocation.resolved_input_origin == "edited"
-                else self._runtime_resolved_input_origin(plan_agent)
-            )
             _ = self.run_agent_invocation_repository.mark_running(
                 invocation,
                 resolved_input=prepared_agent.resolved_input,
-                resolved_input_origin=resolved_input_origin,
+                resolved_input_origin=self._runtime_resolved_input_origin(plan_agent),
             )
             prepared_invocations.append(prepared_agent)
 
@@ -1963,24 +1794,18 @@ class RunService:
                 input_schema,
                 candidate_key=f"{agent.key}_input",
             )
-            if invocation.resolved_input_origin == "edited":
-                resolved_input = self._validate_runtime_edited_invocation_input(
-                    input_model=input_model,
-                    invocation=invocation,
-                )
-            else:
-                input_node = self.schema_compiler.parse_json_schema_node(
-                    input_schema,
-                    path=f"steps[{step_index - 1}].{agent.key}.inputSchema",
-                )
-                resolved_input = self._resolve_agent_input(
-                    step_index=step_index,
-                    plan_agent=plan_agent,
-                    input_node=input_node,
-                    input_model=input_model,
-                    initial_input=initial_input,
-                    slot_outputs=slot_outputs,
-                )
+            input_node = self.schema_compiler.parse_json_schema_node(
+                input_schema,
+                path=f"steps[{step_index - 1}].{agent.key}.inputSchema",
+            )
+            resolved_input = self._resolve_agent_input(
+                step_index=step_index,
+                plan_agent=plan_agent,
+                input_node=input_node,
+                input_model=input_model,
+                initial_input=initial_input,
+                slot_outputs=slot_outputs,
+            )
             return (
                 _PreparedAgentInvocation(
                     agent=agent,
@@ -2522,33 +2347,6 @@ class RunService:
             json_schema=output_schema.json_schema,
         )
 
-    def _validate_fork_invocation_input(
-        self,
-        *,
-        plan_agent: ExecutionPlanAgent,
-        invocation_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self._run_rerun_fork_preparation.validate_fork_invocation_input(
-            plan_agent=plan_agent,
-            invocation_input=invocation_input,
-        )
-
-    def _validate_runtime_edited_invocation_input(
-        self,
-        *,
-        input_model: type[BaseModel],
-        invocation: RunAgentInvocation,
-    ) -> dict[str, Any]:
-        try:
-            validated = input_model.model_validate(invocation.resolved_input)
-        except ValidationError as exc:
-            raise RunExecutionError(
-                code="agent_input_validation_failed",
-                message="Edited agent input failed schema validation",
-                details=self._validation_details_from_pydantic_error(exc),
-            ) from exc
-        return validated.model_dump(mode="json", exclude_none=True)
-
     def _validate_run_input(
         self,
         *,
@@ -2557,7 +2355,7 @@ class RunService:
         candidate_key: str,
         resource_name: str,
     ) -> dict[str, Any]:
-        return self._run_rerun_fork_preparation.validate_run_input(
+        return self._run_rerun_preparation.validate_run_input(
             input_schema=input_schema,
             input_payload=input_payload,
             candidate_key=candidate_key,

@@ -1,5 +1,4 @@
 import {
-  act,
   fireEvent,
   render,
   screen,
@@ -11,7 +10,6 @@ import type { ComponentProps, ReactNode } from "react";
 
 import type {
   RunAgentInvocationRead,
-  RunForkDraftRead,
   RunPackageResolvedModelConnectionRead,
   RunRead,
   RunRerunDraftRead,
@@ -26,13 +24,10 @@ import { RunsDetailPage } from "./detail";
 import type { RunDetailTabKey } from "./detail-tabs";
 
 const createRunRerunMutateAsyncMock = vi.fn();
-const createRunForkMutateAsyncMock = vi.fn();
 const navigateMock = vi.fn();
 const setSearchParamsMock = vi.fn();
 const runDetailSectionStackPropsMock = vi.fn();
-const useCreateRunForkMock = vi.fn();
 const useCreateRunRerunMock = vi.fn();
-const useRunForkDraftMock = vi.fn();
 const useRunRerunDraftMock = vi.fn();
 const useRunMock = vi.fn();
 let locationHashMock = "";
@@ -53,10 +48,8 @@ vi.mock("react-router", () => ({
 }));
 
 vi.mock("@/hooks/use-runs", () => ({
-  useCreateRunFork: () => useCreateRunForkMock(),
   useCreateRunRerun: () => useCreateRunRerunMock(),
   useRun: () => useRunMock(),
-  useRunForkDraft: (...args: unknown[]) => useRunForkDraftMock(...args),
   useRunRerunDraft: (...args: unknown[]) => useRunRerunDraftMock(...args),
 }));
 
@@ -113,7 +106,6 @@ function buildInvocation(
     runId: 42,
     runStepId: 101,
     slot: "analysis",
-    sourceInvocationId: null,
     startedAt: NOW,
     status: "succeeded",
     stepIndex: 1,
@@ -138,9 +130,6 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
     origin: "planned",
     persistedAt: "2026-04-20T10:00:03Z",
     runId: 42,
-    sourceRunId: null,
-    sourceRunStepId: null,
-    sourceStepIndex: null,
     startedAt: NOW,
     status: "succeeded",
     updatedAt: "2026-04-20T10:00:03Z",
@@ -296,11 +285,9 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     executedTokens: 51,
     finalOutput: { summary: "All clear" },
     finishedAt: "2026-04-20T10:00:04Z",
-    replayStepIndex: null,
     id: 42,
     inheritedTokens: 0,
     input: { ticker: "AAPL" },
-    lineageRootRunId: null,
     extensionDependencies: [],
     packageProvenance: null,
     progress: {
@@ -316,7 +303,6 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     scheduleReason: null,
     scheduledFor: null,
     queuedAt: NOW,
-    resumeStepIndex: 1,
     sourceRunId: null,
     startedAt: NOW,
     status: "succeeded",
@@ -373,24 +359,6 @@ function buildRerunDraft(
   };
 }
 
-function buildForkDraft(
-  overrides: Partial<RunForkDraftRead> = {},
-): RunForkDraftRead {
-  return {
-    invocationInput: { ticker: "AAPL" },
-    ready: true,
-    blockingErrors: [],
-    warnings: [],
-    sourceInvocationId: 1001,
-    sourceRunId: 42,
-    targetId: 7,
-    targetKey: "market_review",
-    targetKind: "workflowPackage",
-    packageProvenance: null,
-    ...overrides,
-  };
-}
-
 function queryResult(data: RunRead) {
   return {
     data,
@@ -406,14 +374,6 @@ function draftQueryResult<T>(data: T | undefined = undefined) {
     isError: false,
     isPending: false,
   };
-}
-
-function forkDraftQueryResult(data: RunForkDraftRead | undefined = undefined) {
-  return draftQueryResult(data);
-}
-
-function expectStaticLineageDiagramContract(diagram: HTMLElement) {
-  expect(diagram).toHaveClass("h-80");
 }
 
 function applyLatestSearchParamsUpdate(currentSearch: string) {
@@ -446,24 +406,16 @@ function latestRunDetailSectionStackProps(): ObservedRunDetailSectionStackProps 
 describe("RunsDetailPage", () => {
   beforeEach(() => {
     createRunRerunMutateAsyncMock.mockReset();
-    createRunForkMutateAsyncMock.mockReset();
     navigateMock.mockReset();
     locationHashMock = "";
     runDetailSectionStackPropsMock.mockReset();
     searchParamsMock = new URLSearchParams();
     setSearchParamsMock.mockReset();
-    useCreateRunForkMock.mockReset();
-    useCreateRunForkMock.mockReturnValue({
-      isPending: false,
-      mutateAsync: createRunForkMutateAsyncMock,
-    });
     useCreateRunRerunMock.mockReset();
     useCreateRunRerunMock.mockReturnValue({
       isPending: false,
       mutateAsync: createRunRerunMutateAsyncMock,
     });
-    useRunForkDraftMock.mockReset();
-    useRunForkDraftMock.mockReturnValue(forkDraftQueryResult());
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       value: 1024,
@@ -486,7 +438,6 @@ describe("RunsDetailPage", () => {
       ["input", "Input"],
       ["runtime", "Runtime"],
       ["usage", "Usage"],
-      ["lineage", "Lineage"],
     ];
     const tabList = within(tabs).getByRole("tablist", {
       name: /run detail sections/i,
@@ -571,9 +522,7 @@ describe("RunsDetailPage", () => {
     expect(tokenAccounting).toHaveTextContent(/Read model total/i);
     expect(tokenAccounting).toHaveTextContent(/Fresh execution/i);
     expect(tokenAccounting).toHaveTextContent(/Inherited context/i);
-    expect(tokenAccounting).toHaveTextContent(
-      /No upstream source run boundary/i,
-    );
+    expect(tokenAccounting).toHaveTextContent(/Original run with no source run/i);
     usageRender.unmount();
   });
 
@@ -607,7 +556,6 @@ describe("RunsDetailPage", () => {
     ["input", "Input"],
     ["runtime", "Runtime"],
     ["usage", "Usage"],
-    ["lineage", "Lineage"],
   ] satisfies Array<[RunDetailTabKey, string]>)(
     "renders the %s tab as one titled section block",
     (tab, label) => {
@@ -821,11 +769,6 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     usageRender.unmount();
 
-    renderTab("lineage");
-    const lineagePanel = screen.getByTestId("runs-detail-tab-panel-lineage");
-    expect(
-      within(lineagePanel).getByTestId("runs-lineage-workspace"),
-    ).toBeVisible();
   });
 
   it("keeps final output and run input content visible", () => {
@@ -921,7 +864,7 @@ describe("RunsDetailPage", () => {
 
   it("updates only the top-level tab while preserving detail search params", () => {
     const initialSearch =
-      "tab=execution&inspect=invocation%3A1001&pane=output&rerun=1&fork=1&resumeStepIndex=1&invocationId=1001";
+      "tab=execution&inspect=invocation%3A1001&pane=output&rerun=1";
     useRunMock.mockReturnValue(queryResult(buildRun()));
     searchParamsMock = new URLSearchParams(initialSearch);
 
@@ -933,9 +876,6 @@ describe("RunsDetailPage", () => {
     expect(searchParamsMock.get("inspect")).toBe("invocation:1001");
     expect(searchParamsMock.get("pane")).toBe("output");
     expect(searchParamsMock.get("rerun")).toBe("1");
-    expect(searchParamsMock.get("fork")).toBe("1");
-    expect(searchParamsMock.get("resumeStepIndex")).toBe("1");
-    expect(searchParamsMock.get("invocationId")).toBe("1001");
   });
 
   it("defaults failed runs to execution and the first failing context", () => {
@@ -1012,22 +952,8 @@ describe("RunsDetailPage", () => {
       ],
     });
 
-    useRunMock.mockReturnValue(queryResult(buildRun()));
-    searchParamsMock = new URLSearchParams("mode=lineage");
-    const lineageRender = render(<RunsDetailPage />);
-    const lineageWorkspace = screen.getByTestId("runs-lineage-workspace");
-    expect(lineageWorkspace).toBeVisible();
-    expect(
-      within(lineageWorkspace).getByTestId("runs-lineage-empty"),
-    ).toHaveTextContent(
-      /no fork, snapshot replay, copied-step, or historical lineage/i,
-    );
-    expect(
-      screen.queryByTestId("runs-lineage-inspector-empty"),
-    ).not.toBeInTheDocument();
-    lineageRender.unmount();
-
     searchParamsMock = new URLSearchParams("mode=runtime");
+    useRunMock.mockReturnValue(queryResult(buildRun()));
     const runtimeRender = render(<RunsDetailPage />);
     const runtimePanel = screen.getByTestId("runs-detail-tab-panel-runtime");
     expect(
@@ -1062,11 +988,8 @@ describe("RunsDetailPage", () => {
     );
   });
 
-  it("renders secondary lineage and token accounting evidence", () => {
-    const copiedInvocation = buildInvocation({
-      outputOrigin: "copied",
-      resolvedInputOrigin: "copied",
-      sourceInvocationId: 501,
+  it("renders secondary runtime and token accounting evidence", () => {
+    const firstInvocation = buildInvocation({
       tokens: 21,
     });
     const executedInvocation = buildInvocation({
@@ -1084,18 +1007,11 @@ describe("RunsDetailPage", () => {
     const run = buildRun({
       executedTokens: 30,
       inheritedTokens: 21,
-      lineageRootRunId: 40,
       packageProvenance: buildPackageProvenance(),
-      replayStepIndex: 1,
-      resumeStepIndex: 2,
       sourceRunId: 41,
       steps: [
         buildStep({
-          invocations: [copiedInvocation],
-          origin: "copied",
-          sourceRunId: 41,
-          sourceRunStepId: 401,
-          sourceStepIndex: 1,
+          invocations: [firstInvocation],
         }),
         buildStep({
           id: 102,
@@ -1107,17 +1023,6 @@ describe("RunsDetailPage", () => {
     });
 
     useRunMock.mockReturnValue(queryResult(run));
-    searchParamsMock = new URLSearchParams("mode=lineage");
-    const lineageRender = render(<RunsDetailPage />);
-    const lineageWorkspace = screen.getByTestId("runs-lineage-workspace");
-    expect(lineageWorkspace).toHaveTextContent(/lineage boundaries/i);
-    expect(lineageWorkspace).toHaveTextContent(/Run #41/i);
-    expect(lineageWorkspace).toHaveTextContent(/1 copied · 1 planned/i);
-    expect(
-      within(lineageWorkspace).getByTestId("runs-lineage-summary"),
-    ).toBeVisible();
-    lineageRender.unmount();
-
     searchParamsMock = new URLSearchParams("mode=runtime");
     const runtimeRender = render(<RunsDetailPage />);
     const runtimePanel = screen.getByTestId("runs-detail-tab-panel-runtime");
@@ -1316,22 +1221,11 @@ describe("RunsDetailPage", () => {
     expect(nextParams.get("inspect")).toBe("step:1");
     expect(nextParams.has("pane")).toBe(false);
     expect(nextParams.get("rerun")).toBe("1");
-
-    const forkParams = updater(
-      new URLSearchParams("fork=1&resumeStepIndex=1&invocationId=1001"),
-    );
-    expect(forkParams.get("inspect")).toBe("step:1");
-    expect(forkParams.get("fork")).toBe("1");
-    expect(forkParams.get("resumeStepIndex")).toBe("1");
-    expect(forkParams.get("invocationId")).toBe("1001");
   });
 
-  it("renders normalized lineage, step origins, invocation origins, and trace summaries", () => {
-    const copiedInvocation = buildInvocation({
+  it("renders normalized step origins, invocation origins, and trace summaries", () => {
+    const firstInvocation = buildInvocation({
       id: 1001,
-      outputOrigin: "copied",
-      resolvedInputOrigin: "copied",
-      sourceInvocationId: 501,
       traceSpanId: "span-1",
     });
     const failedInvocation = buildInvocation({
@@ -1379,10 +1273,7 @@ describe("RunsDetailPage", () => {
     const run = buildRun({
       executedTokens: 30,
       finalOutput: { summary: "All clear", source: "normalized" },
-      replayStepIndex: 1,
       inheritedTokens: 21,
-      lineageRootRunId: 40,
-      resumeStepIndex: 2,
       sourceRunId: 41,
       targetId: 7,
       targetKey: "market_review_package",
@@ -1521,11 +1412,7 @@ describe("RunsDetailPage", () => {
       },
       steps: [
         buildStep({
-          invocations: [copiedInvocation],
-          origin: "copied",
-          sourceRunId: 41,
-          sourceRunStepId: 401,
-          sourceStepIndex: 1,
+          invocations: [firstInvocation],
         }),
         buildStep({
           id: 102,
@@ -1620,7 +1507,7 @@ describe("RunsDetailPage", () => {
       /failure: step 2/i,
     );
     expect(screen.getByTestId("runs-detail-metadata-line")).toHaveTextContent(
-      /lineage from run #41/i,
+      /rerun of run #41/i,
     );
     expect(screen.queryByText(/captured package id/i)).not.toBeInTheDocument();
     expect(
@@ -1699,9 +1586,7 @@ describe("RunsDetailPage", () => {
       CONTENT_VISIBILITY_AUTO_CLASS,
       EXECUTION_DEFERRED_SECTION_SIZE_CLASS,
     );
-    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
-      /copied origin/i,
-    );
+    expect(screen.getByTestId("runs-step-1")).toHaveTextContent(/planned origin/i);
     expect(screen.getByTestId("runs-step-1")).toHaveTextContent(
       /1 agent invocation/i,
     );
@@ -1899,7 +1784,7 @@ describe("RunsDetailPage", () => {
     expect(stepSummary.querySelectorAll(":scope > section")).toHaveLength(2);
     const metadata = screen.getByTestId("runs-step-1-metadata");
     expect(metadata.tagName).toBe("DL");
-    expect(metadata.querySelectorAll("dt")).toHaveLength(9);
+    expect(metadata.querySelectorAll("dt")).toHaveLength(8);
     expect(
       screen.getByTestId("runs-step-1-aggregated-output"),
     ).toHaveTextContent(/analysis/i);
@@ -1908,46 +1793,6 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/research_agent/i);
 
     stepSummaryRender.unmount();
-    searchParamsMock = new URLSearchParams(
-      "tab=execution&inspect=step:1&pane=lineage",
-    );
-    const stepLineageRender = render(<RunsDetailPage />);
-    const stepLineage = screen.getByTestId("runs-step-1-lineage-summary");
-    const stepLineageDiagram = within(stepLineage).getByTestId(
-      "runs-step-1-lineage-diagram",
-    );
-    expect(stepLineageDiagram).toBeInTheDocument();
-    expectStaticLineageDiagramContract(stepLineageDiagram);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-source"),
-    ).toHaveTextContent(/source run/i);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-source"),
-    ).toHaveTextContent(/source step row/i);
-    const stepLineageSourceNode = within(stepLineage).getByTestId(
-      "runs-step-1-lineage-node-source",
-    );
-    expect(
-      within(stepLineageSourceNode).getByRole("link", { name: /^run #41$/i }),
-    ).toHaveAttribute("href", "/runs/41");
-    expect(
-      within(stepLineageSourceNode).getByRole("link", {
-        name: /run #41 step 1/i,
-      }),
-    ).toHaveAttribute("href", "/runs/41#step-1");
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/origin/i);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/copied/i);
-    expect(
-      within(stepLineageDiagram).getByTestId(
-        "lineage-edge-source-current",
-      ),
-    ).toHaveTextContent(/provenance/i);
-
-    stepLineageRender.unmount();
     searchParamsMock = new URLSearchParams("pane=provenance");
     const invalidRunPaneRender = render(<RunsDetailPage />);
     expect(screen.getByTestId("runs-detail-final-output")).toHaveTextContent(
@@ -1971,62 +1816,6 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     invalidStepPaneRender.unmount();
-    searchParamsMock = new URLSearchParams("pane=lineage");
-    const lineageRender = render(<RunsDetailPage />);
-    const lineage = screen.getByTestId("runs-lineage-summary");
-    const runLineageDiagram = within(lineage).getByTestId(
-      "runs-lineage-diagram",
-    );
-    expectStaticLineageDiagramContract(runLineageDiagram);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-root"),
-    ).toHaveAttribute("data-node-x", "0");
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-root"),
-    ).toHaveAttribute("data-node-y", "24");
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-root"),
-    ).toHaveTextContent(/lineage root/i);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-root"),
-    ).toHaveTextContent(/run #40/i);
-    expect(
-      within(lineage).getByRole("link", { name: /run #41/i }),
-    ).toHaveAttribute("href", "/runs/41");
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-source"),
-    ).toHaveTextContent(/source run/i);
-    expect(
-      within(lineage).getByTestId("runs-historical-lineage"),
-    ).toHaveTextContent(/read-only audit lineage/i);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-source"),
-    ).toHaveTextContent(/historical lineage step/i);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-source"),
-    ).toHaveTextContent(/step 1/i);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-current"),
-    ).toHaveTextContent(/resume boundary/i);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-current"),
-    ).toHaveTextContent(/step 2/i);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-current"),
-    ).toHaveTextContent(/1 copied · 1 planned/i);
-    expect(
-      within(lineage).getByTestId("runs-lineage-node-current"),
-    ).toHaveTextContent(/1 copied · 1 planned\/executed/i);
-    expect(
-      within(runLineageDiagram).getByTestId("lineage-edge-root-source"),
-    ).toHaveTextContent(/lineage root/i);
-    expect(
-      within(runLineageDiagram).getByTestId(
-        "lineage-edge-source-current",
-      ),
-    ).toHaveTextContent(/historical lineage \/ resume/i);
-
-    lineageRender.unmount();
     searchParamsMock = new URLSearchParams(
       "inspect=invocation:1002&pane=error",
     );
@@ -2313,47 +2102,6 @@ describe("RunsDetailPage", () => {
     defaultRender.unmount();
   });
 
-  it("renders a single-node step lineage diagram when no upstream source exists", () => {
-    useRunMock.mockReturnValue(queryResult(buildRun()));
-    searchParamsMock = new URLSearchParams(
-      "tab=execution&inspect=step:1&pane=lineage",
-    );
-
-    render(<RunsDetailPage />);
-
-    const stepLineage = screen.getByTestId("runs-step-1-lineage-summary");
-    const stepLineageDiagram = within(stepLineage).getByTestId(
-      "runs-step-1-lineage-diagram",
-    );
-    expectStaticLineageDiagramContract(stepLineageDiagram);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/origin/i);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/planned/i);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/source run/i);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/source step/i);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/source step row/i);
-    expect(
-      within(stepLineage).getByTestId("runs-step-1-lineage-node-current"),
-    ).toHaveTextContent(/not recorded/i);
-    expect(
-      within(stepLineage).queryByTestId("runs-step-1-lineage-node-source"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(stepLineageDiagram).queryByTestId(
-        "lineage-edge-source-current",
-      ),
-    ).not.toBeInTheDocument();
-  });
-
   it("renders package target identity and span-only outline trace summary", () => {
     useRunMock.mockReturnValue(
       queryResult(
@@ -2627,10 +2375,7 @@ describe("RunsDetailPage", () => {
               id: 102,
               index: 2,
               invocations: [],
-              origin: "copied",
-              sourceRunId: 41,
-              sourceRunStepId: 402,
-              sourceStepIndex: 2,
+              origin: "planned",
               status: "skipped",
             }),
           ],
@@ -2914,403 +2659,4 @@ describe("RunsDetailPage", () => {
     expect(screen.getByTestId("run-rerun-submit")).toBeEnabled();
   });
 
-  it("opens the fork dialog from invocation URL params and fetches the invocation draft", async () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=1&invocationId=1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-    useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
-
-    render(<RunsDetailPage />);
-
-    const forkDialog = screen.getByRole("dialog", {
-      name: /fork from analysis invocation/i,
-    });
-    expect(forkDialog).toBeVisible();
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
-      enabled: true,
-    });
-    expect(within(forkDialog).getByText(/resume at step 1/i)).toBeVisible();
-    expect(within(forkDialog).getByText(/^invocation #1001$/i)).toBeVisible();
-    expect(
-      await screen.findByLabelText("Target invocation input JSON"),
-    ).toHaveValue(JSON.stringify({ ticker: "AAPL" }, null, 2));
-    expect(
-      screen.queryByLabelText("Root run parameters JSON"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows current fork readiness blockers from top-level draft fields", async () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=1&invocationId=1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-    useRunForkDraftMock.mockReturnValue(
-      forkDraftQueryResult(
-        buildForkDraft({
-          blockingErrors: [
-            {
-              field: "modelConnections.primary_openai",
-              issue: "Current model connection is missing for fork.",
-            },
-          ],
-          packageProvenance: buildPackageProvenance({
-            preflightSummary: { ready: true, blockingErrors: [], warnings: [] },
-          }),
-          ready: false,
-          warnings: [
-            {
-              field: "extensions.signaldeck.finance",
-              issue: "Current extension state changed since source run.",
-            },
-          ],
-        }),
-      ),
-    );
-
-    render(<RunsDetailPage />);
-
-    const readiness = await screen.findByTestId("run-fork-readiness");
-    expect(readiness).toHaveTextContent(/current fork readiness blocked/i);
-    expect(readiness).toHaveTextContent(
-      /current model connection is missing for fork/i,
-    );
-    expect(readiness).toHaveTextContent(
-      /current extension state changed since source run/i,
-    );
-    expect(screen.getByTestId("run-fork-submit")).toBeDisabled();
-    fireEvent.click(screen.getByTestId("run-fork-submit"));
-    expect(createRunForkMutateAsyncMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps historical fork provenance preflight out of current readiness", async () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=1&invocationId=1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-    useRunForkDraftMock.mockReturnValue(
-      forkDraftQueryResult(
-        buildForkDraft({
-          packageProvenance: buildPackageProvenance({
-            preflightSummary: {
-              blockingErrors: [
-                {
-                  field: "modelConnections.old",
-                  issue: "Historical model connection was missing.",
-                },
-              ],
-              ready: false,
-              warnings: [],
-            },
-          }),
-          ready: true,
-        }),
-      ),
-    );
-
-    render(<RunsDetailPage />);
-
-    const readiness = await screen.findByTestId("run-fork-readiness");
-    expect(readiness).toHaveTextContent(/current fork readiness passed/i);
-    expect(readiness).not.toHaveTextContent(
-      /historical model connection was missing/i,
-    );
-    expect(screen.getByTestId("run-fork-submit")).toBeEnabled();
-  });
-
-  it("keeps the last fork presentation while Cancel closes the dialog", async () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=1&invocationId=1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-    useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
-
-    const { rerender } = render(<RunsDetailPage />);
-
-    fireEvent.change(
-      await screen.findByLabelText("Target invocation input JSON"),
-      {
-        target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
-      },
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    applyLatestSearchParamsUpdate("fork=1&resumeStepIndex=1&invocationId=1001");
-    rerender(<RunsDetailPage />);
-
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
-      enabled: false,
-    });
-    expect(
-      screen.queryByTestId("run-fork-invalid-target"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/fork unavailable/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/invocation #undefined/i),
-    ).not.toBeInTheDocument();
-  });
-
-  it("resets canceled fork edits after the close animation completes and the dialog reopens", async () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=1&invocationId=1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-    useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
-
-    const { rerender } = render(<RunsDetailPage />);
-
-    fireEvent.change(
-      await screen.findByLabelText("Target invocation input JSON"),
-      {
-        target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
-      },
-    );
-
-    vi.useFakeTimers();
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-      applyLatestSearchParamsUpdate(
-        "fork=1&resumeStepIndex=1&invocationId=1001",
-      );
-      rerender(<RunsDetailPage />);
-      expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
-        enabled: false,
-      });
-
-      act(() => {
-        vi.advanceTimersByTime(200);
-      });
-
-      searchParamsMock = new URLSearchParams(
-        "fork=1&resumeStepIndex=1&invocationId=1001",
-      );
-      rerender(<RunsDetailPage />);
-
-      expect(screen.getByLabelText("Target invocation input JSON")).toHaveValue(
-        JSON.stringify({ ticker: "AAPL" }, null, 2),
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("updates URL params when the selected invocation fork action is clicked", () => {
-    searchParamsMock = new URLSearchParams(
-      "tab=execution&mode=execution&inspect=invocation:1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-
-    render(<RunsDetailPage />);
-
-    expect(
-      screen.queryByTestId("runs-step-1-replay-entry"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(
-        screen.getByTestId("runs-invocation-1001-outline-entry"),
-      ).queryByRole("button", { name: /fork from this invocation/i }),
-    ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("runs-invocation-1001-fork-entry"));
-
-    expect(setSearchParamsMock).toHaveBeenCalledTimes(1);
-    const updater = setSearchParamsMock.mock.calls[0][0] as (
-      current: URLSearchParams,
-    ) => URLSearchParams;
-    const nextParams = updater(new URLSearchParams("panel=details"));
-    expect(nextParams.get("panel")).toBe("details");
-    expect(nextParams.get("fork")).toBe("1");
-    expect(nextParams.get("resumeStepIndex")).toBe("1");
-    expect(nextParams.get("invocationId")).toBe("1001");
-  });
-
-  it("uses selected invocation fork actions and no ambiguous step shortcut for mixed or multi-invocation steps", () => {
-    searchParamsMock = new URLSearchParams(
-      "tab=execution&mode=execution&inspect=invocation:1001",
-    );
-    useRunMock.mockReturnValue(
-      queryResult(
-        buildReplayableWorkflowRun({
-          steps: [
-            buildStep({
-              invocations: [
-                buildInvocation({ id: 1001, position: 1, slot: "analysis" }),
-                buildInvocation({ id: 1003, position: 2, slot: "risk" }),
-              ],
-              operationInvocations: [
-                {
-                  createdAt: NOW,
-                  durationMs: 3,
-                  errorCode: null,
-                  errorDetails: [],
-                  errorMessage: null,
-                  finishedAt: "2026-04-20T10:00:03Z",
-                  graphMetadata: null,
-                  id: 2001,
-                  method: "POST",
-                  operationKey: "notify",
-                  operationKind: "http",
-                  optional: false,
-                  output: { ok: true },
-                  outputOrigin: "executed",
-                  outputSchemaRef: {
-                    scope: "packageLocal",
-                    localId: 31,
-                    version: 1,
-                  },
-                  outputSchemaVersion: 1,
-                  persistedAt: "2026-04-20T10:00:03Z",
-                  position: 3,
-                  requestMetadata: {},
-                  responseMetadata: {},
-                  runId: 42,
-                  runStepId: 101,
-                  slot: "notify",
-                  sourceOperationInvocationId: null,
-                  sourceRunId: null,
-                  sourceRunStepId: null,
-                  sourceStepIndex: null,
-                  startedAt: NOW,
-                  status: "succeeded",
-                  stepIndex: 1,
-                  timeoutSeconds: 10,
-                  traceSpanId: null,
-                  updatedAt: "2026-04-20T10:00:03Z",
-                },
-              ],
-            }),
-          ],
-        }),
-      ),
-    );
-
-    const { rerender } = render(<RunsDetailPage />);
-
-    expect(
-      screen.queryByTestId("runs-step-1-replay-entry"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("runs-invocation-1001-fork-entry"),
-    ).toHaveTextContent(/fork from this invocation/i);
-    expect(
-      screen.queryByTestId("runs-invocation-1003-fork-entry"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(
-        screen.getByTestId("runs-invocation-1001-outline-entry"),
-      ).queryByRole("button", { name: /fork from this invocation/i }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("runs-operation-2001-outline-entry"),
-    ).toHaveTextContent(/operation forks are not supported/i);
-    expect(
-      within(
-        screen.getByTestId("runs-operation-2001-outline-entry"),
-      ).queryByRole("button", { name: /fork from this invocation/i }),
-    ).not.toBeInTheDocument();
-
-    searchParamsMock = new URLSearchParams(
-      "tab=execution&mode=execution&inspect=invocation:1003",
-    );
-    rerender(<RunsDetailPage />);
-
-    expect(
-      screen.queryByTestId("runs-invocation-1001-fork-entry"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("runs-invocation-1003-fork-entry"),
-    ).toHaveTextContent(/fork from this invocation/i);
-  });
-
-  it("hides fork actions for non-succeeded steps", () => {
-    searchParamsMock = new URLSearchParams("inspect=invocation:1001");
-    useRunMock.mockReturnValue(
-      queryResult(
-        buildRun({
-          targetKind: "workflowPackage",
-          steps: [
-            buildStep({ status: "pending" }),
-            buildStep({ id: 102, index: 2, status: "failed" }),
-            buildStep({ id: 103, index: 3, status: "skipped" }),
-          ],
-        }),
-      ),
-    );
-
-    render(<RunsDetailPage />);
-
-    expect(
-      screen.queryByRole("button", { name: /fork from this invocation/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("submits changed target invocation input and navigates to the created run", async () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=1&invocationId=1001",
-    );
-    createRunForkMutateAsyncMock.mockResolvedValue({ id: 99 });
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-    useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
-
-    render(<RunsDetailPage />);
-
-    fireEvent.change(
-      await screen.findByLabelText("Target invocation input JSON"),
-      {
-        target: { value: JSON.stringify({ ticker: "MSFT" }, null, 2) },
-      },
-    );
-    fireEvent.click(screen.getByTestId("run-fork-submit"));
-
-    await waitFor(() =>
-      expect(createRunForkMutateAsyncMock).toHaveBeenCalledWith({
-        runId: "42",
-        payload: {
-          invocationInput: { ticker: "MSFT" },
-          sourceInvocationId: 1001,
-        },
-      }),
-    );
-    expect(navigateMock).toHaveBeenCalledWith("/runs/99");
-  });
-
-  it("blocks fork submit and shows precise JSON parse errors", async () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=1&invocationId=1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-    useRunForkDraftMock.mockReturnValue(forkDraftQueryResult(buildForkDraft()));
-
-    render(<RunsDetailPage />);
-
-    fireEvent.change(
-      await screen.findByLabelText("Target invocation input JSON"),
-      {
-        target: { value: "{not-json" },
-      },
-    );
-
-    expect(
-      await screen.findByText(
-        /target invocation input json must be valid json/i,
-      ),
-    ).toBeVisible();
-    expect(screen.getByTestId("run-fork-submit")).toBeDisabled();
-    fireEvent.click(screen.getByTestId("run-fork-submit"));
-    expect(createRunForkMutateAsyncMock).not.toHaveBeenCalled();
-  });
-
-  it("shows invalid URL fork state without fetching a draft", () => {
-    searchParamsMock = new URLSearchParams(
-      "fork=1&resumeStepIndex=3&invocationId=1001",
-    );
-    useRunMock.mockReturnValue(queryResult(buildReplayableWorkflowRun()));
-
-    render(<RunsDetailPage />);
-
-    expect(screen.getByTestId("run-fork-invalid-target")).toHaveTextContent(
-      /step 3 is not available/i,
-    );
-    expect(useRunForkDraftMock).toHaveBeenLastCalledWith("42", 1001, {
-      enabled: false,
-    });
-  });
 });

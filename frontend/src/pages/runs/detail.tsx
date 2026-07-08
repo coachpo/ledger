@@ -1,4 +1,4 @@
-import { AlertCircle, GitBranch, PlayCircle, Timer } from "lucide-react";
+import { AlertCircle, PlayCircle, Timer } from "lucide-react";
 import { useMemo } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 
@@ -11,12 +11,9 @@ import { useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
 
 import {
-  findForkTargetContext,
   formatQueueReasonTitle,
   formatTargetKindLabel,
   formatUnfinishedRunStatus,
-  getRunForkAvailability,
-  hasCurrentForkLineage,
   isTerminalStatus,
   sortedInvocations,
   sortedOperationInvocations,
@@ -26,7 +23,7 @@ import {
   withRunDetailTab,
   type RunDetailTabKey,
 } from "./detail-tabs";
-import { RunDetailSectionStack, RunForkDialog } from "./detail-sections";
+import { RunDetailSectionStack } from "./detail-sections";
 import {
   resolveRunInspectionState,
   serializeInspectionTarget,
@@ -81,34 +78,12 @@ export function RunsDetailPage() {
       ]),
     [steps],
   );
-  const forkDialogOpen = searchParams.get("fork") === "1";
-  const resumeStepIndexParam = searchParams.get("resumeStepIndex");
-  const forkInvocationIdParam = searchParams.get("invocationId");
   const rerunDialogOpen = searchParams.get("rerun") === "1";
-  const resumeStepIndex = useMemo(() => {
-    if (resumeStepIndexParam === null || resumeStepIndexParam.trim() === "") {
-      return undefined;
-    }
-
-    const parsed = Number(resumeStepIndexParam);
-    return Number.isInteger(parsed) && parsed >= 1 ? parsed : undefined;
-  }, [resumeStepIndexParam]);
-  const forkInvocationId = useMemo(() => {
-    if (forkInvocationIdParam === null || forkInvocationIdParam.trim() === "") {
-      return undefined;
-    }
-
-    const parsed = Number(forkInvocationIdParam);
-    return Number.isInteger(parsed) && parsed >= 1 ? parsed : undefined;
-  }, [forkInvocationIdParam]);
 
   const openRerunDialog = () => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("rerun", "1");
-      next.delete("fork");
-      next.delete("resumeStepIndex");
-      next.delete("invocationId");
       return next;
     });
   };
@@ -117,27 +92,6 @@ export function RunsDetailPage() {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.delete("rerun");
-      return next;
-    });
-  };
-
-  const openForkDialog = (stepIndex: number, invocationId: number) => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.set("fork", "1");
-      next.set("resumeStepIndex", String(stepIndex));
-      next.set("invocationId", String(invocationId));
-      next.delete("rerun");
-      return next;
-    });
-  };
-
-  const closeForkDialog = () => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete("fork");
-      next.delete("resumeStepIndex");
-      next.delete("invocationId");
       return next;
     });
   };
@@ -169,36 +123,8 @@ export function RunsDetailPage() {
   }
 
   const run = runQuery.data;
-  const copiedSteps = steps.filter((step) => step.origin === "copied").length;
-  const plannedSteps = steps.filter((step) => step.origin === "planned").length;
-  const copiedInvocations = steps.reduce(
-    (count, step) =>
-      count +
-      step.invocations.filter(
-        (invocation) =>
-          invocation.outputOrigin === "copied" ||
-          invocation.resolvedInputOrigin === "copied",
-      ).length +
-      step.operationInvocations.filter(
-        (invocation) => invocation.outputOrigin === "copied",
-      ).length,
-    0,
-  );
-  const plannedInvocations = allInvocations.length - copiedInvocations;
   const runProgress = run.progress.percent;
   const targetKindLabel = formatTargetKindLabel(run.targetKind);
-  const forkTarget = findForkTargetContext(
-    steps,
-    resumeStepIndex,
-    forkInvocationId,
-  );
-  const forkAvailability = getRunForkAvailability(
-    run,
-    steps,
-    resumeStepIndex,
-    forkInvocationId,
-  );
-  const isCurrentFork = hasCurrentForkLineage(run, steps);
   const activeInspection = resolveRunInspectionState({
     hash: location.hash,
     run,
@@ -256,11 +182,7 @@ export function RunsDetailPage() {
     });
   };
 
-  const lineageLabel = run.sourceRunId
-    ? isCurrentFork
-      ? `Forked from Run #${run.sourceRunId}`
-      : `Historical lineage from Run #${run.sourceRunId}`
-    : "Original run";
+  const sourceRunLabel = run.sourceRunId ? `Rerun of Run #${run.sourceRunId}` : "Original run";
   const startedLabel = run.startedAt
     ? `Started ${formatDateTime(run.startedAt)}`
     : `Queued ${formatDateTime(run.queuedAt)}`;
@@ -334,13 +256,7 @@ export function RunsDetailPage() {
       {...{ onTabChange: updateSelectedTab, selectedTab }}
       activeInspection={activeInspection}
       allInvocationsCount={allInvocations.length}
-      copiedInvocations={copiedInvocations}
-      copiedSteps={copiedSteps}
-      isCurrentFork={isCurrentFork}
-      onOpenFork={openForkDialog}
       onSelect={selectInspection}
-      plannedInvocations={plannedInvocations}
-      plannedSteps={plannedSteps}
       run={run}
       runProgress={runProgress}
       steps={steps}
@@ -482,15 +398,7 @@ export function RunsDetailPage() {
                       <Timer className="size-3.5 shrink-0" />
                       {durationLabel}
                     </span>
-                    <span
-                      className="inline-flex min-w-0 items-center gap-1.5"
-                      data-testid="runs-detail-lineage-indicator"
-                    >
-                      {run.sourceRunId ? (
-                        <GitBranch className="size-3.5 shrink-0" />
-                      ) : null}
-                      {lineageLabel}
-                    </span>
+                    <span data-testid="runs-detail-source-run">{sourceRunLabel}</span>
                   </span>
                 </span>
               }
@@ -514,15 +422,6 @@ export function RunsDetailPage() {
         runId={runId}
       />
 
-      <RunForkDialog
-        forkAvailability={forkAvailability}
-        forkTarget={forkTarget}
-        invocationId={forkInvocationId}
-        onClose={closeForkDialog}
-        open={forkDialogOpen}
-        resumeStepIndex={resumeStepIndex}
-        runId={runId}
-      />
     </>
   );
 }

@@ -19,10 +19,8 @@ vi.mock("react-router", () => ({
 }));
 
 vi.mock("@/hooks/use-runs", () => ({
-  useCreateRunFork: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateRunRerun: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useRun: () => useRunMock(),
-  useRunForkDraft: () => ({ data: undefined, error: null, isError: false, isPending: false }),
   useRunRerunDraft: () => ({ data: undefined, error: null, isError: false, isPending: false }),
 }));
 
@@ -57,10 +55,6 @@ function buildOperation(overrides: Partial<RunOperationInvocationRead> = {}): Ru
     runId: 42,
     runStepId: 101,
     slot: "webhook_result",
-    sourceOperationInvocationId: null,
-    sourceRunId: null,
-    sourceRunStepId: null,
-    sourceStepIndex: null,
     startedAt: NOW,
     status: "succeeded",
     stepIndex: 1,
@@ -84,9 +78,6 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
     origin: "planned",
     persistedAt: "2026-05-15T08:31:00Z",
     runId: 42,
-    sourceRunId: null,
-    sourceRunStepId: null,
-    sourceStepIndex: null,
     startedAt: NOW,
     status: "succeeded",
     updatedAt: "2026-05-15T08:31:00Z",
@@ -118,7 +109,6 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     id: 42,
     inheritedTokens: 0,
     input: { ticker: "NVDA" },
-    lineageRootRunId: null,
     extensionDependencies: [],
     packageProvenance: null,
     progress: {
@@ -134,8 +124,6 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     scheduleReason: null,
     scheduledFor: null,
     queuedAt: NOW,
-    replayStepIndex: null,
-    resumeStepIndex: 1,
     sourceRunId: null,
     startedAt: NOW,
     status: "succeeded",

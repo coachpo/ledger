@@ -468,7 +468,6 @@ def _running_run(session: Session) -> Run:
         status="running",
         queued_at=timestamp,
         started_at=timestamp,
-        resume_step_index=1,
         total_tokens=0,
         inherited_tokens=0,
         executed_tokens=0,

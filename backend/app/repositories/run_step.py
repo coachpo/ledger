@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
 from app.core.formatting import utcnow
 from app.models.run_step import RunStep
@@ -60,31 +60,6 @@ class RunStepRepository(BaseRepository[RunStep]):
                 self.model.status.in_(_TERMINAL_STEP_STATUSES),
             )
             .order_by(self.model.step_index.asc(), self.model.id.asc())
-        )
-        return self._list(statement)
-
-    def list_source_linked(
-        self,
-        *,
-        source_run_id: int | None = None,
-        source_run_step_id: int | None = None,
-    ) -> list[RunStep]:
-        statement = select(self.model)
-        if source_run_id is None and source_run_step_id is None:
-            statement = statement.where(
-                or_(
-                    self.model.source_run_id.is_not(None),
-                    self.model.source_run_step_id.is_not(None),
-                )
-            )
-        if source_run_id is not None:
-            statement = statement.where(self.model.source_run_id == source_run_id)
-        if source_run_step_id is not None:
-            statement = statement.where(self.model.source_run_step_id == source_run_step_id)
-        statement = statement.order_by(
-            self.model.run_id.asc(),
-            self.model.step_index.asc(),
-            self.model.id.asc(),
         )
         return self._list(statement)
 

@@ -51,7 +51,6 @@ export function invalidateExtensionReadinessCaches(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.launches() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.preflights() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.rerunDrafts() }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.forkDrafts() }),
   ]);
 }
 

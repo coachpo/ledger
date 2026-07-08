@@ -49,11 +49,11 @@ class RunAgentInvocation(IdMixin, TimestampMixin, Base):
             name="ck_run_agent_invocations_status",
         ),
         CheckConstraint(
-            "resolved_input_origin IN ('derived', 'edited', 'copied', 'passthrough')",
+            "resolved_input_origin IN ('derived', 'passthrough')",
             name="ck_run_agent_invocations_resolved_input_origin",
         ),
         CheckConstraint(
-            "output_origin IS NULL OR output_origin IN ('executed', 'edited', 'copied')",
+            "output_origin IS NULL OR output_origin = 'executed'",
             name="ck_run_agent_invocations_output_origin",
         ),
         CheckConstraint("tokens >= 0", name="ck_run_agent_invocations_tokens_non_negative"),
@@ -64,7 +64,6 @@ class RunAgentInvocation(IdMixin, TimestampMixin, Base):
         Index("ix_run_agent_invocations_run_step_index", "run_id", "step_index"),
         Index("ix_run_agent_invocations_run_status", "run_id", "status"),
         Index("ix_run_agent_invocations_agent_version", "agent_key", "agent_version"),
-        Index("ix_run_agent_invocations_source_invocation", "source_invocation_id"),
     )
 
     run_step_id: Mapped[int] = mapped_column(
@@ -130,10 +129,6 @@ class RunAgentInvocation(IdMixin, TimestampMixin, Base):
     tokens: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     duration_ms: Mapped[int | None] = mapped_column(nullable=True)
     trace_span_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    source_invocation_id: Mapped[int | None] = mapped_column(
-        ForeignKey("run_agent_invocations.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     persisted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -157,15 +152,3 @@ class RunAgentInvocation(IdMixin, TimestampMixin, Base):
         foreign_keys=[run_step_id],
     )
     run: Mapped[object] = relationship("Run", foreign_keys=[run_id])
-    source_invocation: Mapped[RunAgentInvocation | None] = relationship(
-        "RunAgentInvocation",
-        foreign_keys=lambda: [RunAgentInvocation.source_invocation_id],
-        remote_side=lambda: [RunAgentInvocation.id],
-        back_populates="copied_invocations",
-    )
-    copied_invocations: Mapped[list[RunAgentInvocation]] = relationship(
-        "RunAgentInvocation",
-        foreign_keys=lambda: [RunAgentInvocation.source_invocation_id],
-        back_populates="source_invocation",
-        passive_deletes=True,
-    )

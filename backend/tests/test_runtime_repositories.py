@@ -8,20 +8,17 @@ from typing import Protocol, TypedDict, cast
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import exc as sqlalchemy_exc
-from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
-from app.models.run_fork import RunFork
 from app.models.run_step import RunStep
 from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
 from app.models.workflow_package_schedule import WorkflowPackageSchedule
 from app.repositories.model_connection import ModelConnectionRepository
 from app.repositories.run import RunRepository
-from app.repositories.run_fork import RunForkRepository
 from app.repositories.workflow_package import WorkflowPackageRepository
 from app.repositories.workflow_package_schedule import (
     WorkflowPackageScheduleFireRepository,
@@ -960,9 +957,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
                     "targetKey": run_detail.target_key,
                     "input": run_detail.input,
                     "sourceRunId": run_detail.source_run_id,
-                    "lineageRootRunId": run_detail.lineage_root_run_id,
-                    "replayStepIndex": run_detail.forked_from_step_index,
-                    "resumeStepIndex": run_detail.resume_step_index,
                     "finalOutput": run_detail.final_output,
                     "status": run_detail.status,
                     "progress": {
@@ -1050,13 +1044,10 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "targetKey",
             "input",
             "sourceRunId",
-            "lineageRootRunId",
             "scheduleId",
             "scheduleFireId",
             "scheduledFor",
             "scheduleReason",
-            "replayStepIndex",
-            "resumeStepIndex",
             "finalOutput",
             "status",
             "progress",
@@ -1123,7 +1114,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
             "tokens",
             "durationMs",
             "traceSpanId",
-            "sourceInvocationId",
             "startedAt",
             "finishedAt",
             "persistedAt",
@@ -1150,109 +1140,6 @@ def test_agent_platform_run_detail_repository_returns_persisted_monitor_fields(
         assert [run.id for run in queued_runs] == [queued_run.id]
         assert latest_for_workflow is not None
         assert latest_for_workflow.id == queued_run.id
-
-
-def test_run_detail_loads_fork_artifact_and_replay_lineage(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        source_run = _build_deletable_run(target_id=9301, target_key="fork_source")
-        fork_run = _build_deletable_run(target_id=9302, target_key="fork_descendant")
-        replay_run = _build_deletable_run(target_id=9303, target_key="replay_lineage")
-        session.add(source_run)
-        session.flush()
-
-        source_step = RunStep(
-            run_id=source_run.id,
-            step_index=2,
-            status="succeeded",
-            origin="planned",
-        )
-        session.add(source_step)
-        session.flush()
-        source_invocation = RunAgentInvocation(
-            run_step_id=source_step.id,
-            run_id=source_run.id,
-            step_index=2,
-            slot="analysis",
-            position=0,
-            agent_id=1,
-            agent_key="fork_agent",
-            agent_version=1,
-            output_schema_id=1,
-            output_schema_version=1,
-            input_mode="passthrough",
-            wiring={},
-            optional=False,
-            status="succeeded",
-            resolved_input={"ticker": "NVDA"},
-            resolved_input_origin="passthrough",
-            output={"decision": "hold"},
-            output_origin="executed",
-            tokens=13,
-        )
-        session.add(source_invocation)
-        session.flush()
-
-        fork_run.source_run_id = source_run.id
-        fork_run.lineage_root_run_id = source_run.id
-        fork_run.resume_step_index = 2
-        replay_run.source_run_id = source_run.id
-        replay_run.lineage_root_run_id = source_run.id
-        replay_run.forked_from_step_index = 2
-        replay_run.resume_step_index = 2
-        session.add_all([fork_run, replay_run])
-        session.flush()
-        RunForkRepository(session).create_fork(
-            run_id=fork_run.id,
-            source_run_id=source_run.id,
-            lineage_root_run_id=source_run.id,
-            source_invocation_id=source_invocation.id,
-            source_step_index=2,
-            resume_step_index=2,
-            invocation_input={"ticker": "MSFT", "horizonDays": 45},
-        )
-        session.commit()
-        source_run_id = source_run.id
-        source_invocation_id = source_invocation.id
-        fork_run_id = fork_run.id
-        replay_run_id = replay_run.id
-        session.expunge_all()
-
-        run_repo = RunRepository(session)
-        fork_repo = RunForkRepository(session)
-
-        fork_detail = run_repo.get_detail(fork_run_id)
-        replay_detail = run_repo.get_detail(replay_run_id)
-        persisted_fork = fork_repo.get_by_run_id(fork_run_id)
-
-        assert fork_detail is not None
-        assert replay_detail is not None
-        assert "fork" not in sqlalchemy_inspect(fork_detail).unloaded
-        assert "fork" not in sqlalchemy_inspect(replay_detail).unloaded
-        assert fork_detail.fork is not None
-        fork_artifact = cast(RunFork, fork_detail.fork)
-        assert fork_artifact.run_id == fork_run_id
-        assert fork_artifact.source_run_id == source_run_id
-        assert fork_artifact.lineage_root_run_id == source_run_id
-        assert fork_artifact.source_invocation_id == source_invocation_id
-        assert fork_artifact.source_step_index == 2
-        assert fork_artifact.resume_step_index == 2
-        assert fork_artifact.invocation_input == {"ticker": "MSFT", "horizonDays": 45}
-        assert persisted_fork is not None
-        assert persisted_fork.run_id == fork_run_id
-        assert [fork.run_id for fork in fork_repo.list_by_source_run(source_run_id)] == [
-            fork_run_id
-        ]
-        assert [
-            fork.run_id for fork in fork_repo.list_by_source_invocation(source_invocation_id)
-        ] == [fork_run_id]
-        assert isinstance(fork_artifact, RunFork)
-        assert replay_detail.fork is None
-        assert replay_detail.source_run_id == source_run_id
-        assert replay_detail.lineage_root_run_id == source_run_id
-        assert replay_detail.forked_from_step_index == 2
-        assert replay_detail.resume_step_index == 2
 
 
 def _create_schedule_fixture(
@@ -1438,18 +1325,8 @@ def test_run_repository_lists_only_direct_schedule_owned_runs(
             queued_at=datetime(2026, 6, 1, 13, 3, tzinfo=UTC_TZ),
         )
         rerun_descendant.source_run_id = direct_by_schedule.id
-        rerun_descendant.lineage_root_run_id = direct_by_schedule.id
 
-        fork_descendant = _build_workflow_package_queue_run(
-            package,
-            queued_at=datetime(2026, 6, 1, 13, 4, tzinfo=UTC_TZ),
-        )
-        fork_descendant.source_run_id = direct_by_fire.id
-        fork_descendant.lineage_root_run_id = direct_by_fire.id
-        fork_descendant.forked_from_step_index = 1
-        fork_descendant.resume_step_index = 1
-
-        session.add_all([rerun_descendant, fork_descendant])
+        session.add(rerun_descendant)
         session.commit()
         schedule_id = schedule.id
         fire_id = fire.id
@@ -1708,14 +1585,13 @@ def test_run_delete_cascades_steps_and_invocations(
         assert session.get(RunAgentInvocation, invocation_id) is None
 
 
-def test_lineage_set_null_on_run_delete(session_factory: sessionmaker[Session]) -> None:
+def test_source_run_set_null_on_run_delete(session_factory: sessionmaker[Session]) -> None:
     with session_factory() as session:
         source = _build_deletable_run(target_id=9101, target_key="source_run")
         session.add(source)
         session.flush()
         descendant = _build_deletable_run(target_id=9102, target_key="descendant_run")
         descendant.source_run_id = source.id
-        descendant.lineage_root_run_id = source.id
         session.add(descendant)
         session.commit()
         source_id = source.id
@@ -1727,7 +1603,6 @@ def test_lineage_set_null_on_run_delete(session_factory: sessionmaker[Session]) 
         persisted = session.get(Run, descendant_id)
         assert persisted is not None
         assert persisted.source_run_id is None
-        assert persisted.lineage_root_run_id is None
 
 
 def test_delete_run_route_returns_204_then_404(

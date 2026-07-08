@@ -3,27 +3,17 @@ import {
   AlertCircle,
   Download,
   FileText,
-  GitBranch,
   type LucideIcon,
 } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Link } from "react-router";
 
-import { EvidenceCluster } from "@/components/shared/evidence-cluster";
 import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -48,7 +38,6 @@ import { stringifyJson } from "../../platform-resource-helpers";
 import {
   diagnosticsFromDraftReadiness,
   formatQueueReasonTitle,
-  getRunForkAvailability,
   progressForInvocations,
   sortedInvocations,
   sortedOperationInvocations,
@@ -69,7 +58,6 @@ import {
   type RunInspectionTarget,
 } from "../inspection-state";
 
-export { RunForkDialog } from "./fork-dialog";
 export {
   RunEvidenceAvailabilitySection,
   RunFinalOutputPane,
@@ -96,7 +84,6 @@ import { CAPABILITY_LABELS, CAPABILITY_ORDER } from "./runtime-metadata";
 import { RunRuntimeProfileSection, RunTokensWorkspace } from "./runtime";
 import {
   CompactModeEmptyState,
-  DetailGrid,
   RunDetailContentSection,
   RunDetailEmptyState,
   RunDetailSectionBlock,
@@ -109,43 +96,12 @@ import {
   statusVariant,
 } from "./shared-helpers";
 
-type LineageDiagramNodeData = {
-  [key: string]: unknown;
-  details: DetailItem[];
-  eyebrow: string;
-  testId: string;
-  title: ReactNode;
-  tone?: "current" | "source";
-};
-
-type LineageDiagramNode = {
-  data: LineageDiagramNodeData;
-  id: string;
-  position: {
-    x: number;
-    y: number;
-  };
-  type: "lineage";
-};
-
-type LineageDiagramEdge = {
-  id: string;
-  label: string;
-  source: string;
-  target: string;
-};
-
-const LINEAGE_NODE_WIDTH = 192;
-const LINEAGE_NODE_GAP = 56;
-const LINEAGE_NODE_Y = 24;
-const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
 const EXECUTION_DEFERRED_SECTION_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_960px]";
 
 const RUN_DETAIL_TAB_ICONS: Record<RunDetailTabKey, LucideIcon> = {
   execution: Activity,
   input: FileText,
-  lineage: GitBranch,
   output: Download,
   overview: Activity,
   runtime: Activity,
@@ -155,7 +111,6 @@ const RUN_DETAIL_TAB_ICONS: Record<RunDetailTabKey, LucideIcon> = {
 const RUN_DETAIL_TAB_DESCRIPTIONS: Record<RunDetailTabKey, string> = {
   execution: "Diagnostics and execution steps for this run.",
   input: "Launch input and provenance captured with the run snapshot.",
-  lineage: "Fork, replay, copied-step, and historical lineage evidence.",
   output: "Final output and output provenance for this run.",
   overview: "Operational status and evidence availability for this run.",
   runtime: "Runtime profile, selected strategies, and capability matrix.",
@@ -205,133 +160,6 @@ function aggregatedStepOutput(step: RunStepRead) {
   };
 }
 
-function canForkInvocation(
-  run: RunRead,
-  step: RunStepRead,
-  invocation: RunAgentInvocationRead,
-): boolean {
-  return getRunForkAvailability(run, [step], step.index, invocation.id)
-    .isAvailable;
-}
-
-function lineageNodePosition(index: number) {
-  return {
-    x: index * (LINEAGE_NODE_WIDTH + LINEAGE_NODE_GAP),
-    y: LINEAGE_NODE_Y,
-  };
-}
-
-function LineageNode({
-  data,
-  x,
-  y,
-}: {
-  data: LineageDiagramNodeData;
-  x: number;
-  y: number;
-}) {
-  return (
-    <div
-      className={cn(
-        "nopan pointer-events-auto w-48 rounded-xl border bg-card p-3 text-left text-card-foreground shadow-ui-xs",
-        data.tone === "current" && "border-primary/30 bg-primary/5",
-        data.tone === "source" && "border-positive/30 bg-positive/5",
-      )}
-      data-testid={data.testId}
-      data-node-x={String(x)}
-      data-node-y={String(y)}
-    >
-      <div className="flex flex-col gap-2">
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {data.eyebrow}
-          </p>
-          <p className="mt-0.5 break-words text-sm font-medium leading-5 text-foreground">
-            {data.title}
-          </p>
-        </div>
-        <dl className="flex flex-col gap-1.5 text-xs">
-          {data.details.map((item) => (
-            <div className="min-w-0" key={item.label}>
-              <dt className="font-medium uppercase tracking-wide text-muted-foreground">
-                {item.label}
-              </dt>
-              <dd className="mt-0.5 break-words text-foreground">
-                {formatOptional(item.value)}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </div>
-  );
-}
-
-function LineageEdge({ edge }: { edge: LineageDiagramEdge }) {
-  return (
-    <div
-      className="relative mt-8 flex min-w-20 shrink-0 flex-col items-center"
-      data-testid={`lineage-edge-${edge.id}`}
-    >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span aria-hidden="true" className="h-px w-10 bg-border/60" />
-        <span aria-hidden="true">→</span>
-        <span aria-hidden="true" className="h-px w-10 bg-border/60" />
-      </div>
-      <span className="mt-1 rounded-md border border-border/70 bg-muted px-2 py-0.5 text-center text-[11px] text-muted-foreground">
-        {edge.label}
-      </span>
-    </div>
-  );
-}
-
-function LineageDiagram({
-  ariaLabel,
-  edges,
-  nodes,
-  testId,
-}: {
-  ariaLabel: string;
-  edges: LineageDiagramEdge[];
-  nodes: LineageDiagramNode[];
-  testId: string;
-}) {
-  const sortedNodes = [...nodes].sort((a, b) => a.position.x - b.position.x);
-
-  return (
-    <div
-      className={cn(
-        LINEAGE_CANVAS_HEIGHT_CLASS,
-        "overflow-auto rounded-xl border border-border/70 bg-ui-surface-grouped/60 shadow-ui-xs",
-      )}
-      data-testid={testId}
-      aria-label={ariaLabel}
-    >
-      <div className="flex min-h-full min-w-max items-start gap-2 overflow-x-auto px-4 py-4">
-        {sortedNodes.map((node, nodeIndex) => {
-          const nextNode = sortedNodes[nodeIndex + 1];
-          const edge = nextNode
-            ? edges.find(
-                (item) => item.source === node.id && item.target === nextNode.id,
-              )
-            : undefined;
-
-          return (
-            <div className="flex items-start gap-2" key={node.id}>
-              <div
-                className="w-48 shrink-0"
-              >
-                <LineageNode data={node.data} x={node.position.x} y={node.position.y} />
-              </div>
-              {edge ? <LineageEdge edge={edge} /> : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function graphMetadataLabel(
   metadata: RunGraphMetadata | null | undefined,
 ): string {
@@ -349,90 +177,6 @@ function graphMetadataLabel(
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-function SourceRunLink({
-  children,
-  runId,
-}: {
-  children: ReactNode;
-  runId: number | null;
-}) {
-  if (!runId) {
-    return <>{children}</>;
-  }
-
-  return (
-    <Link
-      className="nodrag nopan text-primary underline-offset-4 hover:underline"
-      to={`/runs/${runId}`}
-    >
-      {children}
-    </Link>
-  );
-}
-
-function SourceStepLink({ step }: { step: RunStepRead }) {
-  if (!step.sourceRunId || step.sourceStepIndex === null) {
-    return "Not recorded";
-  }
-
-  return (
-    <Link
-      className="nodrag nopan text-primary underline-offset-4 hover:underline"
-      to={`/runs/${step.sourceRunId}#step-${step.sourceStepIndex}`}
-    >
-      Run #{step.sourceRunId} step {step.sourceStepIndex}
-    </Link>
-  );
-}
-
-function SourceInvocationLink({
-  invocation,
-  step,
-}: {
-  invocation: RunAgentInvocationRead;
-  step: RunStepRead;
-}) {
-  if (invocation.sourceInvocationId === null) {
-    return "Not recorded";
-  }
-
-  if (!step.sourceRunId) {
-    return `Invocation #${invocation.sourceInvocationId}`;
-  }
-
-  return (
-    <Link
-      className="text-primary underline-offset-4 hover:underline"
-      to={`/runs/${step.sourceRunId}#invocation-${invocation.sourceInvocationId}`}
-    >
-      Invocation #{invocation.sourceInvocationId}
-    </Link>
-  );
-}
-
-function SourceOperationInvocationLink({
-  invocation,
-}: {
-  invocation: RunOperationInvocationRead;
-}) {
-  if (invocation.sourceOperationInvocationId === null) {
-    return "Not recorded";
-  }
-
-  if (!invocation.sourceRunId) {
-    return `Operation invocation #${invocation.sourceOperationInvocationId}`;
-  }
-
-  return (
-    <Link
-      className="text-primary underline-offset-4 hover:underline"
-      to={`/runs/${invocation.sourceRunId}#operation-invocation-${invocation.sourceOperationInvocationId}`}
-    >
-      Operation invocation #{invocation.sourceOperationInvocationId}
-    </Link>
-  );
 }
 
 function isInspectionTargetEqual(
@@ -508,117 +252,6 @@ function selectedTargetLabel(
       : `Operation #${target.invocationId}`;
   }
   return `Run #${run.id}`;
-}
-
-function hasRunLineageEvidence({
-  copiedInvocations,
-  copiedSteps,
-  run,
-}: {
-  copiedInvocations: number;
-  copiedSteps: number;
-  run: RunRead;
-}): boolean {
-  return Boolean(
-    run.sourceRunId ||
-    (run.lineageRootRunId && run.lineageRootRunId !== run.id) ||
-    run.replayStepIndex !== null ||
-    copiedSteps > 0 ||
-    copiedInvocations > 0,
-  );
-}
-
-export function RunLineageWorkspace({
-  copiedInvocations,
-  copiedSteps,
-  isCurrentFork,
-  plannedInvocations,
-  plannedSteps,
-  run,
-}: {
-  copiedInvocations: number;
-  copiedSteps: number;
-  isCurrentFork: boolean;
-  plannedInvocations: number;
-  plannedSteps: number;
-  run: RunRead;
-}) {
-  if (!hasRunLineageEvidence({ copiedInvocations, copiedSteps, run })) {
-    return (
-      <section
-        className="grid min-w-0 gap-3"
-        data-testid="runs-lineage-workspace"
-      >
-        <RunDetailContentSection
-          description="Fork, snapshot, and historical boundaries appear here when the run has upstream lineage."
-          sectionId="lineage-summary"
-          testId="runs-detail-section-lineage-summary"
-          title="Lineage summary"
-        >
-          <CompactModeEmptyState testId="runs-lineage-empty">
-            No fork, snapshot replay, copied-step, or historical lineage
-            boundary is recorded for this run.
-          </CompactModeEmptyState>
-        </RunDetailContentSection>
-      </section>
-    );
-  }
-
-  return (
-    <section
-      className="grid min-w-0 gap-3"
-      data-testid="runs-lineage-workspace"
-    >
-      <RunDetailContentSection
-        description="Lineage boundaries stay isolated from execution rows with fork, snapshot, and historical context."
-        sectionId="lineage-summary"
-        testId="runs-detail-section-lineage-summary"
-        title="Lineage summary"
-      >
-        <EvidenceCluster
-          items={[
-            {
-              label: "Source",
-              value: run.sourceRunId
-                ? `Run #${run.sourceRunId}`
-                : "Snapshot root",
-              description: isCurrentFork
-                ? "Current fork lineage"
-                : "Historical or original lineage boundary",
-            },
-            {
-              label: "Resume",
-              value: `Step ${run.resumeStepIndex}`,
-              description:
-                run.replayStepIndex === null
-                  ? "No replay source step recorded"
-                  : `Replay source step ${run.replayStepIndex}`,
-            },
-            {
-              label: "Steps",
-              value: `${copiedSteps} copied · ${plannedSteps} planned`,
-              description: "Snapshot copy versus executed run plan.",
-            },
-            {
-              label: "Invocations",
-              value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed`,
-              description:
-                "Invocation-level inherited output or input boundaries.",
-            },
-          ]}
-          layout="grid"
-        />
-      </RunDetailContentSection>
-      <RunLineageEvidence
-        copiedInvocations={copiedInvocations}
-        copiedSteps={copiedSteps}
-        isCurrentFork={isCurrentFork}
-        plannedInvocations={plannedInvocations}
-        plannedSteps={plannedSteps}
-        run={run}
-      />
-    </section>
-  );
 }
 
 type RunDiagnosticSeverity = "error" | "warning";
@@ -782,14 +415,6 @@ function runDiagnostics(
     );
     return diagnostics;
   });
-  const forkCandidates = steps.flatMap((step) =>
-    step.status === "succeeded"
-      ? sortedInvocations(step.invocations).filter(
-          (invocation) =>
-            invocation.status === "succeeded" && invocation.persistedAt,
-        )
-      : [],
-  );
 
   return [
     ...(run.error
@@ -820,21 +445,6 @@ function runDiagnostics(
     ...packageReadinessDiagnostics(run),
     ...packageCurrentDiagnostics(run),
     ...unsupportedCapabilityDiagnostics(run),
-    ...(run.targetKind === "workflowPackage" &&
-    run.status === "succeeded" &&
-    forkCandidates.length === 0
-      ? [
-          {
-            field: "fork.invocation",
-            issue:
-              "No succeeded persisted agent invocation is available for invocation-specific fork creation.",
-            key: "fork-no-candidate",
-            severity: "warning" as const,
-            source: "Fork safety",
-            title: "Fork target unavailable",
-          },
-        ]
-      : []),
   ];
 }
 
@@ -859,14 +469,14 @@ export function RunDiagnosticsWorkspace({
       >
         <RunDetailContentSection
           className={EXECUTION_DEFERRED_SECTION_CLASS_NAME}
-          description="Warnings, failures, unsupported capabilities, and retry/fork safety checks appear here."
+          description="Warnings, failures, unsupported capabilities, and retry safety checks appear here."
           sectionId="diagnostics"
           testId="runs-detail-section-diagnostics"
           title="Diagnostics"
         >
           <CompactModeEmptyState testId="runs-diagnostics-empty">
             No run diagnostics, queue warnings, runtime capability warnings, or
-            safety blockers are recorded.
+            retry blockers are recorded.
           </CompactModeEmptyState>
         </RunDetailContentSection>
       </section>
@@ -1028,29 +638,17 @@ function StepTraceSummary({
 
 export function ExecutionOutline({
   activeInspection,
-  copiedInvocations,
-  copiedSteps,
-  isCurrentFork,
-  onOpenFork,
   onSelect,
-  plannedInvocations,
-  plannedSteps,
   run,
   steps,
   traceSpanEntries,
 }: {
   activeInspection: RunInspectionState;
-  copiedInvocations: number;
-  copiedSteps: number;
-  isCurrentFork: boolean;
-  onOpenFork: (stepIndex: number, invocationId: number) => void;
   onSelect: (
     target: RunInspectionTarget,
     pane?: RunInspectionPane,
     mode?: RunInspectionMode,
   ) => void;
-  plannedInvocations: number;
-  plannedSteps: number;
   run: RunRead;
   steps: RunStepRead[];
   traceSpanEntries: TraceSpanEntry[];
@@ -1063,13 +661,7 @@ export function ExecutionOutline({
       <TableCell className="whitespace-normal p-3 align-top" colSpan={6}>
         <RunInlineEvidence
           activeInspection={activeInspection}
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          isCurrentFork={isCurrentFork}
-          onOpenFork={onOpenFork}
           onSelect={onSelect}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
           run={run}
           steps={steps}
           testId={testId}
@@ -1305,10 +897,9 @@ export function ExecutionOutline({
                             <TableCell className="whitespace-normal align-top text-muted-foreground">
                               {invocation.traceSpanId ?? "Not recorded"}
                             </TableCell>
-                            <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
-                              {invocation.operationKey} · operation forks are
-                              not supported in this phase
-                            </TableCell>
+                          <TableCell className="min-w-72 whitespace-normal align-top text-muted-foreground">
+                              {invocation.operationKey}
+                          </TableCell>
                           </TableRow>
                         );
                         if (!isActive || !shouldRenderExecutionInline) {
@@ -1381,143 +972,11 @@ function EvidencePaneNav({
   );
 }
 
-function RunLineageEvidence({
-  copiedInvocations,
-  copiedSteps,
-  isCurrentFork,
-  plannedInvocations,
-  plannedSteps,
-  run,
-}: {
-  copiedInvocations: number;
-  copiedSteps: number;
-  isCurrentFork: boolean;
-  plannedInvocations: number;
-  plannedSteps: number;
-  run: RunRead;
-}) {
-  const lineageRootRunId = run.lineageRootRunId ?? run.id;
-  const sourceRunValue = run.sourceRunId ? (
-    <SourceRunLink runId={run.sourceRunId}>
-      Run #{run.sourceRunId}
-    </SourceRunLink>
-  ) : (
-    "Original run"
-  );
-  const sourceStepValue =
-    run.replayStepIndex === null
-      ? "Not recorded"
-      : `Step ${run.replayStepIndex}`;
-  const sourceKindLabel = run.sourceRunId
-    ? isCurrentFork
-      ? "Fork source"
-      : "Historical lineage source"
-    : "Original source";
-  const sourceStepLabel = isCurrentFork
-    ? "Fork source step"
-    : "Historical lineage step";
-  const nodes: LineageDiagramNode[] = [
-    {
-      data: {
-        details: [{ label: "Lineage root", value: `Run #${lineageRootRunId}` }],
-        eyebrow: "Root",
-        testId: "runs-lineage-node-root",
-        title: `Run #${lineageRootRunId}`,
-      },
-      id: "lineage-root",
-      position: lineageNodePosition(0),
-      type: "lineage",
-    },
-    {
-      data: {
-        details: [
-          { label: "Source run", value: sourceRunValue },
-          { label: sourceStepLabel, value: sourceStepValue },
-        ],
-        eyebrow: sourceKindLabel,
-        testId: "runs-lineage-node-source",
-        title: run.sourceRunId ? `Run #${run.sourceRunId}` : "Original run",
-        tone: "source",
-      },
-      id: "lineage-source",
-      position: lineageNodePosition(1),
-      type: "lineage",
-    },
-    {
-      data: {
-        details: [
-          { label: "Resume boundary", value: `Step ${run.resumeStepIndex}` },
-          {
-            label: "Step origins",
-            value: `${copiedSteps} copied · ${plannedSteps} planned`,
-          },
-          {
-            label: "Invocation origins",
-            value: `${copiedInvocations} copied · ${plannedInvocations} planned/executed`,
-          },
-        ],
-        eyebrow: "Current run",
-        testId: "runs-lineage-node-current",
-        title: `Run #${run.id}`,
-        tone: "current",
-      },
-      id: "lineage-current",
-      position: lineageNodePosition(2),
-      type: "lineage",
-    },
-  ];
-  const edges: LineageDiagramEdge[] = [
-    {
-      id: "root-source",
-      label: "lineage root",
-      source: "lineage-root",
-      target: "lineage-source",
-    },
-    {
-      id: "source-current",
-      label: run.sourceRunId
-        ? isCurrentFork
-          ? "fork / resume"
-          : "historical lineage / resume"
-        : "original / resume",
-      source: "lineage-source",
-      target: "lineage-current",
-    },
-  ];
-
-  return (
-    <Card data-testid="runs-lineage-summary">
-      <CardHeader>
-        <CardTitle className="text-base">Lineage</CardTitle>
-        <CardDescription>
-          {isCurrentFork ? "Fork" : "Historical lineage"} diagram.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {run.sourceRunId && !isCurrentFork ? (
-          <Alert data-testid="runs-historical-lineage">
-            <GitBranch />
-            <AlertTitle>Historical lineage</AlertTitle>
-            <AlertDescription>Read-only audit lineage.</AlertDescription>
-          </Alert>
-        ) : null}
-        <LineageDiagram
-          ariaLabel="Run lineage diagram"
-          edges={edges}
-          nodes={nodes}
-          testId="runs-lineage-diagram"
-        />
-      </CardContent>
-    </Card>
-  );
-}
-
 function StepSummaryEvidence({ step }: { step: RunStepRead }) {
   const metadataItems: DetailItem[] = [
     { label: "Step row", value: `#${step.id}` },
     { label: "Status", value: step.status },
     { label: "Origin", value: step.origin },
-    { label: "Source step", value: <SourceStepLink step={step} /> },
     { label: "Graph node", value: graphMetadataLabel(step.graphMetadata) },
     { label: "Started", value: formatTimestamp(step.startedAt) },
     { label: "Finished", value: formatTimestamp(step.finishedAt) },
@@ -1575,103 +1034,6 @@ function StepSummaryEvidence({ step }: { step: RunStepRead }) {
   );
 }
 
-function StepLineageEvidence({ step }: { step: RunStepRead }) {
-  const sourceRunValue = step.sourceRunId ? (
-    <SourceRunLink runId={step.sourceRunId}>
-      Run #{step.sourceRunId}
-    </SourceRunLink>
-  ) : (
-    "Not recorded"
-  );
-  const sourceStepValue = <SourceStepLink step={step} />;
-  const sourceStepRowValue = step.sourceRunStepId
-    ? `#${step.sourceRunStepId}`
-    : "Not recorded";
-  const hasUpstreamStep = Boolean(
-    step.sourceRunId && step.sourceStepIndex !== null,
-  );
-  const nodes: LineageDiagramNode[] = hasUpstreamStep
-    ? [
-        {
-          data: {
-            details: [
-              { label: "Source run", value: sourceRunValue },
-              { label: "Source step", value: sourceStepValue },
-              { label: "Source step row", value: sourceStepRowValue },
-            ],
-            eyebrow: "Upstream",
-            testId: `runs-step-${step.index}-lineage-node-source`,
-            title:
-              step.sourceStepIndex === null
-                ? "Source step"
-                : `Step ${step.sourceStepIndex}`,
-            tone: "source",
-          },
-          id: "step-source",
-          position: lineageNodePosition(0),
-          type: "lineage",
-        },
-        {
-          data: {
-            details: [{ label: "Origin", value: step.origin }],
-            eyebrow: "Current step",
-            testId: `runs-step-${step.index}-lineage-node-current`,
-            title: `Step ${step.index}`,
-            tone: "current",
-          },
-          id: "step-current",
-          position: lineageNodePosition(1),
-          type: "lineage",
-        },
-      ]
-    : [
-        {
-          data: {
-            details: [
-              { label: "Origin", value: step.origin },
-              { label: "Source run", value: sourceRunValue },
-              { label: "Source step", value: sourceStepValue },
-              { label: "Source step row", value: sourceStepRowValue },
-            ],
-            eyebrow: "Current step",
-            testId: `runs-step-${step.index}-lineage-node-current`,
-            title: `Step ${step.index}`,
-            tone: "current",
-          },
-          id: "step-current",
-          position: lineageNodePosition(0),
-          type: "lineage",
-        },
-      ];
-  const edges: LineageDiagramEdge[] = hasUpstreamStep
-    ? [
-        {
-          id: "source-current",
-          label: "provenance",
-          source: "step-source",
-          target: "step-current",
-        },
-      ]
-    : [];
-
-  return (
-    <Card data-testid={`runs-step-${step.index}-lineage-summary`}>
-      <CardHeader>
-        <CardTitle className="text-base">Step lineage</CardTitle>
-        <CardDescription>Step provenance diagram.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <LineageDiagram
-          ariaLabel={`Step ${step.index} provenance lineage diagram`}
-          edges={edges}
-          nodes={nodes}
-          testId={`runs-step-${step.index}-lineage-diagram`}
-        />
-      </CardContent>
-    </Card>
-  );
-}
-
 function StepErrorEvidence({ step }: { step: RunStepRead }) {
   return step.error ? (
     <Alert variant="destructive">
@@ -1693,9 +1055,6 @@ function StepEvidence({
   pane: RunInspectionPane;
   step: RunStepRead;
 }) {
-  if (pane === "lineage") {
-    return <StepLineageEvidence step={step} />;
-  }
   if (pane === "error") {
     return <StepErrorEvidence step={step} />;
   }
@@ -1706,11 +1065,9 @@ function StepEvidence({
 function InvocationEvidence({
   invocation,
   pane,
-  step,
 }: {
   invocation: RunAgentInvocationRead;
   pane: RunInspectionPane;
-  step: RunStepRead;
 }) {
   const hasError = Boolean(
     invocation.errorCode ||
@@ -1724,23 +1081,6 @@ function InvocationEvidence({
   }
   if (pane === "wiring") {
     return <JsonBlock label="Wiring" value={invocation.wiring} />;
-  }
-  if (pane === "lineage") {
-    return (
-      <DetailGrid
-        items={[
-          {
-            label: "Source invocation",
-            value: <SourceInvocationLink invocation={invocation} step={step} />,
-          },
-          { label: "Input origin", value: invocation.resolvedInputOrigin },
-          {
-            label: "Output origin",
-            value: invocation.outputOrigin ?? "pending",
-          },
-        ]}
-      />
-    );
   }
   if (pane === "error") {
     return hasError ? (
@@ -1798,31 +1138,6 @@ function OperationEvidence({
       />
     );
   }
-  if (pane === "lineage") {
-    return (
-      <DetailGrid
-        items={[
-          {
-            label: "Source operation",
-            value: <SourceOperationInvocationLink invocation={invocation} />,
-          },
-          {
-            label: "Source run",
-            value: invocation.sourceRunId
-              ? `Run #${invocation.sourceRunId}`
-              : "Not recorded",
-          },
-          {
-            label: "Source step",
-            value:
-              invocation.sourceStepIndex === null
-                ? "Not recorded"
-                : `Step ${invocation.sourceStepIndex}`,
-          },
-        ]}
-      />
-    );
-  }
   if (pane === "error") {
     return hasError ? (
       <Alert variant="destructive">
@@ -1858,18 +1173,12 @@ function OperationEvidence({
 type RunDetailSectionStackProps = {
   activeInspection: RunInspectionState;
   allInvocationsCount: number;
-  copiedInvocations: number;
-  copiedSteps: number;
-  isCurrentFork: boolean;
-  onOpenFork: (stepIndex: number, invocationId: number) => void;
   onSelect: (
     target: RunInspectionTarget,
     pane?: RunInspectionPane,
     mode?: RunInspectionMode,
   ) => void;
   onTabChange: (tab: RunDetailTabKey) => void;
-  plannedInvocations: number;
-  plannedSteps: number;
   run: RunRead;
   runProgress: number;
   steps: RunStepRead[];
@@ -1887,14 +1196,8 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
   const {
     activeInspection,
     allInvocationsCount,
-    copiedInvocations,
-    copiedSteps,
-    isCurrentFork,
-    onOpenFork,
     onSelect,
     onTabChange,
-    plannedInvocations,
-    plannedSteps,
     run,
     runProgress,
     selectedTab,
@@ -1936,13 +1239,7 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
       <RunDiagnosticsWorkspace run={run} steps={steps} />
       <ExecutionOutline
         activeInspection={activeInspection}
-        copiedInvocations={copiedInvocations}
-        copiedSteps={copiedSteps}
-        isCurrentFork={isCurrentFork}
-        onOpenFork={onOpenFork}
         onSelect={onSelect}
-        plannedInvocations={plannedInvocations}
-        plannedSteps={plannedSteps}
         run={run}
         steps={steps}
         traceSpanEntries={traceSpanEntries}
@@ -1956,21 +1253,9 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
 
   const usageContent = <RunTokensWorkspace run={run} />;
 
-  const lineageContent = (
-    <RunLineageWorkspace
-      copiedInvocations={copiedInvocations}
-      copiedSteps={copiedSteps}
-      isCurrentFork={isCurrentFork}
-      plannedInvocations={plannedInvocations}
-      plannedSteps={plannedSteps}
-      run={run}
-    />
-  );
-
   const tabContentByKey: Record<RunDetailTabKey, ReactNode> = {
     execution: executionContent,
     input: inputContent,
-    lineage: lineageContent,
     output: outputContent,
     overview: overviewContent,
     runtime: runtimeContent,
@@ -2027,29 +1312,17 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
 
 function RunInlineEvidence({
   activeInspection,
-  copiedInvocations,
-  copiedSteps,
-  isCurrentFork,
-  onOpenFork,
   onSelect,
-  plannedInvocations,
-  plannedSteps,
   run,
   steps,
   testId,
 }: {
   activeInspection: RunInspectionState;
-  copiedInvocations: number;
-  copiedSteps: number;
-  isCurrentFork: boolean;
-  onOpenFork: (stepIndex: number, invocationId: number) => void;
   onSelect: (
     target: RunInspectionTarget,
     pane?: RunInspectionPane,
     mode?: RunInspectionMode,
   ) => void;
-  plannedInvocations: number;
-  plannedSteps: number;
   run: RunRead;
   steps: RunStepRead[];
   testId: string;
@@ -2060,7 +1333,6 @@ function RunInlineEvidence({
     activeInspection.mode === "execution" &&
     (target.type === "step" || target.type === "agentInvocation");
   let content: ReactNode;
-  let selectedInvocationForkAction: ReactNode = null;
 
   if (target.type === "step") {
     const step = steps.find((item) => item.index === target.stepIndex);
@@ -2073,24 +1345,8 @@ function RunInlineEvidence({
       <InvocationEvidence
         invocation={match.invocation}
         pane={activeInspection.pane}
-        step={match.step}
       />
     ) : null;
-    if (match && canForkInvocation(run, match.step, match.invocation)) {
-      selectedInvocationForkAction = (
-        <Button
-          className="w-full cursor-pointer justify-start sm:w-auto"
-          data-testid={`runs-invocation-${match.invocation.id}-fork-entry`}
-          onClick={() => onOpenFork(match.step.index, match.invocation.id)}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <GitBranch data-icon="inline-start" />
-          Fork from this invocation
-        </Button>
-      );
-    }
   } else if (target.type === "operationInvocation") {
     const invocation = findOperationInvocation(steps, target.invocationId);
     content = invocation ? (
@@ -2119,23 +1375,6 @@ function RunInlineEvidence({
           label="Run input"
           testId="runs-detail-input"
           value={run.input}
-        />
-      );
-  } else if (activeInspection.pane === "lineage") {
-    content =
-      activeInspection.mode === "lineage" ? (
-        <CompactModeEmptyState testId="runs-lineage-inspector-empty">
-          Select lineage evidence from the center workspace to inspect raw
-          detail.
-        </CompactModeEmptyState>
-      ) : (
-        <RunLineageEvidence
-          copiedInvocations={copiedInvocations}
-          copiedSteps={copiedSteps}
-          isCurrentFork={isCurrentFork}
-          plannedInvocations={plannedInvocations}
-          plannedSteps={plannedSteps}
-          run={run}
         />
       );
   } else {
@@ -2172,7 +1411,6 @@ function RunInlineEvidence({
           </div>
         </div>
         <div className="flex min-w-0 flex-col gap-2 sm:items-end">
-          {selectedInvocationForkAction}
           {activeInspection.target.type !== "run" ? (
             <EvidencePaneNav
               activeInspection={activeInspection}

@@ -7,8 +7,6 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from app.api.dependencies import get_run_service
 from app.schemas.run import (
     RunCreatedRead,
-    RunForkCreateRequest,
-    RunForkDraftRead,
     RunListRead,
     RunRead,
     RunRerunCreateRequest,
@@ -61,28 +59,6 @@ def create_run_rerun(
     service: Annotated[RunService, Depends(get_run_service)],
 ) -> RunCreatedRead:
     return service.create_rerun(run_id, payload)
-
-
-@router.get("/{run_id}/fork-draft", response_model=RunForkDraftRead)
-def build_run_fork_draft(
-    run_id: int,
-    service: Annotated[RunService, Depends(get_run_service)],
-    source_invocation_id: Annotated[int, Query(alias="sourceInvocationId", ge=1)],
-) -> RunForkDraftRead:
-    return service.build_fork_draft(run_id, source_invocation_id)
-
-
-@router.post(
-    "/{run_id}/forks",
-    response_model=RunCreatedRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_run_fork(
-    run_id: int,
-    payload: RunForkCreateRequest,
-    service: Annotated[RunService, Depends(get_run_service)],
-) -> RunCreatedRead:
-    return service.create_fork(run_id, payload)
 
 
 @router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)

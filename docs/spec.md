@@ -74,7 +74,7 @@ Template/report series use runtime inputs plus report metadata tags to resolve p
 | Model connections            | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test`, `POST /api/model-connections/{connectionId}/capability-probe`              |
 | Extensions                   | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}`                                                                                                                                                                         |
 | Tools                        | `GET /api/tools`                                                                                                                                                                                                                      |
-| Runs                         | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`, `GET /api/runs/{runId}/fork-draft?sourceInvocationId=...`, `POST /api/runs/{runId}/forks`                      |
+| Runs                         | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`                      |
 
 Live package reads and writes do not include status. Package persistence stores dependency keys as artifact references; readiness endpoints evaluate those refs against live model connections, extension state, and package secret bindings. Deleting a package deletes its owned runs.
 
@@ -151,9 +151,9 @@ Scheduled inputs are JSON object templates, not scripts. The allowed placeholder
 
 `POST /api/schedules/{scheduleId}/run-now` requires `idempotencyKey` and `scheduledFor`, creates a manual fire through the same scheduled-run materialization path, and returns the compact queued run summary. Repeating the same schedule, scheduled time, and key returns the same fire and run. Paused schedules may run now and remain paused. The UI navigates to `/runs/:runId` for queue and execution evidence after run-now succeeds.
 
-`GET /api/schedules/{scheduleId}/fires` returns paged fire history with status, reason, local scheduled fields, rendered parameters, skip or error details, and linked run id while the schedule exists. `DELETE /api/schedules/{scheduleId}` returns 204 with no body, removes the schedule and its fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Deleted schedule fire history is not a preserved live surface. Rerun and fork descendants are ordinary run lineage and stay governed by run lineage. OpenAPI and regression tests assert the 204 delete operation and schedule provenance.
+`GET /api/schedules/{scheduleId}/fires` returns paged fire history with status, reason, local scheduled fields, rendered parameters, skip or error details, and linked run id while the schedule exists. `DELETE /api/schedules/{scheduleId}` returns 204 with no body, removes the schedule and its fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Deleted schedule fire history is not a preserved live surface. Rerun descendants are ordinary run lineage and stay governed by run lineage. OpenAPI and regression tests assert the 204 delete operation and schedule provenance.
 
-## Runs, Scheduler, Reruns, And Forks
+## Runs, Scheduler, And Reruns
 
 The launch surface is `/workflow-packages/:packageId/run`, labeled `Launch Workflow Package`. It reads launch metadata, runs preflight, posts selected workflow key plus `parameters`, creates a durable queued run, and polls backend-owned progress/queue state while the explicit scheduler worker materializes due Scheduled Tasks and claims queued runs.
 
@@ -161,11 +161,11 @@ Run detail includes `steps`, agent `invocations`, `operationInvocations`, `exten
 
 Run progress uses `unit`, `terminalCount`, `totalCount`, and `percent`, with terminal runs reporting `percent: 100`. Queue explanations are nullable backend read models that explain serial package-lane blocking or worker capacity.
 
-Rerun is the root-parameter descendant flow. Fork is the invocation-input descendant flow keyed by `sourceInvocationId`; it persists `run_forks`, copies upstream context, and treats `resumeStepIndex` as the execution boundary rather than the editable target.
+Rerun is the root-parameter descendant flow.
 
 ## Runtime Input Semantics
 
-Workflow Package runtime inputs are workflow-scoped JSON object payloads. The launch page, Scheduled Tasks, reruns, forks, and saved runtime input presets all converge on the same canonical validation rules before a payload is persisted or used to queue work.
+Workflow Package runtime inputs are workflow-scoped JSON object payloads. The launch page, Scheduled Tasks, reruns, and saved runtime input presets all converge on the same canonical validation rules before a payload is persisted or used to queue work.
 
 For supported object schemas, the Web UI uses the generated schema form as the primary editing surface. Required fields and fields with schema defaults are active immediately. Optional inputs without defaults stay visible as Add Field rows, so operators can discover them without adding keys to the payload. They are omitted until the operator explicitly includes them. JSON Schema `title` supplies generated form labels, and `description` supplies generated help text. These are display metadata only and do not change runtime input JSON, validation, workflow wiring, or package-local agent invocation.
 
@@ -175,7 +175,7 @@ Advanced JSON is a secondary editing mode for supported schemas and the fallback
 
 Saved runtime input presets persist named canonical payload presets for one package workflow. Creating or updating a saved runtime input preset validates the payload against the current workflow input schema and stores the canonical result. Name-only updates preserve the existing payload. When a saved runtime input preset is stale or incompatible with the current schema, the UI keeps it visible for review instead of silently mutating or dropping fields.
 
-The backend is the canonical persistence boundary. Launches, scheduled preview and materialization, reruns, forks, and saved runtime input preset create/update paths share canonical workflow input validation: absent optional no-default fields stay absent, defaults materialize, explicit nullable nulls are preserved only for declared nullable fields, non-nullable nulls fail validation, and empty strings remain strings. Run snapshots and saved presets persist the canonical payload rather than raw editor text.
+The backend is the canonical persistence boundary. Launches, scheduled preview and materialization, reruns, and saved runtime input preset create/update paths share canonical workflow input validation: absent optional no-default fields stay absent, defaults materialize, explicit nullable nulls are preserved only for declared nullable fields, non-nullable nulls fail validation, and empty strings remain strings. Run snapshots and saved presets persist the canonical payload rather than raw editor text.
 
 Unsupported help and schema mechanisms include YAML comments, `comment`, `x-signaldeck-*` metadata, `patternProperties`, `oneOf`, `allOf`, `if`, `then`, `else`, `not`, and schema-valued `additionalProperties`.
 
@@ -186,6 +186,8 @@ Workflow Packages are the only live platform authoring root. Removed global auth
 Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contract pages, global Digital Oracle skills, `/api/skills`, and `/skills*` are not live product surfaces.
 
 Workflow-memory governance is not a live product surface. `spec.memory`, workflow/agent/step memory blocks, `/api/memory/*`, workflow checkpoints, direct memory runtime tools, and `workflowMemoryEvidence` are removed rather than aliased or redirected.
+
+Invocation-input run descendants are not a live product surface. The former draft/create APIs and persistence artifact are removed rather than aliased or redirected.
 
 ## CI And Verification
 

@@ -34,7 +34,7 @@ src/lib/api/
 ├── schedules.ts           # Scheduled Task CRUD, preview, fire history, and run-now requests
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing
-└── runs.ts                # run list/detail reads with package provenance, progress, queue, rerun/fork contracts
+└── runs.ts                # run list/detail reads with package provenance, progress, queue, and rerun contracts
 ```
 
 ## WHERE TO LOOK

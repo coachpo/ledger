@@ -57,7 +57,7 @@ src/pages/
 | Workflow Package pages       | `workflow-packages/AGENTS.md`                                                           | package authoring, validation, preflight, launch, import, and export                                        |
 | Scheduled Task pages         | `scheduled-tasks/AGENTS.md`, `../hooks/use-scheduled-tasks.ts`                          | scheduled package-run inventory, create/detail editors, preview, fire history, delete, and run-now          |
 | Model connection pages       | `model-connections/AGENTS.md`, `../hooks/use-model-connections.ts`                      | saved connection inventory, write-only secrets, delete flow, and connection-test UI                         |
-| Run pages                    | `runs/AGENTS.md`                                                                        | run list, detail, root-parameter rerun, invocation-input fork, trace views, and historical replay lineage reads |
+| Run pages                    | `runs/AGENTS.md`                                                                        | run list, detail, root-parameter rerun, trace views, and execution evidence reads |
 | Portfolio workspace          | `portfolios/AGENTS.md`, `../components/portfolios/AGENTS.md`                            | portfolio list/detail workspace                                                                             |
 | Template list/editor         | `templates/AGENTS.md`, `../components/templates/AGENTS.md`, `../hooks/use-templates.ts` | stored-template CRUD, inline compile preview, placeholder browser, and saved-template report generation     |
 | Report routes                | `reports/AGENTS.md`, `../hooks/use-reports.ts`, `../lib/report-grouping.ts`             | list/detail, upload/generate, markdown view/edit/download                                                   |
@@ -85,7 +85,7 @@ src/pages/
 - Non-inventory routes follow their `DESIGN.md` route shell: full-height editors/consoles use `WorkspacePageShell`, inspectable flows keep route-owned panels/dialogs, and system-state routes remain narrow and contract-bound.
 - Detail routes keep route identity and back navigation explicit. Use `text-xl font-semibold tracking-tight` for the route title, keep secondary actions before destructive or primary save actions, and do not truncate the entity identity.
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
-- Console routes such as package launch, Scheduled Task detail, and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, scheduled input previews, trace, payload, and fork/rerun controls with internal scrolling for wide data.
+- Console routes such as package launch, Scheduled Task detail, and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, scheduled input previews, trace, payload, and rerun controls with internal scrolling for wide data.
 - System-state routes stay narrow and contract-bound. `/extensions` renders only slim statically resident extension state and must not grow marketplace, install, remove, or private scaffold details.
 - Loading, error, empty, filtered-empty, disabled-extension, not-found, creating, editing, saving, importing, validating, launching, and polling states must match the route's `stateVariants` metadata and have targeted test coverage when they are visible user states.
 
@@ -98,7 +98,7 @@ src/pages/
 - `e2e/reports.spec.ts` covers seeded report flows plus representative empty and API-error list states for the finance inventory archetype.
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.
 - `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, delete confirmation and post-delete absence states, and run-now links into run detail.
-- `e2e/model-connections.spec.ts` and `e2e/runs.spec.ts` cover model-connection secret-safe flows and run inspection/rerun/fork paths.
+- `e2e/model-connections.spec.ts` and `e2e/runs.spec.ts` cover model-connection secret-safe flows and run inspection/rerun paths.
 - `e2e/shell-regression.spec.ts`, `e2e/smoke.spec.ts`, `e2e/functional.spec.ts`, and `e2e/workflow-package-tradingagents-smoke.spec.ts` cover route-shell regressions, smoke navigation, and TradingAgents package smoke behavior.
 
 ## ANTI-PATTERNS

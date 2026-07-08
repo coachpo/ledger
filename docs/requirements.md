@@ -20,12 +20,13 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - Global read-only Tools metadata from the server-declared catalog, filtered by extension state where tools are extension-owned, including Digital Oracle-owned `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup`.
 - Dedicated Workflow Package launch console at `/workflow-packages/:packageId/run`, with preflight gating and run creation outside the editor.
 - Scheduled Tasks for recurring Workflow Package runs, including structured recurrence, scheduled input previews, run-now, fire history while the schedule exists, and deletion that preserves existing run history while stopping future automation.
-- Run list/detail, backend-owned progress/queue read models, package provenance, rerun drafts, reruns, fork drafts, invocation-input forks, operation invocation evidence, typed failure taxonomy, and bounded retry evidence.
+- Run list/detail, backend-owned progress/queue read models, package provenance, rerun drafts, reruns, operation invocation evidence, typed failure taxonomy, and bounded retry evidence.
 
 ### Out Of Scope
 
 - Public multi-user auth, live broker execution, realtime market streaming, tax-lot accounting, and user-facing autonomous scheduling.
 - Removed `/api/skills`, `/skills*`, Studio, Tryout, orchestration, runtime-v2, simulations, backtest workflows, global Digital Oracle skill surfaces, and standalone global authoring routes.
+- Invocation-input run descendant APIs and UI.
 - TradingAgents-specific platform behavior, exact LangGraph graph parity, checkpoint/runtime semantics, or agent-initiated trading execution.
 - Workflow-memory governance, `spec.memory`, `/api/memory`, runtime memory tool calls, unscoped runtime memory search, public memory CRUD, exact-id runtime memory get, checkpoints, `workflowMemoryEvidence`, vector activation/search, chunk or embedding retrieval contracts, runtime/global/public/bulk memory deletion, runtime tags, arbitrary core-memory attributes, core-memory audit links, and report-history promotion.
 - Raw HTTP LLM calls in application code when an official provider SDK exists.
@@ -63,7 +64,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 
 ### FR-4 Model Connections, Tools, And Extensions
 
-- Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, rerun, fork, and runtime.
+- Model Connections must preserve or replace stored secrets safely, never return raw secrets in read payloads, and resolve by global key at preflight, launch, rerun, and runtime.
 - Model Connections must keep `protocolProfile` as the writable runtime selector and expose capability states, policy defaults, reachability-test metadata, capability-probe metadata, and derived API-style evidence as backend-owned read data.
 - Public Model Connection create/update payloads must reject client-authored capabilities, runtime policy fields, probe cache TTL, derived API style, and other capability/runtime-profile truth that is not part of the write DTO.
 - Tools must be read-only server-declared metadata exposed through `/api/tools` and referenced by package-local capability profiles.
@@ -86,19 +87,18 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 - `signaldeck.finance` is a statically resident, default-enabled bundled extension.
 - `signaldeck.digital_oracle` is a statically resident, default-enabled bundled extension. Digital Oracle has no route or nav surface in this upgrade, and the provider migration adds no new provider-settings UI route.
 
-### FR-5 Launches, Runs, Reruns, And Forks
+### FR-5 Launches, Runs, And Reruns
 
 - Package launches must use the strict launch envelope from `/workflow-packages/:packageId/run` and create durable queued global runs with immutable package provenance.
 - Scheduled Tasks must target one current Workflow Package workflow, use structured recurrence with IANA timezones, and materialize due fires into queued runs with schedule provenance.
 - Scheduled input previews must validate rendered parameters without creating fires or runs; run-now must create an idempotent manual fire and return the linked run summary.
 - Deleting a Scheduled Task must remove the schedule and schedule-owned fire rows, stop future automation, preserve existing run history, and keep direct run artifacts readable through run-owned `scheduleProvenance`. Deleted schedule fire history must not be exposed as a preserved live surface.
 - Workflow Package deletion semantics must remain unchanged: deleting a package still deletes its owned runs.
-- Launch, rerun, and fork requests must stop after creating queued rows; the explicit scheduler worker must claim and execute queued runs.
-- Runs must expose input, per-step outputs, operation invocations, final output, status, backend-owned progress, queue reason, timing, token usage, optional trace/span ids, package provenance, extension dependencies, typed failure taxonomy, bounded `toolCallRetries`, distinct live-execution `providerRetries` when emitted by the backend, rerun lineage, invocation-input fork lineage, and historical replay lineage when present.
+- Launch and rerun requests must stop after creating queued rows; the explicit scheduler worker must claim and execute queued runs.
+- Runs must expose input, per-step outputs, operation invocations, final output, status, backend-owned progress, queue reason, timing, token usage, optional trace/span ids, package provenance, extension dependencies, typed failure taxonomy, bounded `toolCallRetries`, distinct live-execution `providerRetries` when emitted by the backend, and rerun lineage.
 - Runtime `toolCallRetries` must be admitted only from typed pre-dispatch JSON/object/schema/argument-validation failures, with one bounded model-feedback retry and redacted retry metadata. Provider/network/auth/permission/grant/namespace/extension-disabled/MCP transport/executor/policy/output-schema failures must remain fatal for the tool-call retry path.
 - Live Workflow Package execution may record `graphMetadata.modelGateway.providerRetries` for transient provider create-call retries only. The contract must use `policy="transientProviderRetry/v1"`, `maxAttempts=3`, failed-attempt-only `attempts[]`, and `terminalOutcome` only for `succeededAfterRetry` or `exhausted`. First-attempt success and first non-retryable failure must omit `providerRetries` entirely. Connection tests, capability probes, and Responses manual replay must stay outside provider retry metadata.
 - Rerun must be the root-parameter descendant flow.
-- Fork must be the invocation-input descendant flow, keyed by `sourceInvocationId`, persisted through `run_forks`, with `resumeStepIndex` used only as the execution boundary.
 
 ## Non-Functional Requirements
 

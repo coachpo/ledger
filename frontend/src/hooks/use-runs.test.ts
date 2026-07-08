@@ -7,9 +7,7 @@ const reactQueryState = vi.hoisted(() => ({
 }));
 
 const runsApiState = vi.hoisted(() => ({
-  createRunForkMock: vi.fn(),
   createRunRerunMock: vi.fn(),
-  getRunForkDraftMock: vi.fn(),
   getRunMock: vi.fn(),
   getRunRerunDraftMock: vi.fn(),
   listRunsMock: vi.fn(),
@@ -22,10 +20,8 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@/lib/api/runs", () => ({
-  createRunFork: runsApiState.createRunForkMock,
   createRunRerun: runsApiState.createRunRerunMock,
   getRun: runsApiState.getRunMock,
-  getRunForkDraft: runsApiState.getRunForkDraftMock,
   getRunRerunDraft: runsApiState.getRunRerunDraftMock,
   listRuns: runsApiState.listRunsMock,
 }));
@@ -34,7 +30,7 @@ import { queryKeys } from "@/lib/query-keys";
 import type { RunListRead, RunRead, RunStatus } from "@/lib/types/run";
 import * as runsHooks from "./use-runs";
 
-const { useCreateRunFork, useCreateRunRerun, useRun, useRunForkDraft, useRunRerunDraft, useRuns } = runsHooks;
+const { useCreateRunRerun, useRun, useRunRerunDraft, useRuns } = runsHooks;
 
 type RefetchIntervalResolver<TData> = (query: {
   state: { data: TData | undefined };
@@ -80,7 +76,6 @@ function runDetailWithStatus(status: RunStatus): RunRead {
     id: 18,
     inheritedTokens: 0,
     input: {},
-    lineageRootRunId: null,
     extensionDependencies: [],
     packageProvenance: null,
     progress: {
@@ -96,8 +91,6 @@ function runDetailWithStatus(status: RunStatus): RunRead {
     scheduleReason: null,
     scheduledFor: null,
     queuedAt: "2026-05-15T10:00:00Z",
-    replayStepIndex: null,
-    resumeStepIndex: 1,
     sourceRunId: null,
     startedAt: status === "queued" ? null : "2026-05-15T10:01:00Z",
     status,
@@ -244,34 +237,6 @@ describe("useRuns hooks", () => {
     );
   });
 
-  it("keys fork draft queries by run id and source invocation id", () => {
-    reactQueryState.useQueryMock.mockClear();
-    useRunForkDraft(18, 77, { enabled: true });
-
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        enabled: true,
-        queryKey: queryKeys.platform.runs.forkDraft(18, 77),
-      }),
-    );
-
-    useRunForkDraft(undefined, 77);
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        enabled: false,
-        queryKey: queryKeys.platform.runs.forkDraft("", 77),
-      }),
-    );
-
-    useRunForkDraft(18, undefined, { enabled: true });
-    expect(reactQueryState.useQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        enabled: false,
-        queryKey: queryKeys.platform.runs.forkDraft(18, 0),
-      }),
-    );
-  });
-
   it("invalidates run list, details, and rerun draft after rerun create", async () => {
     reactQueryState.useMutationMock.mockClear();
     reactQueryState.invalidateQueriesMock.mockClear();
@@ -298,40 +263,4 @@ describe("useRuns hooks", () => {
     });
   });
 
-  it("invalidates run list, details, and fork draft after fork create", async () => {
-    reactQueryState.useMutationMock.mockClear();
-    reactQueryState.invalidateQueriesMock.mockClear();
-    useCreateRunFork();
-
-    const mutationOptions = reactQueryState.useMutationMock.mock.calls.at(-1)?.[0] as {
-      onSuccess: (
-        createdRun: { id: number },
-        variables: {
-          runId: number;
-          payload: { invocationInput: Record<string, unknown>; sourceInvocationId: number };
-        },
-      ) => Promise<void>;
-    };
-
-    await mutationOptions.onSuccess(
-      { id: 100 },
-      {
-        runId: 18,
-        payload: { sourceInvocationId: 77, invocationInput: { ticker: "MSFT" } },
-      },
-    );
-
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.runs.all,
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.runs.detail(18),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.runs.forkDraft(18, 77),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.runs.detail(100),
-    });
-  });
 });

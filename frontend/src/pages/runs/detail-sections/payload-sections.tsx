@@ -357,7 +357,7 @@ export function RunEvidenceAvailabilitySection({ run }: { run: RunRead }) {
             label: "Usage",
             value: (
               <CompactDetailValue
-                description={`${run.inheritedTokens.toLocaleString()} inherited tokens copied into this snapshot.`}
+                description={`${run.inheritedTokens.toLocaleString()} inherited tokens recorded for this run.`}
                 value={`${run.executedTokens.toLocaleString()} executed tokens`}
               />
             ),

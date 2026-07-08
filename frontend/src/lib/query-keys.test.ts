@@ -180,12 +180,6 @@ describe("query keys", () => {
       "runs",
       "rerunDraft",
     ]);
-    expect(queryKeys.platform.runs.forkDrafts()).toEqual([
-      "api",
-      "platform",
-      "runs",
-      "forkDraft",
-    ]);
     expect(
       queryKeys.platform.runs.list({
         offset: 0,

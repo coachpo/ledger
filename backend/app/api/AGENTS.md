@@ -31,7 +31,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
-| Platform routes | `workflow_packages.py`, `schedules.py`, `model_connections.py`, `extensions.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs, including rerun/fork endpoints under Runs |
+| Platform routes | `workflow_packages.py`, `schedules.py`, `model_connections.py`, `extensions.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs, including rerun endpoints under Runs |
 | Finance route registrations | `../extensions/signaldeck_finance/api_routers.py` | extension-gated `/api/v1` registration list for preserved finance routes |
 | Retired global authoring APIs | `/api/agents`, `/api/capabilities`, `/api/mcp-servers`, `/api/output-schemas`, `/api/workflows`, `/api/v1/templates/seed`, `/api/v1/orchestration/*`, `/api/v2/*` | not live route modules; do not recreate them as compatibility aliases |
 | Shared API handlers | `../main.py`, `../core/errors.py` | healthcheck plus global error translation |

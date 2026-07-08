@@ -670,8 +670,8 @@ export function RunTokensWorkspace({ run }: { run: RunRead }) {
                   <CompactDetailValue
                     description={
                       run.sourceRunId
-                        ? `Copied from upstream source run #${run.sourceRunId}.`
-                        : "No upstream source run boundary."
+                        ? `Rerun source run #${run.sourceRunId}; no token context is inherited.`
+                        : "Original run with no source run."
                     }
                     value={run.inheritedTokens.toLocaleString()}
                   />

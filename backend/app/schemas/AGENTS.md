@@ -72,6 +72,6 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
 - `extension.py` exposes statically resident extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.
-- `run.py` carries global run list/detail, backend-owned `progress` and nullable `queue` read models, package provenance, rerun, invocation-input fork, historical replay lineage reads and per-step execution payloads.
+- `run.py` carries global run list/detail, backend-owned `progress` and nullable `queue` read models, package provenance, rerun, and per-step execution payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.
 - Report schemas keep `name` and `slug` immutable at the API level by only exposing `content` in `ReportUpdate`; metadata is read-only after creation. `ReportSource` accepts canonical origin values `compiled`, `uploaded`, `external`, and `agent`, while public `ReportCreate` stays true external only. Server-owned `metadata.createdBy.type="agent"` carries provenance such as `runId`, `agentKey`, and `agentVersion`.

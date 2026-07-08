@@ -24,11 +24,6 @@ class Run(IdMixin, TimestampMixin, Base):
             name="ck_runs_status",
         ),
         CheckConstraint("target_version > 0", name="ck_runs_target_version_positive"),
-        CheckConstraint("resume_step_index > 0", name="ck_runs_resume_step_index_positive"),
-        CheckConstraint(
-            "forked_from_step_index IS NULL OR forked_from_step_index > 0",
-            name="ck_runs_forked_from_step_index_positive",
-        ),
         CheckConstraint("total_tokens >= 0", name="ck_runs_total_tokens_non_negative"),
         CheckConstraint("inherited_tokens >= 0", name="ck_runs_inherited_tokens_non_negative"),
         CheckConstraint("executed_tokens >= 0", name="ck_runs_executed_tokens_non_negative"),
@@ -46,7 +41,6 @@ class Run(IdMixin, TimestampMixin, Base):
         Index("ix_runs_target", "target_kind", "target_id", "target_version"),
         Index("ix_runs_target_key", "target_kind", "target_key", "target_version"),
         Index("ix_runs_source_run", "source_run_id"),
-        Index("ix_runs_lineage_root", "lineage_root_run_id"),
         Index("ix_runs_execution_scope_status", "execution_scope_key", "status"),
         Index(
             "uq_runs_running_serial_execution_scope",
@@ -138,12 +132,6 @@ class Run(IdMixin, TimestampMixin, Base):
         ForeignKey("runs.id", ondelete="SET NULL"),
         nullable=True,
     )
-    lineage_root_run_id: Mapped[int | None] = mapped_column(
-        ForeignKey("runs.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    forked_from_step_index: Mapped[int | None] = mapped_column(nullable=True)
-    resume_step_index: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
     final_output: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     total_tokens: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     inherited_tokens: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
@@ -176,44 +164,12 @@ class Run(IdMixin, TimestampMixin, Base):
         "Run",
         foreign_keys=lambda: [Run.source_run_id],
         remote_side=lambda: [Run.id],
-        back_populates="forked_runs",
+        back_populates="descendant_runs",
     )
-    forked_runs: Mapped[list[Run]] = relationship(
+    descendant_runs: Mapped[list[Run]] = relationship(
         "Run",
         foreign_keys=lambda: [Run.source_run_id],
         back_populates="source_run",
-        passive_deletes=True,
-    )
-    lineage_root_run: Mapped[Run | None] = relationship(
-        "Run",
-        foreign_keys=lambda: [Run.lineage_root_run_id],
-        remote_side=lambda: [Run.id],
-        back_populates="lineage_descendants",
-    )
-    lineage_descendants: Mapped[list[Run]] = relationship(
-        "Run",
-        foreign_keys=lambda: [Run.lineage_root_run_id],
-        back_populates="lineage_root_run",
-        passive_deletes=True,
-    )
-    fork: Mapped[object | None] = relationship(
-        "RunFork",
-        foreign_keys="RunFork.run_id",
-        back_populates="run",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        uselist=False,
-    )
-    source_fork_artifacts: Mapped[list[object]] = relationship(
-        "RunFork",
-        foreign_keys="RunFork.source_run_id",
-        back_populates="source_run",
-        passive_deletes=True,
-    )
-    lineage_root_fork_artifacts: Mapped[list[object]] = relationship(
-        "RunFork",
-        foreign_keys="RunFork.lineage_root_run_id",
-        back_populates="lineage_root_run",
         passive_deletes=True,
     )
     steps: Mapped[list[object]] = relationship(

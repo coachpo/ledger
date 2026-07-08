@@ -1,8 +1,6 @@
 import { requestPlatform, toPathSegment, toQueryRecord, type IdParam } from "../api-client";
 import type {
   RunCreatedRead,
-  RunForkCreateRequest,
-  RunForkDraftRead,
   RunListParams,
   RunListRead,
   RunRead,
@@ -59,32 +57,9 @@ export function createRunRerun(
   });
 }
 
-export function getRunForkDraft(
-  runId: IdParam,
-  sourceInvocationId: number,
-  signal?: AbortSignal,
-): Promise<RunForkDraftRead> {
-  return requestPlatform<RunForkDraftRead>(`${runPath(runId)}/fork-draft`, {
-    query: { sourceInvocationId },
-    signal,
-  });
-}
-
-export function createRunFork(
-  runId: IdParam,
-  payload: RunForkCreateRequest,
-): Promise<RunCreatedRead> {
-  return requestPlatform<RunCreatedRead>(`${runPath(runId)}/forks`, {
-    body: payload,
-    method: "POST",
-  });
-}
-
 export const runsApi = {
-  createFork: createRunFork,
   createRerun: createRunRerun,
   get: getRun,
-  getForkDraft: getRunForkDraft,
   getRerunDraft: getRunRerunDraft,
   list: listRuns,
   normalizeListParams: normalizeRunListParams,

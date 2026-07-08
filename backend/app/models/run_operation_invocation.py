@@ -50,11 +50,7 @@ class RunOperationInvocation(IdMixin, TimestampMixin, Base):
             name="ck_run_operation_invocations_output_schema_version_positive",
         ),
         CheckConstraint(
-            "source_step_index IS NULL OR source_step_index > 0",
-            name="ck_run_operation_invocations_source_step_index_positive",
-        ),
-        CheckConstraint(
-            "output_origin IS NULL OR output_origin IN ('executed', 'edited', 'copied')",
+            "output_origin IS NULL OR output_origin = 'executed'",
             name="ck_run_operation_invocations_output_origin",
         ),
         CheckConstraint(
@@ -68,9 +64,6 @@ class RunOperationInvocation(IdMixin, TimestampMixin, Base):
         Index("ix_run_operation_invocations_run_step_index", "run_id", "step_index"),
         Index("ix_run_operation_invocations_run_status", "run_id", "status"),
         Index("ix_run_operation_invocations_operation_key", "operation_key"),
-        Index("ix_run_operation_invocations_source_operation", "source_operation_invocation_id"),
-        Index("ix_run_operation_invocations_source_run", "source_run_id"),
-        Index("ix_run_operation_invocations_source_run_step", "source_run_step_id"),
     )
 
     run_step_id: Mapped[int] = mapped_column(
@@ -124,19 +117,6 @@ class RunOperationInvocation(IdMixin, TimestampMixin, Base):
     )
     duration_ms: Mapped[int | None] = mapped_column(nullable=True)
     trace_span_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    source_operation_invocation_id: Mapped[int | None] = mapped_column(
-        ForeignKey("run_operation_invocations.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    source_run_id: Mapped[int | None] = mapped_column(
-        ForeignKey("runs.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    source_run_step_id: Mapped[int | None] = mapped_column(
-        ForeignKey("run_steps.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    source_step_index: Mapped[int | None] = mapped_column(nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     persisted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -160,20 +140,3 @@ class RunOperationInvocation(IdMixin, TimestampMixin, Base):
         foreign_keys=[run_step_id],
     )
     run: Mapped[object] = relationship("Run", foreign_keys=[run_id])
-    source_operation_invocation: Mapped[RunOperationInvocation | None] = relationship(
-        "RunOperationInvocation",
-        foreign_keys=lambda: [RunOperationInvocation.source_operation_invocation_id],
-        remote_side=lambda: [RunOperationInvocation.id],
-        back_populates="copied_operation_invocations",
-    )
-    copied_operation_invocations: Mapped[list[RunOperationInvocation]] = relationship(
-        "RunOperationInvocation",
-        foreign_keys=lambda: [RunOperationInvocation.source_operation_invocation_id],
-        back_populates="source_operation_invocation",
-        passive_deletes=True,
-    )
-    source_run: Mapped[object | None] = relationship("Run", foreign_keys=[source_run_id])
-    source_run_step: Mapped[object | None] = relationship(
-        "RunStep",
-        foreign_keys=[source_run_step_id],
-    )

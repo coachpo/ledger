@@ -34,7 +34,6 @@ AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {
     "run_steps",
     "run_agent_invocations",
     "run_operation_invocations",
-    "run_forks",
 }
 
 
@@ -392,7 +391,6 @@ def test_agent_platform_run_schemas_serialize_queued_without_started_at() -> Non
         {
             **{key: value for key, value in common_payload.items() if key != "workflowKey"},
             "input": {"ticker": "NVDA"},
-            "resumeStepIndex": 1,
             "finalOutput": None,
             "inheritedTokens": 0,
             "executedTokens": 0,

@@ -11,7 +11,6 @@ export type RunInspectionPane =
   | "error"
   | "finalOutput"
   | "input"
-  | "lineage"
   | "output"
   | "provenance"
   | "request"
@@ -25,7 +24,6 @@ export type RunInspectionMode =
   | "inputs"
   | "outputs"
   | "runtime"
-  | "lineage"
   | "metadata";
 
 export type RunInspectionState = {
@@ -48,7 +46,6 @@ export const RUN_INSPECTION_MODES = [
   "inputs",
   "outputs",
   "runtime",
-  "lineage",
   "metadata",
 ] as const satisfies readonly RunInspectionMode[];
 
@@ -57,7 +54,6 @@ const RUN_INSPECTION_MODE_ALIASES: Record<string, RunInspectionMode> = {
   execution: "execution",
   input: "inputs",
   inputs: "inputs",
-  lineage: "lineage",
   metadata: "metadata",
   output: "outputs",
   outputs: "outputs",
@@ -69,22 +65,19 @@ const RUN_INSPECTION_MODE_ALIASES: Record<string, RunInspectionMode> = {
 const RUN_PANES: RunInspectionPane[] = [
   "finalOutput",
   "input",
-  "lineage",
   "error",
 ];
-const STEP_PANES: RunInspectionPane[] = ["details", "lineage", "error"];
+const STEP_PANES: RunInspectionPane[] = ["details", "error"];
 const AGENT_INVOCATION_PANES: RunInspectionPane[] = [
   "output",
   "input",
   "wiring",
-  "lineage",
   "error",
 ];
 const OPERATION_INVOCATION_PANES: RunInspectionPane[] = [
   "output",
   "request",
   "response",
-  "lineage",
   "error",
 ];
 function buildInspectionIndex(
@@ -146,9 +139,6 @@ function modeForPane(
   if (pane === "input") {
     return "inputs";
   }
-  if (pane === "lineage") {
-    return "lineage";
-  }
   if (pane === "error") {
     return "diagnostics";
   }
@@ -164,9 +154,6 @@ function defaultPaneForMode(
   }
   if (mode === "inputs") {
     return "input";
-  }
-  if (mode === "lineage") {
-    return "lineage";
   }
   if (mode === "diagnostics") {
     return "error";
@@ -453,7 +440,6 @@ export function inspectionPaneLabel(pane: RunInspectionPane): string {
     error: "Error",
     finalOutput: "Final output",
     input: "Run input",
-    lineage: "Lineage",
     output: "Output",
     provenance: "Provenance",
     request: "Request",

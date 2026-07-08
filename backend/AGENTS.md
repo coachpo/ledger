@@ -64,8 +64,8 @@ backend/
 | DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades, and startup repair |
 | Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler, schedule recurrence/materialization, execution providers/lifecycle hooks, runtime execution, queue claims/read projections, and market-data fallback |
 | API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, run progress/queue read models, serialization, camelCase aliasing |
-| Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, run forks, and runtime data access |
-| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun/fork contracts, runtime tools, runtime boundary coverage, and DB-bootstrap coverage |
+| Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, and runtime data access |
+| Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun contracts, runtime tools, runtime boundary coverage, and DB-bootstrap coverage |
 
 ## CONVENTIONS
 - Each route module declares `APIRouter(prefix=..., tags=[...])`, accepts integer ids where applicable, and delegates to a service.
@@ -78,7 +78,7 @@ backend/
 - Logfire setup and trace/span id formatting live in `app/core/telemetry.py`; run execution must keep working when no Logfire token is configured.
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics.
-- Workflow package writes use YAML manifest parser/compiler/decompiler services; unsupported `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid. Package save/import is artifact-only; launch, preflight, rerun, and fork evaluate live readiness later.
+- Workflow package writes use YAML manifest parser/compiler/decompiler services; unsupported `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid. Package save/import is artifact-only; launch, preflight, and rerun evaluate live readiness later.
 - Scheduled Tasks use `/api/schedules`, structured recurrence, IANA timezones, JSON input templates, idempotent manual fires, and ordinary queued runs. The scheduler worker materializes due fires; routes do not execute runs inline.
 - Removed orchestration, Studio, Tryout, runtime-v2 routes, and global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs.
 - `signaldeck.finance` owns preserved `/api/v1` finance routers, finance service dependencies, provider factories, finance runtime tools, and report lookup while enabled.
@@ -119,6 +119,6 @@ uv run pytest
 ## NOTES
 - `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and schema upgrades.
 - Extension API, extension registry, lifecycle matrix, social sentiment, manifest, MCP, runtime-tool, workflow package, schedule, tool catalog, and model connection tests cover the current agent-platform and finance-extension contract beyond the original runtime suite.
-- `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, scheduled tasks, rerun/fork behavior, scheduler queues, trace, run-owned snapshot provenance, and current-package persistence contracts.
+- `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, scheduled tasks, rerun behavior, scheduler queues, trace, run-owned snapshot provenance, and current-package persistence contracts.
 - `tests/test_db_bootstrap.py` covers schema creation, bundled package seeding, idempotency, and startup recovery.
 - There is no live Alembic migration path; schema changes require a database reset until data must survive upgrades.
