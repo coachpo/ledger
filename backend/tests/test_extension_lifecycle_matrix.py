@@ -22,19 +22,13 @@ from app.extensions.signaldeck_finance.ownership import (
 )
 from app.extensions.signaldeck_finance.service_gate import (
     MARKET_DATA_SERVICE_SURFACE,
-    PORTFOLIO_SERVICE_SURFACE,
-    POSITION_SERVICE_SURFACE,
     TEXT_TEMPLATE_SERVICE_SURFACE,
 )
 from app.extensions.signaldeck_finance.services.market_data_service import MarketDataService
-from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
-from app.extensions.signaldeck_finance.services.position_service import PositionService
 from app.extensions.signaldeck_finance.services.text_template_service import TextTemplateService
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.schemas.extension import ExtensionToggleRequest
-from app.schemas.portfolio import PortfolioCreate
-from app.schemas.position import PositionCreate
 from app.schemas.text_template import TextTemplateCreate
 from app.services import extension_gate as generic_extension_gate
 from app.services.extension_service import ExtensionService
@@ -516,10 +510,6 @@ def test_finance_and_digital_oracle_mixed_states_are_independent(
     tool_keys = set(_tool_keys(client))
     assert set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS) <= tool_keys
     assert set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS).isdisjoint(tool_keys)
-    _assert_extension_disabled(
-        client.get("/api/v1/portfolios"),
-        surface="/api/v1/portfolios",
-    )
     digital_oracle_preflight = client.post(
         f"/api/workflow-packages/{digital_oracle_package['id']}/preflight",
         json={
@@ -586,15 +576,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
         DIGITAL_ORACLE_RUNTIME_TOOL_KEYS
     )
 
-    portfolio = client.post(
-        "/api/v1/portfolios",
-        json={
-            "name": "Lifecycle Matrix Portfolio",
-            "slug": "lifecycle_matrix_portfolio",
-            "description": "Parity fixture",
-        },
-    )
-    assert portfolio.status_code == 201, portfolio.json()
     template = client.post(
         "/api/v1/templates",
         json={"name": "Lifecycle Matrix Template", "content": "# Matrix\n\n{{inputs.ticker}}"},
@@ -642,10 +623,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert disabled_extension["enabled"] is False
 
     assert set(_tool_keys(client)) == set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
-    _assert_extension_disabled(
-        client.get("/api/v1/portfolios"),
-        surface="/api/v1/portfolios",
-    )
     _assert_extension_disabled(
         client.get(f"/api/v1/templates/{template.json()['id']}"),
         surface="/api/v1/templates",
@@ -718,10 +695,6 @@ def test_finance_workspace_extension_lifecycle_matrix_covers_restore_paths(
     assert restored_extension["enabled"] is True
     assert _tool_keys(client) == enabled_tool_keys
 
-    restored_portfolios = client.get("/api/v1/portfolios")
-    assert restored_portfolios.status_code == 200, restored_portfolios.json()
-    restored_portfolio_items = cast(list[dict[str, object]], restored_portfolios.json())
-    assert any(item["slug"] == "lifecycle_matrix_portfolio" for item in restored_portfolio_items)
     restored_report = client.get(f"/api/v1/reports/{report.json()['slug']}")
     assert restored_report.status_code == 200, restored_report.json()
     assert restored_report.json()["content"] == report.json()["content"]
@@ -762,18 +735,12 @@ def test_finance_service_gate_owns_finance_surface_constants() -> None:
     assert not hasattr(generic_extension_gate, "FINANCE_WORKSPACE_EXTENSION_KEY")
     assert not hasattr(generic_extension_gate, "require_finance_workspace_enabled")
     assert finance_service_gate.FINANCE_WORKSPACE_EXTENSION_KEY == FINANCE_WORKSPACE_EXTENSION_KEY
-    assert finance_service_gate.PORTFOLIO_SERVICE_SURFACE == "service.portfolio"
     assert finance_service_gate.REPORT_SERVICE_SURFACE == "service.report"
 
 
 def test_finance_shared_service_ownership_map_classifies_task_5_services() -> None:
     expected_services = {
         "MarketDataService",
-        "PositionService",
-        "PortfolioService",
-        "BalanceService",
-        "TradingOperationService",
-        "CsvImportService",
         "TextTemplateService",
         "ReportService",
         "TemplateCompilerService",
@@ -787,44 +754,21 @@ def test_finance_shared_service_ownership_map_classifies_task_5_services() -> No
     assert {entry.module_path for entry in ownership_by_service.values()} == {
         f"app.extensions.signaldeck_finance.services.{module_name}"
         for module_name in (
-            "balance_service",
-            "csv_import_service",
             "market_data_service",
-            "portfolio_service",
-            "position_service",
             "report_service",
             "template_compiler_service",
             "text_template_service",
-            "trading_operation_service",
         )
     }
     assert ownership_by_service["MarketDataService"].surface == MARKET_DATA_SERVICE_SURFACE
-    assert ownership_by_service["PositionService"].surface == POSITION_SERVICE_SURFACE
-    assert ownership_by_service["PortfolioService"].surface == PORTFOLIO_SERVICE_SURFACE
     assert ownership_by_service["TextTemplateService"].surface == TEXT_TEMPLATE_SERVICE_SURFACE
 
 
-def test_direct_market_data_positions_portfolio_template_services_block_when_disabled(
+def test_direct_market_data_and_template_services_block_when_disabled(
     session_factory: sessionmaker[Session],
 ) -> None:
     quote_provider = _LifecycleQuoteProvider()
     with session_factory() as session:
-        portfolio = PortfolioService(session).create_portfolio(
-            PortfolioCreate(
-                name="Direct Service Matrix",
-                slug="direct_service_matrix",
-                description="Direct service disabled-state fixture",
-            )
-        )
-        _ = PositionService(session).create_position(
-            portfolio.id,
-            PositionCreate(
-                symbol="NVDA",
-                name="NVIDIA Corporation",
-                quantity=Decimal("2"),
-                average_cost=Decimal("100.00"),
-            ),
-        )
         _ = TextTemplateService(session).create_template(
             TextTemplateCreate(name="Direct Service Template", content="{{inputs.ticker}}")
         )
@@ -835,10 +779,6 @@ def test_direct_market_data_positions_portfolio_template_services_block_when_dis
                 session=session,
                 quote_provider=quote_provider,
             ).get_quote_snapshot(" nvda ")
-        with pytest.raises(ApiError) as positions_error:
-            _ = PositionService(session).list_positions(portfolio.id)
-        with pytest.raises(ApiError) as portfolio_error:
-            _ = PortfolioService(session).list_portfolios()
         with pytest.raises(ApiError) as template_error:
             _ = TextTemplateService(session).list_templates()
 
@@ -846,33 +786,15 @@ def test_direct_market_data_positions_portfolio_template_services_block_when_dis
         market_data_error.value,
         surface=MARKET_DATA_SERVICE_SURFACE,
     )
-    _assert_direct_extension_disabled(positions_error.value, surface=POSITION_SERVICE_SURFACE)
-    _assert_direct_extension_disabled(portfolio_error.value, surface=PORTFOLIO_SERVICE_SURFACE)
     _assert_direct_extension_disabled(template_error.value, surface=TEXT_TEMPLATE_SERVICE_SURFACE)
     assert quote_provider.quote_calls == []
 
 
-def test_direct_market_data_positions_portfolio_template_services_work_when_enabled(
+def test_direct_market_data_and_template_services_work_when_enabled(
     session_factory: sessionmaker[Session],
 ) -> None:
     quote_provider = _LifecycleQuoteProvider()
     with session_factory() as session:
-        portfolio = PortfolioService(session).create_portfolio(
-            PortfolioCreate(
-                name="Enabled Direct Service Matrix",
-                slug="enabled_direct_service_matrix",
-                description="Direct service enabled-state fixture",
-            )
-        )
-        _ = PositionService(session).create_position(
-            portfolio.id,
-            PositionCreate(
-                symbol="NVDA",
-                name="NVIDIA Corporation",
-                quantity=Decimal("2"),
-                average_cost=Decimal("100.00"),
-            ),
-        )
         _ = TextTemplateService(session).create_template(
             TextTemplateCreate(name="Enabled Direct Service Template", content="{{inputs.ticker}}")
         )
@@ -880,14 +802,10 @@ def test_direct_market_data_positions_portfolio_template_services_work_when_enab
             session=session,
             quote_provider=quote_provider,
         ).get_quote_snapshot(" nvda ")
-        positions = PositionService(session).list_positions(portfolio.id)
-        portfolios = PortfolioService(session).list_portfolios()
         templates = TextTemplateService(session).list_templates()
 
     assert quote is not None
     assert quote.symbol == "NVDA"
     assert warnings == []
     assert quote_provider.quote_calls == ["NVDA"]
-    assert [position.symbol for position in positions] == ["NVDA"]
-    assert [item.slug for item in portfolios] == ["enabled_direct_service_matrix"]
     assert [item.name for item in templates] == ["Enabled Direct Service Template"]

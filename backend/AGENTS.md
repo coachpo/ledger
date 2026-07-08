@@ -43,7 +43,7 @@ backend/
 ├── app/api/                    # APIRouter modules + dependency wiring for /api/v1 and /api/*
 ├── app/extensions/             # statically resident extension registry plus finance and Digital Oracle ownership
 ├── app/agents/                 # server-declared tools, native runtime tools, MCP boundaries
-├── app/services/               # CRUD, extension state, manifests, schedules, execution, queueing, templates, market data, trading rules
+├── app/services/               # extension state, manifests, schedules, execution, queueing, templates, reports, market data
 ├── app/workers/                # long-lived scheduler worker entrypoints for queued package runs
 ├── app/repositories/           # persistence queries
 ├── app/models/                 # SQLAlchemy entities + constraints/indexes
@@ -59,7 +59,7 @@ backend/
 | Extension registry/state | `app/extensions/AGENTS.md`, `app/services/extension_service.py`, `app/api/extensions.py` | private statically resident extension registry, slim `/api/extensions`, enabled tool/runtime filtering |
 | Platform route families | `app/api/workflow_packages.py`, `app/api/schedules.py`, `app/api/model_connections.py`, `app/api/extensions.py`, `app/api/tools.py`, `app/api/runs.py` | Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs |
 | Runtime tools / MCP / scheduler / traces | `app/agents/AGENTS.md`, `app/workers/AGENTS.md`, `app/services/workflow_package_schedule_service.py`, `app/services/workflow_package_schedule_materializer.py`, `app/services/run_queue_service.py`, `app/services/run_read_projection.py`, `app/services/run_service.py`, `app/core/telemetry.py` | server-declared tools, due schedule materialization, extension-filtered native runtime dispatch, explicit queued-run worker, backend progress/queue read models, MCP snapshots, Logfire trace ids/spans |
-| Preserved v1 route families | `app/extensions/signaldeck_finance/api_routers.py`, `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
+| Preserved v1 route families | `app/extensions/signaldeck_finance/api_routers.py`, `app/api/templates.py`, `app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Shared config / errors / telemetry / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, Logfire setup, decimal/symbol/currency helpers |
 | DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades, and startup repair |
 | Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/export, schedule recurrence/materialization, execution providers, runtime execution, queue claims/read projections, and market-data fallback |
@@ -73,7 +73,7 @@ backend/
 - `app/extensions/registry.py` declares statically resident extension identity, initial enabled seeding, and private registrar paths; `ExtensionService` resolves persisted/default state and supplies enabled ToolCatalog/runtime registries.
 - Schemas inherit `CamelModel`; external JSON is camelCase, extra fields are forbidden, decimals serialize to strings, and datetimes serialize as UTC `Z` timestamps.
 - Shared normalization and decimal parsing live in `app/core/formatting.py`; use `normalize_symbol`, `normalize_currency`, `parse_decimal_string`, `to_utc`, and `utcnow` instead of ad-hoc helpers.
-- `PORTFOLIO_CURRENCY` in `app/core/constants.py` is the current USD source for balances, positions, trading operations, template available balance, and quote currency checks; portfolio schemas do not expose `baseCurrency`/`base_currency`.
+- `PORTFOLIO_CURRENCY` in `app/core/constants.py` is the current USD source for finance quote currency checks.
 - Shared domain errors come from `app/core/errors.py`; routes and services should raise `ApiError` helpers rather than raw framework exceptions.
 - Logfire setup and trace/span id formatting live in `app/core/telemetry.py`; run execution must keep working when no Logfire token is configured.
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
@@ -92,7 +92,7 @@ backend/
 - Do not raise raw `HTTPException` for domain errors; use `ApiError` helpers from `app/core/errors.py`.
 - Do not hand-build camelCase payloads; let `CamelModel` serialize them.
 - Do not skip normalization or decimal parsing on symbols, currencies, or numeric strings.
-- Do not change template placeholder behavior, symbol lookup behavior, or CSV contracts without updating `tests/test_api.py` and the frontend callers.
+- Do not change template placeholder behavior or market-data symbol handling without updating `tests/test_api.py` and the frontend callers.
 - Do not change report compile/upload/download contracts, report filters, report placeholder behavior, or report slug rules without updating `tests/test_api.py` and the frontend callers.
 - Do not bypass `ExtensionService`, extension gates, or private registrars to expose finance routes/tools/providers directly.
 - Do not add plugin-manifest metadata to public extension schemas, OpenAPI, run payloads, or docs. `/api/extensions` stays limited to `key`, `label`, and `enabled`.
@@ -117,7 +117,7 @@ uv run pytest
 ```
 
 ## NOTES
-- `tests/test_api.py` is the high-signal regression file for CRUD, templates, reports, trading operations, market-data fallback, symbol-name cache behavior, report placeholder cycles, and schema upgrades.
+- `tests/test_api.py` is the high-signal regression file for templates, reports, extension gating, model connections, and platform API behavior.
 - Extension API, extension registry, lifecycle matrix, social sentiment, manifest, MCP, runtime-tool, workflow package, schedule, tool catalog, and model connection tests cover the current agent-platform and finance-extension contract beyond the original runtime suite.
 - `tests/test_workflow_package_*.py`, `tests/test_workflow_package_runtime_api.py`, `tests/test_workflow_package_runtime_artifacts.py`, `tests/test_workflow_package_run_contracts.py`, `tests/test_workflow_package_preflight.py`, `tests/test_workflow_run_contract_schemas.py`, `tests/test_run_operation_invocations.py`, `tests/test_runtime_models.py`, and `tests/test_runtime_repositories.py` cover current execution, saved model connections, preflight/tool contracts, scheduled tasks, rerun behavior, scheduler queues, trace, run-owned snapshot provenance, and current-package persistence contracts.
 - `tests/test_db_bootstrap.py` covers schema creation, bundled package seeding, idempotency, and startup recovery.

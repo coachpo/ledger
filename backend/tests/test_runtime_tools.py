@@ -210,9 +210,6 @@ from app.extensions.signaldeck_finance.grant_policy import (
     MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_MESSAGE,
     MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE,
     MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE,
-    POSITION_LOOKUP_ACCESS_DENIED_CODE,
-    POSITION_LOOKUP_ACCESS_DENIED_MESSAGE,
-    POSITION_LOOKUP_GRANT_POLICY,
     REPORT_LOOKUP_GRANT_POLICY,
 )
 from app.extensions.signaldeck_finance.ownership import (
@@ -247,11 +244,6 @@ from app.extensions.signaldeck_finance.runtime_market_data import (
     parse_quote_lookup_arguments,
     parse_social_sentiment_lookup_arguments,
 )
-from app.extensions.signaldeck_finance.runtime_positions import (
-    POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
-    POSITION_LOOKUP_TOOL_SPEC,
-    parse_position_lookup_arguments,
-)
 from app.extensions.signaldeck_finance.runtime_reports import (
     REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
     REPORT_LOOKUP_TOOL_SPEC,
@@ -266,7 +258,6 @@ from app.extensions.signaldeck_finance.runtime_types import (
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
     NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS,
     NEWS_LOOKUP_TOOL_KEY,
-    POSITION_LOOKUP_TOOL_KEY,
     REPORT_LOOKUP_TOOL_KEY,
     SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY,
     RuntimeFinancialStatement,
@@ -294,7 +285,6 @@ from app.extensions.signaldeck_finance.services.market_data_service import (
     MarketDataService,
     MarketIndicatorSelection,
 )
-from app.extensions.signaldeck_finance.services.position_service import PositionService
 from app.extensions.signaldeck_finance.services.report_service import ReportService
 from app.main import create_app
 from app.models.run import Run, RunWorkflowPackageSnapshot
@@ -302,7 +292,6 @@ from app.models.run_agent_invocation import RunAgentInvocation
 from app.models.run_operation_invocation import RunOperationInvocation
 from app.models.run_step import RunStep
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
-from app.schemas.position import PositionRead
 from app.schemas.report import ReportRead
 from app.services.agent_execution_service import AgentExecutionService
 from app.services.execution_ownership import PackageExecutionOwnership
@@ -379,7 +368,6 @@ _EXPECTED_BUILT_IN_RUNTIME_TOOL_KEYS = {
     "signaldeck.digital_oracle.crypto_derivatives.lookup",
     "signaldeck.digital_oracle.cftc_positioning.lookup",
     "signaldeck.digital_oracle.options.lookup",
-    "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 }
 
@@ -1051,7 +1039,6 @@ def _runtime_context(
                 {
                     "toolKeys": [
                         REPORT_LOOKUP_TOOL_KEY,
-                        POSITION_LOOKUP_TOOL_KEY,
                         MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
                         MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
                     ],
@@ -1286,22 +1273,6 @@ def _report_read() -> ReportRead:
                 "tags": ["earnings"],
                 "analysis": {"ticker": "NVDA", "reviewType": "fundamental"},
             },
-            "created_at": _NOW,
-            "updated_at": _NOW,
-        }
-    )
-
-
-def _position_read() -> PositionRead:
-    return PositionRead.model_validate(
-        {
-            "id": 11,
-            "portfolio_id": 5,
-            "symbol": "NVDA",
-            "name": "NVIDIA Corporation",
-            "quantity": Decimal("12.00000000"),
-            "average_cost": Decimal("101.50000000"),
-            "currency": "USD",
             "created_at": _NOW,
             "updated_at": _NOW,
         }
@@ -1751,7 +1722,6 @@ def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constant
         "signaldeck.finance.news.lookup",
         "signaldeck.finance.social_sentiment.lookup",
         "signaldeck.finance.insider_data.lookup",
-        "signaldeck.finance.positions.lookup",
         "signaldeck.finance.reports.lookup",
     )
     assert FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES == (
@@ -1763,7 +1733,6 @@ def test_prediction_markets_sec_filings_market_sentiment_tool_ownership_constant
         "signaldeck_finance_news_lookup",
         "signaldeck_finance_social_sentiment_lookup",
         "signaldeck_finance_insider_data_lookup",
-        "signaldeck_finance_positions_lookup",
         "signaldeck_finance_reports_lookup",
     )
     assert DIGITAL_ORACLE_RUNTIME_TOOL_KEYS == (
@@ -4068,13 +4037,6 @@ def test_runtime_tool_spec_is_frozen_and_separates_display_metadata_from_executi
     assert REPORT_LOOKUP_TOOL_SPEC.display_name != REPORT_LOOKUP_TOOL_SPEC.openai_function_name
     assert REPORT_LOOKUP_TOOL_SPEC.display_name != REPORT_LOOKUP_TOOL_SPEC.description
 
-    assert POSITION_LOOKUP_TOOL_SPEC.key == POSITION_LOOKUP_TOOL_KEY
-    assert POSITION_LOOKUP_TOOL_SPEC.openai_function_name == POSITION_LOOKUP_OPENAI_FUNCTION_NAME
-    assert POSITION_LOOKUP_TOOL_SPEC.display_name == "Position Lookup"
-    assert POSITION_LOOKUP_TOOL_SPEC.key != POSITION_LOOKUP_TOOL_SPEC.openai_function_name
-    assert POSITION_LOOKUP_TOOL_SPEC.display_name != POSITION_LOOKUP_TOOL_SPEC.openai_function_name
-    assert POSITION_LOOKUP_TOOL_SPEC.display_name != POSITION_LOOKUP_TOOL_SPEC.description
-
     assert MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC.key == MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY
     assert (
         MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC.openai_function_name
@@ -4139,22 +4101,17 @@ def test_runtime_tool_registry_rejects_duplicate_keys_and_openai_function_names(
 
 
 def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order() -> None:
-    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC, REPORT_LOOKUP_TOOL_SPEC])
+    registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC, MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC])
 
-    tools = registry.get_openai_tools({POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY})
+    tools = registry.get_openai_tools({MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY})
     assert [tool["name"] for tool in tools] == [
         REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
-        POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
+        MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
     ]
     for tool in tools:
         _assert_strict_openai_tool_schema(tool)
     assert tools[0]["description"] == (
-        "Read persisted SignalDeck reports by ticker, tag, review type, portfolio slug, source, "
-        "limit, and offset."
-    )
-    assert tools[1]["description"] == (
-        "Read persisted SignalDeck positions for a portfolio slug, optionally filtered by symbol, "
-        "limit, and offset."
+        "Read persisted SignalDeck reports by ticker, tag, review type, source, limit, and offset."
     )
 
     report_parameters = cast(dict[str, object], tools[0]["parameters"])
@@ -4163,7 +4120,6 @@ def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order(
         "ticker",
         "tag",
         "reviewType",
-        "portfolioSlug",
         "source",
         "limit",
         "offset",
@@ -4176,35 +4132,26 @@ def test_runtime_tool_registry_returns_granted_strict_definitions_in_sort_order(
         "agent",
         None,
     ]
-    position_parameters = cast(dict[str, object], tools[1]["parameters"])
-    position_properties = cast(dict[str, dict[str, object]], position_parameters["properties"])
-    assert set(cast(list[str], position_parameters["required"])) == {
-        "portfolioSlug",
-        "symbol",
-        "limit",
-        "offset",
-    }
-    position_limit_property = cast(dict[str, object], position_properties["limit"])
-    assert position_limit_property["maximum"] == 200
-
-    position_only_tools = registry.get_openai_tools({POSITION_LOOKUP_TOOL_KEY})
-    assert [tool["name"] for tool in position_only_tools] == [POSITION_LOOKUP_OPENAI_FUNCTION_NAME]
+    quote_only_tools = registry.get_openai_tools({MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY})
+    assert [tool["name"] for tool in quote_only_tools] == [
+        MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME
+    ]
 
 
 def test_runtime_tool_registry_returns_signaldeck_declarations_in_sort_order() -> None:
-    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC, REPORT_LOOKUP_TOOL_SPEC])
+    registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC, MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC])
 
     declarations = registry.get_tool_declarations(
-        {POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY}
+        {MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY}
     )
 
     assert [declaration.tool_key for declaration in declarations] == [
         REPORT_LOOKUP_TOOL_KEY,
-        POSITION_LOOKUP_TOOL_KEY,
+        MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
     ]
     assert [declaration.model_name for declaration in declarations] == [
         REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
-        POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
+        MARKET_DATA_QUOTE_LOOKUP_OPENAI_FUNCTION_NAME,
     ]
     assert {declaration.kind for declaration in declarations} == {"native_runtime"}
     assert all(declaration.strict for declaration in declarations)
@@ -4214,7 +4161,6 @@ def test_runtime_tool_registry_returns_signaldeck_declarations_in_sort_order() -
             "ticker",
             "tag",
             "reviewType",
-            "portfolioSlug",
             "source",
             "limit",
             "offset",
@@ -4486,13 +4432,15 @@ def test_runtime_tool_registry_deep_copies_openai_parameter_schemas() -> None:
 
 
 def test_runtime_tool_registry_aggregates_guidance_in_sort_order() -> None:
-    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC, REPORT_LOOKUP_TOOL_SPEC])
+    registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC, MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC])
 
-    assert registry.get_guidance({POSITION_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY}) == (
+    assert registry.get_guidance({MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY, REPORT_LOOKUP_TOOL_KEY}) == (
         "When you need persisted SignalDeck report context, call the "
         "signaldeck_finance_reports_lookup tool instead of inventing report content.\n\n"
-        "When you need persisted SignalDeck position context, call the "
-        "signaldeck_finance_positions_lookup tool instead of inventing portfolio holdings."
+        "When you need current or delayed market quotes, call the "
+        "signaldeck_finance_market_data_quote_lookup tool instead of inventing prices. "
+        "Disclose returned warnings or empty payloads as "
+        "data quality or provider limitations."
     )
     assert registry.get_guidance(set()) == ""
 
@@ -4520,22 +4468,17 @@ def test_generic_platform_runtime_guidance_discloses_provider_limitations() -> N
 def test_runtime_tool_grant_service_resolves_package_tool_keys_and_fails_closed() -> None:
     service = RuntimeToolGrantService(get_default_tool_catalog())
     capability_references = [
-        _capability_reference(tools=[REPORT_LOOKUP_TOOL_KEY, POSITION_LOOKUP_TOOL_KEY])
+        _capability_reference(tools=[REPORT_LOOKUP_TOOL_KEY, MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY])
     ]
 
     assert service.resolve_granted_tool_keys(capability_references) == {
         REPORT_LOOKUP_TOOL_KEY,
-        POSITION_LOOKUP_TOOL_KEY,
+        MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
     }
     service.require_runtime_tool_grant(
         capability_references=capability_references,
         grant_policy=REPORT_LOOKUP_GRANT_POLICY,
     )
-    service.require_runtime_tool_grant(
-        capability_references=capability_references,
-        grant_policy=POSITION_LOOKUP_GRANT_POLICY,
-    )
-
     with pytest.raises(RuntimeToolGrantError) as exc_info:
         service.require_runtime_tool_grant(
             capability_references=[_capability_reference(tools=["signaldeck.stale.lookup"])],
@@ -4553,14 +4496,14 @@ def test_runtime_tool_grant_service_resolves_package_tool_keys_and_fails_closed(
 
 
 def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsing() -> None:
-    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC])
+    registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC])
     context = _runtime_context(fail_on_session=True)
 
     with pytest.raises(RuntimeToolError) as unknown_error:
         _ = registry.dispatch(
             name="signaldeck_unknown_lookup",
-            arguments_json='{"portfolioSlug":"reference"}',
-            granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
+            arguments_json='{"ticker":"NVDA"}',
+            granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
             context=context,
         )
     assert unknown_error.value.code == "agent_tool_call_unsupported"
@@ -4571,17 +4514,19 @@ def test_runtime_tool_registry_rejects_unknown_and_ungranted_names_before_parsin
 
     with pytest.raises(RuntimeToolError) as ungranted_error:
         _ = registry.dispatch(
-            name=POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
+            name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
             arguments_json="not-json",
             granted_tool_keys=set(),
             context=context,
         )
-    assert ungranted_error.value.code == POSITION_LOOKUP_ACCESS_DENIED_CODE
-    assert ungranted_error.value.message == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
+    assert ungranted_error.value.code == "agent_execution_access_denied"
+    assert ungranted_error.value.message == (
+        "Agent is not authorized to use signaldeck.finance.reports.lookup."
+    )
 
 
 def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls() -> None:
-    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC])
+    registry = RuntimeToolRegistry([REPORT_LOOKUP_TOOL_SPEC])
     context = _runtime_context(fail_on_session=True)
     mcp_dispatcher = _RecordingMcpDispatcher()
 
@@ -4591,7 +4536,7 @@ def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls(
             arguments_json='{"ticker":"NVDA"}',
             call_id="call-mcp",
         ),
-        granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
+        granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
         runtime_tool_registry=registry,
         runtime_tool_context=context,
         mcp_dispatcher=cast(Any, mcp_dispatcher),
@@ -4605,7 +4550,7 @@ def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls(
     with pytest.raises(RuntimeToolError) as exc_info:
         _ = AgentExecutionService._dispatch_function_call(
             tool_call=ModelToolCall(
-                tool_name=POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
+                tool_name=REPORT_LOOKUP_OPENAI_FUNCTION_NAME,
                 arguments_json="not-json",
                 call_id="call-denied",
             ),
@@ -4615,8 +4560,10 @@ def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls(
             mcp_dispatcher=cast(Any, mcp_dispatcher),
         )
 
-    assert exc_info.value.code == POSITION_LOOKUP_ACCESS_DENIED_CODE
-    assert exc_info.value.message == POSITION_LOOKUP_ACCESS_DENIED_MESSAGE
+    assert exc_info.value.code == "agent_execution_access_denied"
+    assert exc_info.value.message == (
+        "Agent is not authorized to use signaldeck.finance.reports.lookup."
+    )
     assert mcp_dispatcher.calls == [
         {"arguments_json": '{"ticker":"NVDA"}', "name": "mcp_external_lookup"}
     ]
@@ -4628,7 +4575,7 @@ def test_agent_execution_native_to_mcp_fallback_only_for_unsupported_tool_calls(
                 arguments_json='{"ticker":"NVDA"}',
                 call_id="call-native-unknown",
             ),
-            granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
+            granted_tool_keys={REPORT_LOOKUP_TOOL_KEY},
             runtime_tool_registry=registry,
             runtime_tool_context=context,
             mcp_dispatcher=cast(Any, mcp_dispatcher),
@@ -4922,51 +4869,6 @@ def test_report_runtime_tool_parser_preserves_validation_messages(
     [
         (
             "{",
-            "OpenAI response requested signaldeck_finance_positions_lookup with invalid JSON "
-            + "arguments.",
-        ),
-        ("[]", "signaldeck_finance_positions_lookup arguments must be a JSON object."),
-        (
-            '{"portfolioSlug":"reference","unsupported":true}',
-            "signaldeck_finance_positions_lookup arguments contained unsupported fields: "
-            + "unsupported",
-        ),
-        ("{}", "signaldeck_finance_positions_lookup portfolioSlug is required."),
-        (
-            '{"portfolioSlug":123}',
-            "signaldeck_finance_positions_lookup portfolioSlug must be a string.",
-        ),
-        (
-            '{"portfolioSlug":"reference","limit":"1"}',
-            "signaldeck_finance_positions_lookup limit must be an integer.",
-        ),
-        (
-            '{"portfolioSlug":"reference","limit":201}',
-            "signaldeck_finance_positions_lookup limit must be at most 200.",
-        ),
-        (
-            '{"portfolioSlug":"reference","offset":-1}',
-            "signaldeck_finance_positions_lookup offset must be at least 0.",
-        ),
-    ],
-)
-def test_position_runtime_tool_parser_preserves_validation_messages(
-    arguments_json: str,
-    expected_message: str,
-) -> None:
-    with pytest.raises(RuntimeToolError) as exc_info:
-        _ = parse_position_lookup_arguments(arguments_json)
-
-    assert exc_info.value.code == "agent_tool_call_invalid"
-    assert exc_info.value.message == expected_message
-    assert exc_info.value.details == []
-
-
-@pytest.mark.parametrize(
-    ("arguments_json", "expected_message"),
-    [
-        (
-            "{",
             "OpenAI response requested signaldeck_finance_market_data_quote_lookup "
             + "with invalid JSON arguments.",
         ),
@@ -4984,17 +4886,12 @@ def test_position_runtime_tool_parser_preserves_validation_messages(
             "signaldeck_finance_market_data_quote_lookup symbols must be an array of strings.",
         ),
         (
-            '{"symbols":[123]}',
-            "signaldeck_finance_market_data_quote_lookup symbols must be an array of strings.",
+            '{"symbols":[]}',
+            "signaldeck_finance_market_data_quote_lookup symbols must contain at least one symbol.",
         ),
         (
-            '{"symbols":[""]}',
-            "signaldeck_finance_market_data_quote_lookup symbols must not contain empty values.",
-        ),
-        (
-            '{"symbols":["NVDA"],"baseCurrency":"US"}',
-            "signaldeck_finance_market_data_quote_lookup arguments contained unsupported "
-            + "fields: baseCurrency",
+            '{"symbols":["A","B","C","D","E","F","G","H","I","J","K"]}',
+            "signaldeck_finance_market_data_quote_lookup symbols must contain at most 10 symbols.",
         ),
     ],
 )
@@ -5600,7 +5497,6 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
     registry = RuntimeToolRegistry(
         [
             REPORT_LOOKUP_TOOL_SPEC,
-            POSITION_LOOKUP_TOOL_SPEC,
             MARKET_DATA_QUOTE_LOOKUP_TOOL_SPEC,
             MARKET_DATA_HISTORY_LOOKUP_TOOL_SPEC,
             SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
@@ -5617,18 +5513,6 @@ def test_registry_dispatch_rejects_invalid_arguments_before_service_execution() 
         )
     assert (
         report_error.value.message == "signaldeck_finance_reports_lookup limit must be at most 50."
-    )
-
-    with pytest.raises(RuntimeToolError) as position_error:
-        _ = registry.dispatch(
-            name=POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
-            arguments_json='{"portfolioSlug":"reference","limit":201}',
-            granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
-            context=context,
-        )
-    assert (
-        position_error.value.message
-        == "signaldeck_finance_positions_lookup limit must be at most 200."
     )
 
     with pytest.raises(RuntimeToolError) as quote_error:
@@ -5681,7 +5565,6 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
         ticker: str | None = None,
         tag: str | None = None,
         review_type: str | None = None,
-        portfolio_slug: str | None = None,
         source: str | None = None,
         limit: int | None = None,
         offset: int = 0,
@@ -5694,7 +5577,6 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
                 "ticker": ticker,
                 "tag": tag,
                 "review_type": review_type,
-                "portfolio_slug": portfolio_slug,
                 "source": source,
                 "limit": limit,
                 "offset": offset,
@@ -5717,7 +5599,6 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
                 {
                     "toolKeys": [
                         REPORT_LOOKUP_TOOL_KEY,
-                        POSITION_LOOKUP_TOOL_KEY,
                         MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
                         MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
                     ]
@@ -5727,7 +5608,6 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
             "ticker": "NVDA",
             "tag": None,
             "review_type": None,
-            "portfolio_slug": None,
             "source": None,
             "limit": 50,
             "offset": 0,
@@ -5759,95 +5639,6 @@ def test_reports_lookup_runtime_tool_dispatches_to_report_service_with_defaults_
     }
     assert reports[0]["createdAt"] == "2026-01-02T03:04:05Z"
     assert reports[0]["updatedAt"] == "2026-01-02T03:04:05Z"
-
-
-def test_position_runtime_tool_dispatches_to_position_service_with_defaults_and_output_shape(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    registry = RuntimeToolRegistry([POSITION_LOOKUP_TOOL_SPEC])
-    captured_calls: list[dict[str, object]] = []
-
-    def fake_lookup_positions(
-        self: PositionService,
-        *,
-        capability_references: list[dict[str, object]],
-        grant_policy: RuntimeToolGrantPolicy,
-        portfolio_slug: str,
-        symbol: str | None = None,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[PositionRead]:
-        captured_calls.append(
-            {
-                "capability_references": capability_references,
-                "grant_policy": grant_policy,
-                "portfolio_slug": portfolio_slug,
-                "symbol": symbol,
-                "limit": limit,
-                "offset": offset,
-                "quote_provider": self.quote_provider,
-            }
-        )
-        if portfolio_slug == "unknown_portfolio":
-            return []
-        return [_position_read()]
-
-    monkeypatch.setattr(PositionService, "lookup_positions", fake_lookup_positions)
-
-    payload = registry.dispatch(
-        name=POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
-        arguments_json='{"portfolioSlug":" position_lookup_reference ","symbol":" nvda "}',
-        granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
-        context=_runtime_context(),
-    )
-
-    assert captured_calls[0] == {
-        "capability_references": [
-            {
-                "toolKeys": [
-                    REPORT_LOOKUP_TOOL_KEY,
-                    POSITION_LOOKUP_TOOL_KEY,
-                    MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY,
-                    MARKET_DATA_HISTORY_LOOKUP_TOOL_KEY,
-                ]
-            }
-        ],
-        "grant_policy": POSITION_LOOKUP_GRANT_POLICY,
-        "portfolio_slug": "position_lookup_reference",
-        "symbol": "NVDA",
-        "limit": 50,
-        "offset": 0,
-        "quote_provider": None,
-    }
-    assert payload == {
-        "count": 1,
-        "portfolioSlug": "position_lookup_reference",
-        "positions": [
-            {
-                "id": 11,
-                "portfolioId": 5,
-                "symbol": "NVDA",
-                "name": "NVIDIA Corporation",
-                "quantity": "12.00000000",
-                "averageCost": "101.50000000",
-                "currency": "USD",
-                "createdAt": "2026-01-02T03:04:05Z",
-                "updatedAt": "2026-01-02T03:04:05Z",
-            }
-        ],
-    }
-
-    empty_payload = registry.dispatch(
-        name=POSITION_LOOKUP_OPENAI_FUNCTION_NAME,
-        arguments_json='{"portfolioSlug":"unknown_portfolio","symbol":"NVDA","limit":10,"offset":0}',
-        granted_tool_keys={POSITION_LOOKUP_TOOL_KEY},
-        context=_runtime_context(),
-    )
-    assert empty_payload == {
-        "count": 0,
-        "portfolioSlug": "unknown_portfolio",
-        "positions": [],
-    }
 
 
 def test_market_data_quote_lookup_dispatches_to_service_with_injected_provider(

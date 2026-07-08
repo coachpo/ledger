@@ -52,7 +52,6 @@ FUNDAMENTALS_LOOKUP_TOOL_KEY = "signaldeck.finance.fundamentals.lookup"
 NEWS_LOOKUP_TOOL_KEY = "signaldeck.finance.news.lookup"
 SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY = "signaldeck.finance.social_sentiment.lookup"
 INSIDER_DATA_LOOKUP_TOOL_KEY = "signaldeck.finance.insider_data.lookup"
-POSITION_LOOKUP_TOOL_KEY = "signaldeck.finance.positions.lookup"
 REPORT_LOOKUP_TOOL_KEY = "signaldeck.finance.reports.lookup"
 
 NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS = (
@@ -170,7 +169,6 @@ __all__ = [
     "MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY",
     "NATIVE_RUNTIME_FINANCIAL_TOOL_KEYS",
     "NEWS_LOOKUP_TOOL_KEY",
-    "POSITION_LOOKUP_TOOL_KEY",
     "REPORT_LOOKUP_TOOL_KEY",
     "SOCIAL_SENTIMENT_LOOKUP_TOOL_KEY",
     "RuntimeFinancialStatement",

@@ -20,10 +20,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Portfolio queries | `portfolio.py` | list, get, slug lookup, aggregate counts |
-| Balance queries | `balance.py` | list_for_portfolio, get_for_portfolio, get_by_label, add, delete |
-| Position queries | `position.py` | list_for_portfolio, get_for_portfolio, get_by_symbol, add, delete |
-| Trading operation queries | `trading_operation.py` | list_for_portfolio, historical attribution helpers, add |
 | Market quote cache queries | `market_quote.py` | get_latest, get_by_provider_symbol_as_of, add |
 | Symbol-name cache queries | `symbol_name_cache.py` | symbol lookup plus `insert_if_missing()` |
 | Text-template queries | `text_template.py` | list_all, get_by_name |
@@ -64,4 +60,3 @@ uv run pytest tests/test_api.py tests/test_runtime_repositories.py
 - `WorkflowPackageScheduleRepository` and `WorkflowPackageScheduleFireRepository` own schedule list/detail filters, due-schedule locking, idempotent fire inserts, fire history, latest-run lookup, and active-run checks.
 - `ModelConnectionRepository` lists and resolves saved provider connections by key for editor and package-binding flows.
 - `RunRepository` backs current run list/detail surfaces, backend progress/queue projections, package-qualified queue claims, schedule-linked run lookups, and persisted package-run lookup behavior.
-- `TradingOperationRepository` keeps trading-operation lookup and attribution helpers scoped to preserved portfolio history.

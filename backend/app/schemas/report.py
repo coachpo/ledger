@@ -25,7 +25,6 @@ class ReportAnalysisMetadata(CamelModel):
     )
 
     ticker: str | None = None
-    portfolio_slug: str | None = None
     review_type: str | None = None
     trigger: str | None = None
     review_date: str | None = None
@@ -33,7 +32,6 @@ class ReportAnalysisMetadata(CamelModel):
 
     @field_validator(
         "ticker",
-        "portfolio_slug",
         "review_type",
         "trigger",
         "review_date",

@@ -151,7 +151,6 @@ _TRADINGAGENTS_CANONICAL_SCHEDULE_INPUT_TEMPLATES: dict[str, dict[str, object]] 
         "ticker": "SPY",
         "asOfDate": "{{fire.scheduledLocalDate}}",
         "horizonDays": 30,
-        "portfolioId": "",
         "outputLanguage": "English",
         "benchmarkSymbol": "SPY",
         "maxRiskDebateRounds": 2,
@@ -2123,7 +2122,6 @@ def _tradingagents_parameters() -> dict[str, object]:
     return {
         "ticker": "MSFT",
         "asOfDate": "2026-05-15",
-        "portfolioId": "portfolio-1",
         "horizonDays": 30,
         "benchmarkSymbol": "SPY",
     }

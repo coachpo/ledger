@@ -182,8 +182,7 @@ test.describe("Extension lifecycle browser matrix", () => {
     await expect(financeRow).toContainText("Disabled");
     await expect(digitalOracleRow).toContainText("Enabled");
 
-    await expect(page.getByTestId("nav-dashboard")).toHaveCount(0);
-    await expect(page.getByTestId("nav-portfolios")).toHaveCount(0);
+    await expect(page.getByTestId("nav-dashboard")).toBeVisible();
     await expect(page.getByTestId("nav-templates")).toHaveCount(0);
     await expect(page.getByTestId("nav-reports")).toHaveCount(0);
     await expect(page.getByTestId("nav-workflow-packages")).toBeVisible();
@@ -212,7 +211,6 @@ test.describe("Extension lifecycle browser matrix", () => {
       .click();
     await expect(financeRow).toContainText("Enabled");
     await expect(page.getByTestId("nav-dashboard")).toBeVisible();
-    await expect(page.getByTestId("nav-portfolios")).toBeVisible();
     await expect(page.getByTestId("nav-templates")).toBeVisible();
     await expect(page.getByTestId("nav-reports")).toBeVisible();
   });

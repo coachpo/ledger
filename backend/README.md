@@ -1,6 +1,6 @@
 # SignalDeck Backend
 
-FastAPI backend for SignalDeck’s portfolio, report, and current agent-platform surfaces.
+FastAPI backend for SignalDeck’s template/report and current agent-platform surfaces.
 
 ## Local Development
 
@@ -27,7 +27,7 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets rema
 
 - `/health` for process liveness
 - `/ready` for readiness; returns 200 only when the backend can connect to PostgreSQL
-- `/api/v1` for portfolios, balances, positions, trading operations, market data, templates, and reports
+- `/api/v1` for templates and reports
 - `/api/workflow-packages` for package-first authoring, validation, import, export, preflight, launch metadata, and launch creation
 - `/api/schedules` for Scheduled Tasks targeting Workflow Packages, including create, list, detail, patch, delete, preview, run-now, and fire-history reads
 - `/api/model-connections` for global live provider bindings and secret-safe connection testing

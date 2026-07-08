@@ -37,23 +37,11 @@ export interface TextTemplateInlineCompileRead {
   compiled: string;
 }
 
-export interface PlaceholderPosition {
-  symbol: string;
-  name: string | null;
-}
-
-export interface PlaceholderPortfolio {
-  slug: string;
-  name: string;
-  positions: PlaceholderPosition[];
-}
-
 export interface PlaceholderReport {
   name: string;
   createdAt: string;
 }
 
 export interface PlaceholderTree {
-  portfolios: PlaceholderPortfolio[];
   reports: PlaceholderReport[];
 }

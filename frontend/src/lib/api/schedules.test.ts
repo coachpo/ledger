@@ -80,7 +80,7 @@ describe("schedules api", () => {
       timezone: "America/New_York",
       recurrence: weeklyRecurrence,
       inputTemplate: { asOfDate: "{{fire.scheduledLocalDate}}" },
-      templateVars: { portfolioSlug: "core" },
+      templateVars: { analysisTag: "daily" },
     };
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 44 }, 201));
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 44, status: "paused" }, 200));
@@ -126,7 +126,7 @@ describe("schedules api", () => {
       recurrence: weeklyRecurrence,
       scheduledFor: "2026-06-01T13:00:00Z",
       inputTemplate: { asOfDate: "{{fire.scheduledLocalDate}}" },
-      templateVars: { portfolioSlug: "core" },
+      templateVars: { analysisTag: "daily" },
     });
     let lastCall = getLastFetchCall(fetchMock);
     expect(`${lastCall.url.origin}${lastCall.url.pathname}`).toBe("https://signaldeck.example.com/api/schedules/preview");

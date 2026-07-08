@@ -15,7 +15,6 @@ class ReportRepository(BaseRepository[Report]):
         ticker: str | None = None,
         tag: str | None = None,
         review_type: str | None = None,
-        portfolio_slug: str | None = None,
         source: str | None = None,
         limit: int | None = None,
         offset: int = 0,
@@ -31,10 +30,6 @@ class ReportRepository(BaseRepository[Report]):
         if review_type is not None:
             statement = statement.where(
                 self.model.metadata_.contains({"analysis": {"reviewType": review_type}})
-            )
-        if portfolio_slug is not None:
-            statement = statement.where(
-                self.model.metadata_.contains({"analysis": {"portfolioSlug": portfolio_slug}})
             )
         if source is not None:
             statement = statement.where(self.model.source == source)

@@ -2,7 +2,6 @@ import type { RuntimeInputMap } from "../runtime-inputs";
 
 export interface ReportAnalysisMetadata {
   ticker?: string | null;
-  portfolioSlug?: string | null;
   reviewType?: string | null;
   trigger?: string | null;
   reviewDate?: string | null;

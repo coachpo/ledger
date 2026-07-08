@@ -34,7 +34,6 @@ _EXPECTED_PACKAGE_TOOL_KEYS = {
     "signaldeck.finance.news.lookup",
     "signaldeck.finance.social_sentiment.lookup",
     "signaldeck.finance.insider_data.lookup",
-    "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 }
 

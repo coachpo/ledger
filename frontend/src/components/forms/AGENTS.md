@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/components/AGENTS.md`.
 
 ## OVERVIEW
-`src/components/forms/` owns small cross-route dialog/form helpers: portfolio identity edits, report generation/upload dialogs, and write-only secret input UI. These components are reusable surfaces supplied with data and callbacks by their parent routes; they do not own navigation, toasts, query hooks, or direct API calls.
+`src/components/forms/` owns small cross-route dialog/form helpers: report generation/upload dialogs and write-only secret input UI. These components are reusable surfaces supplied with data and callbacks by their parent routes; they do not own navigation, toasts, query hooks, or direct API calls.
 
 Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 
@@ -16,11 +16,10 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Portfolio dialog | `portfolio-form-dialog.tsx` | create/edit portfolio identity fields and slug/base-currency form schema |
 | Report generation | `generate-report-dialog.tsx` | template selection plus runtime input rows for report compilation |
 | Report upload | `report-upload-dialog.tsx` | markdown upload metadata dialog |
 | Secret input | `secret-input.tsx` | write-only credential input display and rotation affordance |
-| Coverage | `portfolio-form-dialog.test.tsx`, `report-upload-dialog.test.tsx` | dialog reset, submit payloads, upload behavior |
+| Coverage | `report-upload-dialog.test.tsx` | dialog reset, submit payloads, upload behavior |
 
 ## CONVENTIONS
 - Parents own mutations, toasts, route transitions, and query invalidation; form helpers emit typed payloads only.
@@ -32,11 +31,11 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not call `fetch`, `useQuery`, `useMutation`, `toast`, or router navigation from these helpers.
-- Do not move feature-specific portfolio sections, trading flows, or template-editor panels into this folder.
+- Do not move template-editor panels into this folder.
 - Do not expose saved model-connection secrets for convenience in tests or placeholders.
 
 ## VALIDATION
 ```bash
 cd frontend
-pnpm test:run src/components/forms/portfolio-form-dialog.test.tsx src/components/forms/report-upload-dialog.test.tsx
+pnpm test:run src/components/forms/report-upload-dialog.test.tsx
 ```

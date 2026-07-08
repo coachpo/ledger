@@ -58,13 +58,6 @@ vi.mock("@/hooks/use-templates", () => ({
   }),
   usePlaceholders: () => ({
     data: {
-      portfolios: [
-        {
-          slug: "growth",
-          name: "Growth",
-          positions: [{ symbol: "AAPL", name: "Apple Inc." }],
-        },
-      ],
       reports: [
         {
           name: "latest_report_20260318_210455",

@@ -17,7 +17,6 @@ from app.extensions.signaldeck_finance.service_gate import (
     MARKET_DATA_SERVICE_SURFACE,
     require_finance_workspace_enabled,
 )
-from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.models.market_quote import MarketQuote
 from app.repositories.market_quote import MarketQuoteRepository
 from app.schemas.common import to_camel
@@ -224,16 +223,14 @@ class MarketDataService:
         self.news_providers: tuple[NewsProvider, ...] = tuple(
             news_providers or (DeterministicNewsProvider(),)
         )
-        self.portfolio_service: PortfolioService = PortfolioService(session)
         self.repository: MarketQuoteRepository = MarketQuoteRepository(session)
         self.quote_stale_after_minutes: int = quote_stale_after_minutes
 
     def _require_enabled(self) -> None:
         _ = require_finance_workspace_enabled(self.session, surface=MARKET_DATA_SERVICE_SURFACE)
 
-    def get_quotes(self, portfolio_id: int, symbols: list[str]) -> MarketQuoteListRead:
+    def get_quotes(self, symbols: list[str]) -> MarketQuoteListRead:
         self._require_enabled()
-        _ = self.portfolio_service.get_portfolio_model(portfolio_id)
         quotes: list[MarketQuoteRead] = []
         warnings: list[str] = []
         updated_cache = False
@@ -257,11 +254,8 @@ class MarketDataService:
 
         return MarketQuoteListRead(quotes=quotes, warnings=warnings)
 
-    def get_history(
-        self, portfolio_id: int, symbols: list[str], range_value: str
-    ) -> MarketHistoryRead:
+    def get_history(self, symbols: list[str], range_value: str) -> MarketHistoryRead:
         self._require_enabled()
-        _ = self.portfolio_service.get_portfolio_model(portfolio_id)
         return self._build_history_read(symbols, range_value)
 
     def lookup_quote_snapshot(

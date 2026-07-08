@@ -33,7 +33,6 @@ const platformRoutes = [
 
 const primaryShellNavTestIds = [
   "nav-dashboard",
-  "nav-portfolios",
   "nav-templates",
   "nav-reports",
   "nav-workflow-packages",
@@ -80,9 +79,10 @@ test.describe("Primary workspace navigation", () => {
     await expectSingleRouteMain(page, "route-dashboard", "scroll");
     const dashboardPage = page.getByTestId("dashboard-page");
     await expect(dashboardPage.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(dashboardPage.getByText("Portfolio overview.")).toBeVisible();
+    await expect(dashboardPage.getByText("Recent workflow runs.")).toBeVisible();
+    await expect(dashboardPage.getByText("queued", { exact: true })).toBeVisible();
+    await expect(dashboardPage.getByText("running", { exact: true })).toBeVisible();
     await expect(dashboardPage.getByRole("button")).toHaveCount(0);
-    await expect(dashboardPage.getByRole("link")).toHaveCount(0);
 
     for (const route of platformRoutes) {
       await expect(page.getByTestId(route.testId)).toBeVisible();

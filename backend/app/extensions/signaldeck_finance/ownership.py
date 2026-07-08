@@ -33,9 +33,6 @@ FINANCE_WORKSPACE_DENIED_MESSAGES = {
     "signaldeck.finance.insider_data.lookup": (
         "Agent is not authorized to use signaldeck.finance.insider_data.lookup."
     ),
-    "signaldeck.finance.positions.lookup": (
-        "Agent is not authorized to use signaldeck.finance.positions.lookup."
-    ),
     "signaldeck.finance.reports.lookup": (
         "Agent is not authorized to use signaldeck.finance.reports.lookup."
     ),
@@ -50,7 +47,6 @@ FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS = (
     "signaldeck.finance.news.lookup",
     "signaldeck.finance.social_sentiment.lookup",
     "signaldeck.finance.insider_data.lookup",
-    "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
 )
 
@@ -63,7 +59,6 @@ FINANCE_WORKSPACE_OPENAI_FUNCTION_NAMES = (
     "signaldeck_finance_news_lookup",
     "signaldeck_finance_social_sentiment_lookup",
     "signaldeck_finance_insider_data_lookup",
-    "signaldeck_finance_positions_lookup",
     "signaldeck_finance_reports_lookup",
 )
 

@@ -183,7 +183,7 @@ function RunTimestampCell({ run }: { run: RunListItemRead }) {
   );
 }
 
-function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
+export function RunsTable({ runs }: { runs: readonly RunListItemRead[] }) {
   return (
     <ResourceTableFrame>
       <Table>

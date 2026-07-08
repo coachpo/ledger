@@ -27,7 +27,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Evidence / state helpers | `console-section.tsx`, `evidence-cluster.tsx`, `constraint-inspector.tsx`, `empty-state-panel.tsx`, `inventory-state-panel.tsx`, `inline-state-panel.tsx` | wide payload, evidence, and empty/error/loading presentation |
 | Generic tables | `data-table.tsx`, `data-table-column-header.tsx`, `resource-table-frame.tsx` | lightweight sortable tables and route-owned table framing |
 | Summary metrics | `metric-card.tsx` | consistent KPI card layout |
-| Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for portfolio, balance, position, and trading forms |
+| Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for current shared forms |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
 | Row-card inventory UI | `resource-row-card.tsx` | compact resource cards used by platform inventories when a card surface is still warranted |
 | Design-system source | `../../../DESIGN.md` | source of truth for page layout, shared shells, tokens, and management UI patterns |
@@ -46,7 +46,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
-- Do not embed portfolio-only, template-only, report-only, or agent-platform request logic in this folder.
+- Do not embed template-only, report-only, or agent-platform request logic in this folder.
 - Do not hard-code route metadata, URL params, or fetch logic inside reusable shells.
 - Do not turn a one-off route widget into a shared component before a second real use case exists.
 - Do not hard-code API types or query keys inside reusable table/search/action/selection wrappers.
@@ -54,5 +54,5 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## NOTES
 - Shared schemas here are the canonical place for cross-route validation rules that are still reused after the cutover.
-- The inventory/workspace/split-inspector shells plus management-list helpers are the current shared page chrome for finance inventories, platform workspace/console pages, and shared UI migrations.
+- The inventory/workspace/split-inspector shells plus management-list helpers are the current shared page chrome for finance template/report inventories, platform workspace/console pages, and shared UI migrations.
 - This folder no longer owns retired orchestration, Studio, Tryout, or runtime-v2 helper surfaces.

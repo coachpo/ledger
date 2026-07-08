@@ -1773,7 +1773,7 @@ function ScheduleTemplateVarsEditor({
               aria-label={`Template variable key ${row.key || row.id}`}
               className="h-8 min-w-0 text-xs"
               disabled={disabled}
-              placeholder="portfolioSlug"
+              placeholder="analysisTag"
               value={row.key}
               onChange={(event) => updateRow(row.id, "key", event.target.value)}
             />
@@ -1781,7 +1781,7 @@ function ScheduleTemplateVarsEditor({
               aria-label={`Template variable value ${row.key || row.id}`}
               className="h-8 min-w-0 text-xs"
               disabled={disabled}
-              placeholder="core_portfolio"
+              placeholder="daily_research"
               value={row.value}
               onChange={(event) =>
                 updateRow(row.id, "value", event.target.value)

@@ -27,7 +27,6 @@ _FIXTURE_PATH = (
 _LAUNCH_PARAMETERS = {
     "ticker": "AAPL",
     "asOfDate": "2026-05-08",
-    "portfolioId": "tradingagents_demo",
     "horizonDays": 30,
     "benchmarkSymbol": "SPY",
 }
@@ -142,8 +141,6 @@ spec:
         type: string
       asOfDate:
         type: string
-      portfolioId:
-        type: string
       horizonDays:
         type: integer
       benchmarkSymbol:
@@ -151,7 +148,6 @@ spec:
     required:
       - ticker
       - asOfDate
-      - portfolioId
       - horizonDays
       - benchmarkSymbol
   capabilityProfiles: []
@@ -196,8 +192,6 @@ spec:
             type: string
           asOfDate:
             type: string
-          portfolioId:
-            type: string
           horizonDays:
             type: integer
           benchmarkSymbol:
@@ -215,8 +209,6 @@ spec:
             type: string
           asOfDate:
             type: string
-          portfolioId:
-            type: string
           horizonDays:
             type: integer
           benchmarkSymbol:
@@ -224,7 +216,6 @@ spec:
         required:
           - ticker
           - asOfDate
-          - portfolioId
           - horizonDays
           - benchmarkSymbol
       flow:
@@ -235,7 +226,6 @@ spec:
         with:
           ticker: ${{{{ inputs.ticker }}}}
           asOfDate: ${{{{ inputs.asOfDate }}}}
-          portfolioId: ${{{{ inputs.portfolioId }}}}
           horizonDays: ${{{{ inputs.horizonDays }}}}
           benchmarkSymbol: ${{{{ inputs.benchmarkSymbol }}}}
       output:

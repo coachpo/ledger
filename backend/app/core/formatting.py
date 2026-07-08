@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -28,20 +27,6 @@ def format_nullable_decimal(value: Decimal | None, *, places: int = 2) -> str | 
     if value is None:
         return None
     return format_decimal(value, places=places)
-
-
-def portfolio_cash_total(balances: Sequence[object]) -> Decimal:
-    total = Decimal("0")
-    for balance in balances:
-        amount = getattr(balance, "amount", None)
-        if not isinstance(amount, Decimal):
-            raise TypeError("Balance amount must be a Decimal")
-
-        if str(getattr(balance, "operation_type", "")) == "WITHDRAWAL":
-            total -= amount
-            continue
-        total += amount
-    return total
 
 
 def parse_decimal_string(value: object) -> Decimal:

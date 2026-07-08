@@ -139,6 +139,12 @@ describe("TemplateListPage", () => {
     expect(
       within(inventory).getByText(/Create a reusable markdown template/i),
     ).toBeVisible();
+    expect(
+      within(inventory).getByText(
+        "Create a reusable markdown template with runtime input and report placeholders.",
+      ),
+    ).toBeVisible();
+    expect(inventory).not.toHaveTextContent("portfolio");
   });
 
   it("keeps filtered-empty deterministic while preserving search and new-template controls", () => {

@@ -76,7 +76,6 @@ const LIVE_PLATFORM_NAV_ENTRIES = [
 
 function sampleExtensionRoutePath(path: string) {
   return path
-    .replace(":portfolioId", "123")
     .replace(":templateId", "456")
     .replace(":slug", "sample-report");
 }
@@ -249,9 +248,9 @@ describe("router", () => {
   it("classifies dashboard, platform inventories, runs monitor, and system state routes", () => {
     expect(getRouteMetadataByPattern("/")).toMatchObject({
       archetype: "dashboard",
-      owner: { kind: "extension" },
+      owner: { kind: "platform" },
       widthMode: "wide",
-      stateVariants: ["loading", "ready", "error", "disabledExtension"],
+      stateVariants: ["loading", "ready", "error"],
       testId: "route-dashboard",
     });
     expect(getRouteMetadataByPattern("/workflow-packages")).toMatchObject({
@@ -793,10 +792,6 @@ describe("router", () => {
       },
       {
         requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-        toolKeyPrefix: "signaldeck.finance.positions.",
-      },
-      {
-        requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
         toolKeyPrefix: "signaldeck.finance.reports.",
       },
     ]);
@@ -936,7 +931,7 @@ describe("router", () => {
     expect(toolKeysForState(false, false)).toEqual(["core.echo"]);
   });
 
-  it("renders the root finance gate unavailable state through the wide responsive error layout", async () => {
+  it("renders the finance gate unavailable state through the wide responsive error layout", async () => {
     const originalFetch = globalThis.fetch;
     vi.stubGlobal(
       "fetch",
@@ -955,7 +950,7 @@ describe("router", () => {
       ),
     );
     const testRouter = createMemoryRouter(router.routes, {
-      initialEntries: ["/"],
+      initialEntries: ["/templates"],
     });
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

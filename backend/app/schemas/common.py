@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from decimal import Decimal
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_serializer
@@ -75,18 +74,6 @@ class ErrorEnvelope(CamelModel):
     code: str
     message: str
     details: list[dict[str, BrowserSafeErrorDetailValue]]
-
-
-class TradingSide(str, Enum):  # noqa: UP042
-    BUY = "BUY"
-    SELL = "SELL"
-    DIVIDEND = "DIVIDEND"
-    SPLIT = "SPLIT"
-
-
-class OperationType(str, Enum):  # noqa: UP042
-    DEPOSIT = "DEPOSIT"
-    WITHDRAWAL = "WITHDRAWAL"
 
 
 class DecimalFieldMixin:

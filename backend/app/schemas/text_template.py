@@ -103,22 +103,10 @@ class TextTemplateStoredCompile(TextTemplateCompileInputs):
     pass
 
 
-class PlaceholderPositionRead(CamelModel):
-    symbol: str
-    name: str | None
-
-
-class PlaceholderPortfolioRead(CamelModel):
-    slug: str
-    name: str
-    positions: list[PlaceholderPositionRead]
-
-
 class PlaceholderReportRead(CamelModel):
     name: str
     created_at: datetime
 
 
 class PlaceholderTreeRead(CamelModel):
-    portfolios: list[PlaceholderPortfolioRead]
     reports: list[PlaceholderReportRead]

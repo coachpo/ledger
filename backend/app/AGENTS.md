@@ -38,7 +38,7 @@ app/
 |---|---|---|
 | App bootstrap | `main.py` | `create_app()`, Logfire setup, health/readiness, `/api` and `/api/v1` mounting |
 | Current platform APIs | `api/platform_router.py`, `api/{workflow_packages,schedules,model_connections,extensions,tools,runs}.py` | live package-first platform routes under `/api` |
-| Preserved finance APIs | `api/router.py`, `extensions/signaldeck_finance/api_routers.py`, `api/{portfolios,balances,positions,trading_operations,market_data,templates,reports}.py` | extension-contributed `/api/v1` routes gated by `signaldeck.finance` |
+| Preserved finance APIs | `api/router.py`, `extensions/signaldeck_finance/api_routers.py`, `api/{templates,reports}.py` | extension-contributed `/api/v1` routes gated by `signaldeck.finance` |
 | Dependency composition | `api/dependencies.py` | request-scoped sessions, extension service, ToolCatalog, provider bundles, run services |
 | Extension state and registrars | `extensions/registry.py`, `services/extension_service.py` | statically resident extension identity plus enabled-route/tool/provider filtering |
 | Runtime execution | `services/run_service.py`, `services/agent_execution_service.py`, `agents/runtime_tools/`, `agents/mcp/` | queued package execution, model calls, native tools, MCP dispatch, trace ids |

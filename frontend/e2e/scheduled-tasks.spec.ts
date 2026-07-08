@@ -26,9 +26,9 @@ spec:
         type: string
       scheduledDateTime:
         type: string
-      portfolioSlug:
+      analysisTag:
         type: string
-    required: [asOfDate, scheduledLocalTime, scheduledDateTime, portfolioSlug]
+    required: [asOfDate, scheduledLocalTime, scheduledDateTime, analysisTag]
   outputSchemas:
     - key: scheduled_output
       name: Scheduled Output
@@ -52,9 +52,9 @@ spec:
             type: string
           scheduledDateTime:
             type: string
-          portfolioSlug:
+          analysisTag:
             type: string
-        required: [asOfDate, scheduledLocalTime, scheduledDateTime, portfolioSlug]
+        required: [asOfDate, scheduledLocalTime, scheduledDateTime, analysisTag]
       outputSchema: scheduled_output
   workflows:
     - key: scheduled_flow
@@ -68,9 +68,9 @@ spec:
             type: string
           scheduledDateTime:
             type: string
-          portfolioSlug:
+          analysisTag:
             type: string
-        required: [asOfDate, scheduledLocalTime, scheduledDateTime, portfolioSlug]
+        required: [asOfDate, scheduledLocalTime, scheduledDateTime, analysisTag]
       flow:
         kind: step
         id: scheduled_analysis
@@ -80,7 +80,7 @@ spec:
           asOfDate: \${{ inputs.asOfDate }}
           scheduledLocalTime: \${{ inputs.scheduledLocalTime }}
           scheduledDateTime: \${{ inputs.scheduledDateTime }}
-          portfolioSlug: \${{ inputs.portfolioSlug }}
+          analysisTag: \${{ inputs.analysisTag }}
       output:
         from: \${{ nodes.scheduled_analysis.outputs.summary }}
 `;
@@ -212,7 +212,7 @@ async function createScheduledTask(
     JSON.stringify(
       {
         asOfDate: "{{fire.scheduledLocalDate}}",
-        portfolioSlug: "core_portfolio",
+        analysisTag: "daily_research",
         scheduledDateTime: "{{fire.scheduledLocalDateTime}}",
         scheduledLocalTime: "{{fire.scheduledLocalTime}}",
       },

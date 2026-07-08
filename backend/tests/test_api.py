@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from typing import cast
 from uuid import uuid4
 
@@ -13,20 +12,17 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from httpx import Response
 from pydantic import ValidationError
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine
 from sqlalchemy import text as sql_text
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.db.session import init_db, validate_supported_database_engine
-from app.extensions.signaldeck_finance.dependencies import get_quote_provider
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.services.report_service import ReportService
-from app.models.market_quote import MarketQuote
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
-from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.schemas.model_connection import (
     ModelConnectionCapabilities,
@@ -37,12 +33,6 @@ from app.schemas.model_connection import (
     dump_model_connection_capabilities,
 )
 from app.schemas.report import ReportRead
-from app.services.quote_provider import (
-    ProviderHistoryPoint,
-    ProviderHistorySeries,
-    ProviderQuote,
-    QuoteProviderError,
-)
 from tests.fake_openai_provider import run_fake_openai_provider
 
 UTC_TZ = timezone.utc  # noqa: UP017
@@ -215,70 +205,11 @@ class _LiteralBaseUrlRecordingOpenAIClient:
         cls.init_calls = []
 
 
-def portfolio_slug_for_name(name: str) -> str:
-    return "_".join(name.strip().lower().replace("-", " ").split()) or "portfolio"
-
-
-def create_portfolio(
-    client: TestClient,
-    *,
-    name: str = "Core Portfolio",
-    slug: str | None = None,
-) -> dict[str, object]:
-    response = client.post(
-        "/api/v1/portfolios",
-        json={
-            "name": name,
-            "slug": slug or portfolio_slug_for_name(name),
-            "description": f"{name} description",
-        },
-    )
-    assert response.status_code == 201, response.json()
-    return response.json()
-
-
-def create_balance(
-    client: TestClient,
-    portfolio_id: str,
-    *,
-    label: str = "Cash",
-    amount: str = "1000.00",
-    operation_type: str = "DEPOSIT",
-) -> dict[str, object]:
-    response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/balances",
-        json={"label": label, "amount": amount, "operationType": operation_type},
-    )
-    assert response.status_code == 201
-    return response.json()
-
-
-def create_position(
-    client: TestClient,
-    portfolio_id: str,
-    *,
-    symbol: str = "AAPL",
-    quantity: str = "10",
-    average_cost: str = "185.50",
-) -> dict[str, object]:
-    response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions",
-        json={
-            "symbol": symbol,
-            "name": f"{symbol} Holdings",
-            "quantity": quantity,
-            "averageCost": average_cost,
-        },
-    )
-    assert response.status_code == 201
-    return response.json()
-
-
 def create_template(
     client: TestClient,
     *,
     name: str = "Daily Summary",
-    content: str = "# Summary\n\n{{portfolios}}",
+    content: str = "# Summary\n\n{{reports}}",
 ) -> dict[str, object]:
     response = client.post(
         "/api/v1/templates",
@@ -393,17 +324,12 @@ def test_agent_platform_routes_mount_package_first_api(
     } <= route_paths
 
 
-def test_finance_workspace_product_routes_remain_mounted_for_portfolio_template_report_market_data(
+def test_finance_workspace_product_routes_remain_mounted_for_templates_and_reports(
     app: FastAPI,
 ) -> None:
     route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
 
     assert {
-        "/api/v1/portfolios",
-        "/api/v1/portfolios/{portfolio_id}/balances",
-        "/api/v1/portfolios/{portfolio_id}/positions",
-        "/api/v1/portfolios/{portfolio_id}/trading-operations",
-        "/api/v1/portfolios/{portfolio_id}/market-data/quotes",
         "/api/v1/templates",
         "/api/v1/reports",
     } <= route_paths
@@ -412,22 +338,11 @@ def test_finance_workspace_product_routes_remain_mounted_for_portfolio_template_
 @pytest.mark.parametrize(
     ("path", "surface"),
     [
-        ("/api/v1/portfolios", "/api/v1/portfolios"),
-        ("/api/v1/portfolios/1/balances", "/api/v1/portfolios/{portfolio_id}/balances"),
-        ("/api/v1/portfolios/1/positions", "/api/v1/portfolios/{portfolio_id}/positions"),
-        (
-            "/api/v1/portfolios/1/trading-operations",
-            "/api/v1/portfolios/{portfolio_id}/trading-operations",
-        ),
-        (
-            "/api/v1/portfolios/1/market-data/quotes?symbols=AAPL",
-            "/api/v1/portfolios/{portfolio_id}/market-data",
-        ),
         ("/api/v1/templates", "/api/v1/templates"),
         ("/api/v1/reports", "/api/v1/reports"),
     ],
 )
-def test_disabled_finance_workspace_portfolio_template_report_market_data_routes_return_403(
+def test_disabled_finance_workspace_template_report_routes_return_403(
     client: TestClient,
     path: str,
     surface: str,
@@ -542,172 +457,11 @@ def _assert_unsupported_model_connection_fields_rejected(
         assert details[field_name] == "Extra inputs are not permitted"
 
 
-def test_portfolio_isolation_and_summary_counts(client: TestClient) -> None:
-    first = create_portfolio(client, name="Core")
-    second = create_portfolio(client, name="Sandbox")
-
-    create_balance(client, str(first["id"]), label="Core Cash", amount="25000.00")
-    create_position(client, str(second["id"]), symbol="MSFT", quantity="5", average_cost="400.00")
-
-    first_balances = client.get(f"/api/v1/portfolios/{first['id']}/balances")
-    second_balances = client.get(f"/api/v1/portfolios/{second['id']}/balances")
-    first_positions = client.get(f"/api/v1/portfolios/{first['id']}/positions")
-    second_positions = client.get(f"/api/v1/portfolios/{second['id']}/positions")
-
-    assert first_balances.status_code == 200
-    assert second_balances.status_code == 200
-    assert first_positions.status_code == 200
-    assert second_positions.status_code == 200
-
-    assert len(first_balances.json()) == 1
-    assert second_balances.json() == []
-    assert first_positions.json() == []
-    assert len(second_positions.json()) == 1
-
-    portfolios = client.get("/api/v1/portfolios")
-    assert portfolios.status_code == 200
-    portfolio_map = {item["id"]: item for item in portfolios.json()}
-    assert portfolio_map[first["id"]]["slug"] == "core"
-    assert portfolio_map[second["id"]]["slug"] == "sandbox"
-    assert portfolio_map[first["id"]]["balanceCount"] == 1
-    assert portfolio_map[first["id"]]["positionCount"] == 0
-    assert portfolio_map[second["id"]]["balanceCount"] == 0
-    assert portfolio_map[second["id"]]["positionCount"] == 1
-
-
-def test_portfolio_slug_validation_uniqueness_and_immutability(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Retirement", slug="retirement_account")
-    assert portfolio["slug"] == "retirement_account"
-
-    duplicate_response = client.post(
-        "/api/v1/portfolios",
-        json={
-            "name": "Retirement Copy",
-            "slug": "retirement_account",
-            "description": "Duplicate slug",
-        },
-    )
-    assert duplicate_response.status_code == 400
-    assert duplicate_response.json()["code"] == "duplicate_portfolio_slug"
-
-    invalid_response = client.post(
-        "/api/v1/portfolios",
-        json={
-            "name": "Broken",
-            "slug": "123-bad",
-            "description": "Invalid slug",
-        },
-    )
-    assert invalid_response.status_code == 422
-    assert invalid_response.json()["code"] == "validation_error"
-    assert invalid_response.json()["details"][0]["field"] == "slug"
-
-    unsupported_currency_response = client.post(
-        "/api/v1/portfolios",
-        json={
-            "name": "Global",
-            "slug": "global",
-            "description": "Unsupported base currency field",
-            "baseCurrency": "EUR",
-        },
-    )
-    assert unsupported_currency_response.status_code == 422
-    assert unsupported_currency_response.json()["code"] == "validation_error"
-    assert unsupported_currency_response.json()["details"][0]["field"] == "baseCurrency"
-
-    immutable_response = client.patch(
-        f"/api/v1/portfolios/{portfolio['id']}",
-        json={"slug": "new_slug"},
-    )
-    assert immutable_response.status_code == 422
-    assert immutable_response.json()["code"] == "validation_error"
-    assert immutable_response.json()["details"][0]["field"] == "slug"
-
-
-def test_balance_crud(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    balance = create_balance(client, portfolio_id, label="Reserve", amount="1500.00")
-    balance_id = str(balance["id"])
-
-    list_response = client.get(f"/api/v1/portfolios/{portfolio_id}/balances")
-    assert list_response.status_code == 200
-    assert list_response.json()[0]["label"] == "Reserve"
-
-    update_response = client.patch(
-        f"/api/v1/portfolios/{portfolio_id}/balances/{balance_id}",
-        json={"label": "Trading Cash", "amount": "1750.00"},
-    )
-    assert update_response.status_code == 200
-    assert update_response.json()["label"] == "Trading Cash"
-    assert Decimal(update_response.json()["amount"]) == Decimal("1750.00")
-
-    delete_response = client.delete(f"/api/v1/portfolios/{portfolio_id}/balances/{balance_id}")
-    assert delete_response.status_code == 204
-
-    after_delete = client.get(f"/api/v1/portfolios/{portfolio_id}/balances")
-    assert after_delete.status_code == 200
-    assert after_delete.json() == []
-
-
-def test_position_crud(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    position = create_position(client, portfolio_id)
-    position_id = str(position["id"])
-
-    list_response = client.get(f"/api/v1/portfolios/{portfolio_id}/positions")
-    assert list_response.status_code == 200
-    assert list_response.json()[0]["symbol"] == "AAPL"
-
-    update_response = client.patch(
-        f"/api/v1/portfolios/{portfolio_id}/positions/{position_id}",
-        json={"quantity": "12", "averageCost": "184.10", "name": "Apple Inc."},
-    )
-    assert update_response.status_code == 200
-    assert Decimal(update_response.json()["quantity"]) == Decimal("12")
-    assert Decimal(update_response.json()["averageCost"]) == Decimal("184.10")
-    assert update_response.json()["name"] == "Apple Inc."
-
-    delete_response = client.delete(f"/api/v1/portfolios/{portfolio_id}/positions/{position_id}")
-    assert delete_response.status_code == 204
-
-    after_delete = client.get(f"/api/v1/portfolios/{portfolio_id}/positions")
-    assert after_delete.status_code == 200
-    assert after_delete.json() == []
-
-
 def test_template_crud_and_compile_flow(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Retirement", slug="retirement")
-    create_portfolio(client, name="Income", slug="income")
-    create_balance(client, str(portfolio["id"]), label="Cash", amount="1500.00")
-    create_balance(
-        client,
-        str(portfolio["id"]),
-        label="Taxes",
-        amount="250.00",
-        operation_type="WITHDRAWAL",
-    )
-    create_position(
-        client, str(portfolio["id"]), symbol="AAPL", quantity="10", average_cost="185.50"
-    )
-    create_position(
-        client, str(portfolio["id"]), symbol="MSFT", quantity="5", average_cost="400.00"
-    )
-
     template = create_template(
         client,
-        name="Retirement Summary",
-        content=(
-            "# Summary\n\n"
-            "Slug: {{portfolios.retirement.slug}}\n"
-            "Balance: {{portfolios.retirement.balance}}\n"
-            "Balance amount: {{portfolios.retirement.balance.amount}}\n"
-            "Positions:\n{{portfolios.retirement.positions}}\n\n"
-            "Apple name: {{portfolios.retirement.positions.AAPL.name}}\n\n"
-            "All portfolios:\n{{portfolios}}"
-        ),
+        name="Input Summary",
+        content=("# Summary\n\n" "Ticker: {{inputs.ticker}}\n" "All inputs:\n{{inputs}}"),
     )
 
     list_response = client.get("/api/v1/templates")
@@ -716,19 +470,16 @@ def test_template_crud_and_compile_flow(client: TestClient) -> None:
 
     get_response = client.get(f"/api/v1/templates/{template['id']}")
     assert get_response.status_code == 200
-    assert get_response.json()["name"] == "Retirement Summary"
+    assert get_response.json()["name"] == "Input Summary"
 
-    compile_response = client.get(f"/api/v1/templates/{template['id']}/compile")
+    compile_response = client.post(
+        f"/api/v1/templates/{template['id']}/compile",
+        json={"inputs": {"ticker": "AAPL"}},
+    )
     assert compile_response.status_code == 200
     compiled = compile_response.json()["compiled"]
-    assert "Slug: retirement" in compiled
-    assert "Balance: 1250.0000 USD" in compiled
-    assert "Balance amount: 1250.0000" in compiled
-    assert "- AAPL (AAPL Holdings): 10.00000000 shares @ 185.50000000 USD" in compiled
-    assert "- MSFT (MSFT Holdings): 5.00000000 shares @ 400.00000000 USD" in compiled
-    assert "Apple name: AAPL Holdings" in compiled
-    assert "## Income" in compiled
-    assert "## Retirement" in compiled
+    assert "Ticker: AAPL" in compiled
+    assert "- ticker: AAPL" in compiled
 
     update_response = client.patch(
         f"/api/v1/templates/{template['id']}",
@@ -747,14 +498,6 @@ def test_template_crud_and_compile_flow(client: TestClient) -> None:
 
 
 def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Reusable", slug="reusable")
-    create_position(
-        client, str(portfolio["id"]), symbol="AAPL", quantity="10", average_cost="185.50"
-    )
-    create_position(
-        client, str(portfolio["id"]), symbol="TSLA", quantity="6", average_cost="210.00"
-    )
-
     aapl_report = client.post(
         "/api/v1/reports",
         json={
@@ -786,9 +529,6 @@ def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:
         name="Reusable Loop Template",
         content=(
             "Ticker: {{inputs.ticker}}\n"
-            "Portfolio: {{portfolios.by_slug(inputs.portfolio_slug).name}}\n"
-            "Quantity: {{portfolios.by_slug(inputs.portfolio_slug).positions."
-            "by_symbol(inputs.ticker).quantity}}\n"
             "Tagged prior: {{reports.by_tag(inputs.analysis_tag).latest.name}}\n"
             "Latest ticker analysis: {{reports.latest(inputs.ticker).content}}"
         ),
@@ -799,7 +539,6 @@ def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:
         json={
             "content": template["content"],
             "inputs": {
-                "portfolio_slug": "reusable",
                 "ticker": "AAPL",
                 "analysis_tag": "aapl_loop",
             },
@@ -808,8 +547,6 @@ def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:
     assert inline_aapl.status_code == 200
     assert inline_aapl.json()["compiled"] == (
         "Ticker: AAPL\n"
-        "Portfolio: Reusable\n"
-        "Quantity: 10.00000000\n"
         "Tagged prior: AAPL Saved Analysis\n"
         "Latest ticker analysis: AAPL prior view"
     )
@@ -818,7 +555,6 @@ def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:
         f"/api/v1/templates/{template['id']}/compile",
         json={
             "inputs": {
-                "portfolio_slug": "reusable",
                 "ticker": "TSLA",
                 "analysis_tag": "tsla_loop",
             }
@@ -827,876 +563,26 @@ def test_template_compile_accepts_runtime_inputs(client: TestClient) -> None:
     assert stored_tsla.status_code == 200
     assert stored_tsla.json()["compiled"] == (
         "Ticker: TSLA\n"
-        "Portfolio: Reusable\n"
-        "Quantity: 6.00000000\n"
         "Tagged prior: TSLA Saved Analysis\n"
         "Latest ticker analysis: TSLA prior view"
     )
 
 
 def test_template_compile_surfaces_missing_runtime_inputs(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Missing Inputs", slug="missing_inputs")
-    create_position(
-        client, str(portfolio["id"]), symbol="AAPL", quantity="4", average_cost="150.00"
-    )
-
     response = client.post(
         "/api/v1/templates/compile",
         json={
             "content": (
-                "Ticker: {{inputs.ticker}}\n"
-                "Portfolio: {{portfolios.by_slug(inputs.portfolio_slug).name}}\n"
-                "Latest: {{reports.latest(inputs.ticker).name}}"
+                "Ticker: {{inputs.ticker}}\n" "Latest: {{reports.latest(inputs.ticker).name}}"
             ),
-            "inputs": {"portfolio_slug": "missing_inputs"},
+            "inputs": {},
         },
     )
 
     assert response.status_code == 200
     assert response.json()["compiled"] == (
-        "Ticker: [Missing input: ticker]\n"
-        "Portfolio: Missing Inputs\n"
-        "Latest: [Missing input: ticker]"
+        "Ticker: [Missing input: ticker]\n" "Latest: [Missing input: ticker]"
     )
-
-
-def test_template_metric_placeholders_with_quotes(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Growth", slug="growth")
-    portfolio_id = str(portfolio["id"])
-    create_balance(client, portfolio_id, label="Cash", amount="1500.00")
-    create_balance(
-        client, portfolio_id, label="Taxes", amount="250.00", operation_type="WITHDRAWAL"
-    )
-    create_position(client, portfolio_id, symbol="AAPL", quantity="10", average_cost="185.50")
-    create_position(client, portfolio_id, symbol="MSFT", quantity="5", average_cost="400.00")
-
-    template = create_template(
-        client,
-        name="Metrics Report",
-        content=(
-            "Total: {{portfolios.growth.total_value}}\n"
-            "PnL: {{portfolios.growth.unrealized_pnl}}\n"
-            "AAPL MV: {{portfolios.growth.positions.AAPL.market_value}}\n"
-            "AAPL PnL: {{portfolios.growth.positions.AAPL.unrealized_pnl}}\n"
-            "AAPL Pct: {{portfolios.growth.positions.AAPL.unrealized_pnl_percent}}\n"
-            "MSFT MV: {{portfolios.growth.positions.MSFT.market_value}}\n"
-            "Slug: {{portfolios.growth.slug}}\n"
-            "Balance: {{portfolios.growth.balance.amount}}"
-        ),
-    )
-
-    provider = StableQuoteProvider()
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = lambda: provider
-
-    compile_response = client.get(f"/api/v1/templates/{template['id']}/compile")
-    application.dependency_overrides.clear()
-
-    assert compile_response.status_code == 200
-    compiled = compile_response.json()["compiled"]
-
-    assert compiled == (
-        "Total: 4118.6000000000\n"
-        "PnL: -986.4000000000000000\n"
-        "AAPL MV: 1912.4000000000\n"
-        "AAPL PnL: 57.4000000000000000\n"
-        "AAPL Pct: 0.03094339622641509433962264151\n"
-        "MSFT MV: 956.2000000000\n"
-        "Slug: growth\n"
-        "Balance: 1250.0000"
-    )
-
-
-def test_template_metric_placeholders_batch_quote_fetches_once_per_compile(
-    client: TestClient,
-) -> None:
-    portfolio = create_portfolio(client, name="Cached", slug="cached")
-    portfolio_id = str(portfolio["id"])
-    create_balance(client, portfolio_id, label="Cash", amount="1500.00")
-    create_position(client, portfolio_id, symbol="AAPL", quantity="10", average_cost="185.50")
-    create_position(client, portfolio_id, symbol="MSFT", quantity="5", average_cost="400.00")
-
-    template = create_template(
-        client,
-        name="Cached Metrics",
-        content=(
-            "Total: {{portfolios.cached.total_value}}\n"
-            "PnL: {{portfolios.cached.unrealized_pnl}}\n"
-            "AAPL MV: {{portfolios.cached.positions.AAPL.market_value}}\n"
-            "AAPL PnL: {{portfolios.cached.positions.AAPL.unrealized_pnl}}\n"
-            "MSFT MV: {{portfolios.cached.positions.MSFT.market_value}}"
-        ),
-    )
-
-    provider = CountingQuoteProvider()
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = lambda: provider
-
-    compile_response = client.get(f"/api/v1/templates/{template['id']}/compile")
-    application.dependency_overrides.clear()
-
-    assert compile_response.status_code == 200
-    assert provider.quote_calls == 2
-
-
-def test_template_metric_placeholders_with_broken_provider(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Broken", slug="broken")
-    portfolio_id = str(portfolio["id"])
-    create_position(client, portfolio_id, symbol="AAPL", quantity="10", average_cost="185.50")
-
-    template = create_template(
-        client,
-        name="Broken Metrics",
-        content=(
-            "Total: {{portfolios.broken.total_value}}\n"
-            "PnL: {{portfolios.broken.unrealized_pnl}}\n"
-            "AAPL MV: {{portfolios.broken.positions.AAPL.market_value}}\n"
-            "Name: {{portfolios.broken.name}}"
-        ),
-    )
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = lambda: BrokenQuoteProvider()
-
-    compile_response = client.get(f"/api/v1/templates/{template['id']}/compile")
-    application.dependency_overrides.clear()
-
-    assert compile_response.status_code == 200
-    compiled = compile_response.json()["compiled"]
-
-    assert "Total: \n" in compiled
-    assert "PnL: \n" in compiled
-    assert "AAPL MV: \n" in compiled
-    assert "Name: Broken" in compiled
-
-
-def test_template_metric_zero_cost_basis_percent(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Zero", slug="zero")
-    portfolio_id = str(portfolio["id"])
-    create_position(client, portfolio_id, symbol="AAPL", quantity="10", average_cost="0")
-
-    template = create_template(
-        client,
-        name="Zero Cost",
-        content="Pct: {{portfolios.zero.positions.AAPL.unrealized_pnl_percent}}",
-    )
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = lambda: StableQuoteProvider()
-
-    compile_response = client.get(f"/api/v1/templates/{template['id']}/compile")
-    application.dependency_overrides.clear()
-
-    assert compile_response.status_code == 200
-    compiled = compile_response.json()["compiled"]
-    assert compiled == "Pct: "
-
-
-def test_nullable_patch_fields_can_be_cleared(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    clear_description = client.patch(
-        f"/api/v1/portfolios/{portfolio_id}",
-        json={"description": None},
-    )
-    assert clear_description.status_code == 200
-    assert clear_description.json()["description"] is None
-
-    position = create_position(
-        client, portfolio_id, symbol="NVDA", quantity="3", average_cost="700.00"
-    )
-    clear_position_name = client.patch(
-        f"/api/v1/portfolios/{portfolio_id}/positions/{position['id']}",
-        json={"name": None},
-    )
-    assert clear_position_name.status_code == 200
-    assert clear_position_name.json()["name"] is None
-
-
-def test_csv_preview_and_commit_flow(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    valid_csv = (
-        "symbol,quantity,average_cost,name\n"
-        "AAPL,10,185.50,Apple Inc.\n"
-        "MSFT,5,400.00,Microsoft Corp.\n"
-    )
-    preview_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions/imports/preview",
-        files={"file": ("positions.csv", valid_csv, "text/csv")},
-    )
-    assert preview_response.status_code == 200
-    preview_payload = preview_response.json()
-    assert preview_payload["mode"] == "upsert"
-    assert len(preview_payload["acceptedRows"]) == 2
-    assert preview_payload["errors"] == []
-
-    commit_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions/imports/commit",
-        files={"file": ("positions.csv", valid_csv, "text/csv")},
-    )
-    assert commit_response.status_code == 200
-    commit_payload = commit_response.json()
-    assert commit_payload["inserted"] == 2
-    assert commit_payload["updated"] == 0
-    assert commit_payload["unchanged"] == 0
-
-    updated_csv = (
-        "symbol,quantity,average_cost,name\n"
-        "AAPL,12,184.10,Apple Inc.\n"
-        "MSFT,5,400.00,Microsoft Corp.\n"
-    )
-    second_commit = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions/imports/commit",
-        files={"file": ("positions.csv", updated_csv, "text/csv")},
-    )
-    assert second_commit.status_code == 200
-    second_commit_payload = second_commit.json()
-    assert second_commit_payload["inserted"] == 0
-    assert second_commit_payload["updated"] == 1
-    assert second_commit_payload["unchanged"] == 1
-
-    invalid_csv = "symbol,quantity,average_cost\nAAPL,10,185.50\nAAPL,8,184.00\n"
-    preview_invalid = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions/imports/preview",
-        files={"file": ("positions.csv", invalid_csv, "text/csv")},
-    )
-    assert preview_invalid.status_code == 200
-    assert preview_invalid.json()["errors"][0]["issue"] == "Duplicate symbol in file"
-
-    commit_invalid = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions/imports/commit",
-        files={"file": ("positions.csv", invalid_csv, "text/csv")},
-    )
-    assert commit_invalid.status_code == 422
-    error_payload = commit_invalid.json()
-    assert error_payload["code"] == "validation_error"
-    assert error_payload["details"][0]["field"] == "symbol"
-
-
-def test_trading_operations_buy_and_sell_flow(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    balance = create_balance(client, portfolio_id, amount="1000.00")
-
-    buy_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "BUY",
-            "quantity": "2",
-            "price": "100.00",
-            "commission": "5.00",
-            "executedAt": "2026-03-10T14:05:00Z",
-        },
-    )
-    assert buy_response.status_code == 201
-    buy_payload = buy_response.json()
-    assert Decimal(buy_payload["updatedBalance"]["amount"]) == Decimal("795.00")
-    assert Decimal(buy_payload["updatedPosition"]["quantity"]) == Decimal("2")
-    assert Decimal(buy_payload["updatedPosition"]["averageCost"]) == Decimal("102.5")
-
-    sell_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "SELL",
-            "quantity": "1",
-            "price": "120.00",
-            "commission": "5.00",
-            "executedAt": "2026-03-10T15:05:00Z",
-        },
-    )
-    assert sell_response.status_code == 201
-    sell_payload = sell_response.json()
-    assert Decimal(sell_payload["updatedBalance"]["amount"]) == Decimal("910.00")
-    assert Decimal(sell_payload["updatedPosition"]["quantity"]) == Decimal("1")
-    assert Decimal(sell_payload["updatedPosition"]["averageCost"]) == Decimal("102.5")
-
-    operations_response = client.get(f"/api/v1/portfolios/{portfolio_id}/trading-operations")
-    assert operations_response.status_code == 200
-    assert len(operations_response.json()) == 2
-
-
-def test_trading_operation_rejections(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    balance = create_balance(client, portfolio_id, amount="50.00")
-
-    insufficient_buy = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "BUY",
-            "quantity": "1",
-            "price": "60.00",
-            "commission": "0.00",
-            "executedAt": "2026-03-10T14:05:00Z",
-        },
-    )
-    assert insufficient_buy.status_code == 400
-    assert insufficient_buy.json()["code"] == "insufficient_balance"
-
-    create_position(client, portfolio_id, symbol="AAPL", quantity="1", average_cost="10.00")
-    oversell = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "SELL",
-            "quantity": "2",
-            "price": "12.00",
-            "commission": "0.00",
-            "executedAt": "2026-03-10T15:05:00Z",
-        },
-    )
-    assert oversell.status_code == 400
-    assert oversell.json()["code"] == "oversell_rejected"
-
-
-def test_trading_operations_respect_withdrawals_and_deposit_balances(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    deposit_balance = create_balance(client, portfolio_id, label="Broker Cash", amount="1000.00")
-    withdrawal_balance = create_balance(
-        client,
-        portfolio_id,
-        label="Cash Out",
-        amount="200.00",
-        operation_type="WITHDRAWAL",
-    )
-
-    insufficient_after_withdrawal = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": deposit_balance["id"],
-            "symbol": "AAPL",
-            "side": "BUY",
-            "quantity": "9",
-            "price": "100.00",
-            "commission": "0.00",
-            "executedAt": "2026-03-10T14:05:00Z",
-        },
-    )
-    assert insufficient_after_withdrawal.status_code == 400
-    assert insufficient_after_withdrawal.json()["code"] == "insufficient_balance"
-
-    invalid_withdrawal_balance = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": withdrawal_balance["id"],
-            "symbol": "AAPL",
-            "side": "BUY",
-            "quantity": "1",
-            "price": "100.00",
-            "commission": "0.00",
-            "executedAt": "2026-03-10T15:05:00Z",
-        },
-    )
-    assert invalid_withdrawal_balance.status_code == 400
-    assert invalid_withdrawal_balance.json()["code"] == "invalid_operation_balance"
-
-
-def test_trading_operations_dividend_and_split_flow(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    balance = create_balance(client, portfolio_id, amount="1000.00")
-    create_position(client, portfolio_id, symbol="AAPL", quantity="2", average_cost="100.00")
-
-    dividend_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "DIVIDEND",
-            "dividendAmount": "12.50",
-            "commission": "0.50",
-            "executedAt": "2026-03-11T10:00:00Z",
-        },
-    )
-    assert dividend_response.status_code == 201
-    dividend_payload = dividend_response.json()
-    assert Decimal(dividend_payload["updatedBalance"]["amount"]) == Decimal("1012.00")
-    assert Decimal(dividend_payload["updatedPosition"]["quantity"]) == Decimal("2")
-    assert Decimal(dividend_payload["operation"]["dividendAmount"]) == Decimal("12.50")
-
-    split_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "symbol": "AAPL",
-            "side": "SPLIT",
-            "splitRatio": "4",
-            "executedAt": "2026-03-11T11:00:00Z",
-        },
-    )
-    assert split_response.status_code == 201
-    split_payload = split_response.json()
-    assert split_payload["updatedBalance"] is None
-    assert split_payload["operation"]["balanceId"] is None
-    assert split_payload["operation"]["balanceLabel"] == "Not Applicable"
-    assert Decimal(split_payload["updatedPosition"]["quantity"]) == Decimal("8")
-    assert Decimal(split_payload["updatedPosition"]["averageCost"]) == Decimal("25")
-    assert Decimal(split_payload["operation"]["splitRatio"]) == Decimal("4")
-
-
-def test_dividend_rejects_when_commission_would_make_balance_negative(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    balance = create_balance(client, portfolio_id, amount="0.00")
-    create_position(client, portfolio_id, symbol="AAPL", quantity="2", average_cost="100.00")
-
-    response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "DIVIDEND",
-            "dividendAmount": "1.00",
-            "commission": "2.00",
-            "executedAt": "2026-03-11T10:00:00Z",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["code"] == "insufficient_balance"
-
-
-def test_dividend_requires_existing_position(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    balance = create_balance(client, portfolio_id, amount="100.00")
-
-    response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "DIVIDEND",
-            "dividendAmount": "1.00",
-            "commission": "0.00",
-            "executedAt": "2026-03-11T10:00:00Z",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["code"] == "no_position_for_dividend"
-
-    balances_response = client.get(f"/api/v1/portfolios/{portfolio_id}/balances")
-    assert balances_response.status_code == 200
-    assert Decimal(balances_response.json()[0]["amount"]) == Decimal("100.00")
-
-    operations_response = client.get(f"/api/v1/portfolios/{portfolio_id}/trading-operations")
-    assert operations_response.status_code == 200
-    assert operations_response.json() == []
-
-
-def test_split_requires_existing_position(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    split_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "symbol": "AAPL",
-            "side": "SPLIT",
-            "splitRatio": "2",
-            "executedAt": "2026-03-11T11:00:00Z",
-        },
-    )
-    assert split_response.status_code == 400
-    assert split_response.json()["code"] == "no_position_for_split"
-
-
-def test_split_succeeds_without_balance(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    create_position(client, portfolio_id, symbol="AAPL", quantity="2", average_cost="100.00")
-
-    split_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "symbol": "AAPL",
-            "side": "SPLIT",
-            "splitRatio": "2",
-            "executedAt": "2026-03-11T11:00:00Z",
-        },
-    )
-
-    assert split_response.status_code == 201
-    split_payload = split_response.json()
-    assert split_payload["updatedBalance"] is None
-    assert split_payload["operation"]["balanceId"] is None
-    assert Decimal(split_payload["updatedPosition"]["quantity"]) == Decimal("4")
-
-
-def test_trade_linked_balance_cannot_change_operation_type(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    balance = create_balance(client, portfolio_id, amount="1000.00")
-
-    trade_response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/trading-operations",
-        json={
-            "balanceId": balance["id"],
-            "symbol": "AAPL",
-            "side": "BUY",
-            "quantity": "1",
-            "price": "100.00",
-            "commission": "0.00",
-            "executedAt": "2026-03-10T14:05:00Z",
-        },
-    )
-    assert trade_response.status_code == 201
-
-    update_response = client.patch(
-        f"/api/v1/portfolios/{portfolio_id}/balances/{balance['id']}",
-        json={"operationType": "WITHDRAWAL"},
-    )
-
-    assert update_response.status_code == 400
-    assert update_response.json()["code"] == "balance_operation_type_locked"
-
-
-class BrokenQuoteProvider:
-    def fetch_symbol_name(self, symbol: str) -> str | None:
-        raise QuoteProviderError(f"Unavailable for {symbol}")
-
-    def fetch_quote(self, symbol: str) -> object:
-        raise QuoteProviderError(f"Unavailable for {symbol}")
-
-
-def _build_provider_quote(
-    *,
-    symbol: str,
-    price: Decimal,
-    previous_close: Decimal | None,
-    currency: str,
-    provider: str,
-    as_of: datetime | None,
-) -> ProviderQuote:
-    quote = cast(ProviderQuote, object.__new__(ProviderQuote))
-    quote.symbol = symbol
-    quote.price = price
-    quote.previous_close = previous_close
-    quote.currency = currency
-    quote.provider = provider
-    quote.as_of = as_of
-    quote.name = None
-    return quote
-
-
-def _build_provider_history_point(*, at: datetime, close: Decimal) -> ProviderHistoryPoint:
-    point = cast(ProviderHistoryPoint, object.__new__(ProviderHistoryPoint))
-    point.at = at
-    point.close = close
-    return point
-
-
-def _build_provider_history_series(
-    *,
-    symbol: str,
-    currency: str | None,
-    provider: str,
-    points: list[ProviderHistoryPoint],
-) -> ProviderHistorySeries:
-    series = cast(ProviderHistorySeries, object.__new__(ProviderHistorySeries))
-    series.symbol = symbol
-    series.currency = currency
-    series.provider = provider
-    series.points = points
-    return series
-
-
-class StableQuoteProvider:
-    def fetch_symbol_name(self, symbol: str) -> str | None:
-        if symbol.upper() == "AAPL":
-            return "Apple Inc."
-        return None
-
-    def fetch_quote(self, symbol: str) -> ProviderQuote:
-        normalized_symbol = symbol.upper()
-        return _build_provider_quote(
-            symbol=normalized_symbol,
-            price=Decimal("191.24"),
-            previous_close=Decimal("189.10"),
-            currency="USD",
-            provider="stub_feed",
-            as_of=datetime(2026, 3, 10, 13, 55, tzinfo=UTC_TZ),
-        )
-
-    def fetch_history(
-        self, symbol: str, *, range_value: str, interval: str
-    ) -> ProviderHistorySeries:
-        if interval != "1d" or range_value != "3mo":
-            raise QuoteProviderError("Unexpected history request")
-
-        normalized_symbol = symbol.upper()
-        base_price = Decimal("100.00") if normalized_symbol == "AAPL" else Decimal("90.00")
-        return _build_provider_history_series(
-            symbol=normalized_symbol,
-            currency="USD",
-            provider="stub_feed",
-            points=[
-                _build_provider_history_point(
-                    at=datetime(2026, 1, 5, 14, 30, tzinfo=UTC_TZ), close=base_price
-                ),
-                _build_provider_history_point(
-                    at=datetime(2026, 2, 5, 14, 30, tzinfo=UTC_TZ),
-                    close=base_price + Decimal("8.50"),
-                ),
-                _build_provider_history_point(
-                    at=datetime(2026, 3, 5, 14, 30, tzinfo=UTC_TZ),
-                    close=base_price + Decimal("12.00"),
-                ),
-            ],
-        )
-
-
-class CountingQuoteProvider(StableQuoteProvider):
-    def __init__(self) -> None:
-        self.quote_calls = 0
-
-    def fetch_quote(self, symbol: str) -> ProviderQuote:
-        self.quote_calls += 1
-        return super().fetch_quote(symbol)
-
-
-class CountingSymbolLookupProvider:
-    def __init__(self) -> None:
-        self.symbol_name_calls = 0
-
-    def fetch_symbol_name(self, symbol: str) -> str | None:
-        self.symbol_name_calls += 1
-        if symbol.upper() == "AAPL":
-            return "Apple Inc."
-        return None
-
-    def fetch_quote(self, symbol: str) -> ProviderQuote:
-        raise QuoteProviderError(f"Quote lookup unavailable for {symbol}")
-
-    def fetch_history(
-        self, symbol: str, *, range_value: str, interval: str
-    ) -> ProviderHistorySeries:
-        raise QuoteProviderError(f"History lookup unavailable for {symbol}")
-
-
-class UnexpectedSymbolLookupProvider:
-    def fetch_symbol_name(self, symbol: str) -> str | None:
-        raise AssertionError(f"Symbol lookup should not run for {symbol}")
-
-    def fetch_quote(self, symbol: str) -> ProviderQuote:
-        raise QuoteProviderError(f"Quote lookup unavailable for {symbol}")
-
-    def fetch_history(
-        self, symbol: str, *, range_value: str, interval: str
-    ) -> ProviderHistorySeries:
-        raise QuoteProviderError(f"History lookup unavailable for {symbol}")
-
-
-def test_position_symbol_lookup_returns_provider_name_and_uses_cache(
-    client: TestClient, session_factory: sessionmaker[Session]
-) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    provider = CountingSymbolLookupProvider()
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = lambda: provider
-
-    first_response = client.get(f"/api/v1/portfolios/{portfolio_id}/positions/lookup?symbol=aapl")
-    second_response = client.get(f"/api/v1/portfolios/{portfolio_id}/positions/lookup?symbol=AAPL")
-
-    application.dependency_overrides.clear()
-
-    assert first_response.status_code == 200
-    assert first_response.json() == {"symbol": "AAPL", "name": "Apple Inc."}
-    assert second_response.status_code == 200
-    assert second_response.json() == {"symbol": "AAPL", "name": "Apple Inc."}
-    assert provider.symbol_name_calls == 1
-
-    with session_factory() as session:
-        cached = session.query(SymbolNameCache).filter_by(symbol="AAPL").one_or_none()
-
-    assert cached is not None
-    assert cached.name == "Apple Inc."
-
-
-def test_position_symbol_lookup_returns_null_name_for_unresolved_symbol(
-    client: TestClient,
-) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = StableQuoteProvider
-    response = client.get(f"/api/v1/portfolios/{portfolio_id}/positions/lookup?symbol=unknown")
-    application.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert response.json() == {"symbol": "UNKNOWN", "name": None}
-
-
-def test_create_position_fills_name_from_symbol_lookup_when_missing(
-    client: TestClient,
-) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = StableQuoteProvider
-    response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions",
-        json={
-            "symbol": "AAPL",
-            "quantity": "10",
-            "averageCost": "185.50",
-        },
-    )
-    application.dependency_overrides.clear()
-
-    assert response.status_code == 201
-    assert response.json()["symbol"] == "AAPL"
-    assert response.json()["name"] == "Apple Inc."
-
-
-def test_create_position_uses_manual_name_without_provider_lookup(
-    client: TestClient,
-) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = UnexpectedSymbolLookupProvider
-    response = client.post(
-        f"/api/v1/portfolios/{portfolio_id}/positions",
-        json={
-            "symbol": "AAPL",
-            "name": "Manual Apple Name",
-            "quantity": "10",
-            "averageCost": "185.50",
-        },
-    )
-    application.dependency_overrides.clear()
-
-    assert response.status_code == 201
-    assert response.json()["symbol"] == "AAPL"
-    assert response.json()["name"] == "Manual Apple Name"
-
-
-def test_market_data_falls_back_to_cached_quote(
-    client: TestClient, session_factory: sessionmaker[Session]
-) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    as_of = datetime(2026, 3, 10, 13, 55, tzinfo=UTC_TZ)
-
-    with session_factory() as session:
-        session.add(
-            MarketQuote(
-                symbol="AAPL",
-                provider="yahoo_finance",
-                price="191.24",
-                previous_close="189.10",
-                currency="USD",
-                as_of=as_of,
-                fetched_at=as_of,
-                is_stale=False,
-            )
-        )
-        session.commit()
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = BrokenQuoteProvider
-    response = client.get(f"/api/v1/portfolios/{portfolio_id}/market-data/quotes?symbols=AAPL")
-    application.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["quotes"][0]["symbol"] == "AAPL"
-    assert Decimal(payload["quotes"][0]["price"]) == Decimal("191.24")
-    assert Decimal(payload["quotes"][0]["previousClose"]) == Decimal("189.10")
-    assert payload["warnings"] == ["Using cached quote for AAPL"]
-
-
-def test_market_data_recomputes_cached_quote_staleness_on_fallback(
-    client: TestClient, session_factory: sessionmaker[Session]
-) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-    as_of = datetime.now(UTC_TZ) - timedelta(minutes=30)
-
-    with session_factory() as session:
-        cached_quote = MarketQuote(
-            symbol="AAPL",
-            provider="yahoo_finance",
-            price="191.24",
-            previous_close="189.10",
-            currency="USD",
-            as_of=as_of,
-            fetched_at=as_of,
-            is_stale=False,
-        )
-        session.add(cached_quote)
-        session.commit()
-        cached_quote_id = cached_quote.id
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = BrokenQuoteProvider
-    response = client.get(f"/api/v1/portfolios/{portfolio_id}/market-data/quotes?symbols=AAPL")
-    application.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["quotes"][0]["isStale"] is True
-    assert payload["warnings"] == ["Using cached quote for AAPL"]
-
-    with session_factory() as session:
-        refreshed_quote = session.get(MarketQuote, cached_quote_id)
-        assert refreshed_quote is not None
-        assert refreshed_quote.is_stale is True
-
-
-def test_market_data_returns_previous_close_when_provider_supplies_it(
-    client: TestClient,
-) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = StableQuoteProvider
-    response = client.get(f"/api/v1/portfolios/{portfolio_id}/market-data/quotes?symbols=AAPL")
-    application.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["quotes"][0]["provider"] == "stub_feed"
-    assert Decimal(payload["quotes"][0]["previousClose"]) == Decimal("189.10")
-
-
-def test_market_data_history_returns_multiple_series(client: TestClient) -> None:
-    portfolio = create_portfolio(client)
-    portfolio_id = str(portfolio["id"])
-
-    application = cast(FastAPI, client.app)
-    application.dependency_overrides[get_quote_provider] = StableQuoteProvider
-    response = client.get(
-        f"/api/v1/portfolios/{portfolio_id}/market-data/history?symbols=AAPL,%5EGSPC&range=3mo"
-    )
-    application.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["range"] == "3mo"
-    assert payload["interval"] == "1d"
-    assert payload["warnings"] == []
-    assert [series["symbol"] for series in payload["series"]] == ["AAPL", "^GSPC"]
-    assert payload["series"][0]["points"][0]["at"] == "2026-01-05T14:30:00Z"
-    assert Decimal(payload["series"][1]["points"][2]["close"]) == Decimal("102.00")
 
 
 def test_validate_supported_database_engine_rejects_non_postgres() -> None:
@@ -1704,46 +590,6 @@ def test_validate_supported_database_engine_rejects_non_postgres() -> None:
 
     with pytest.raises(RuntimeError, match="requires PostgreSQL"):
         validate_supported_database_engine(unsupported_engine)
-
-
-def test_init_db_rejects_uuid_backed_portfolio_schema(database_url: str) -> None:
-    engine = create_engine(database_url, future=True)
-
-    try:
-        with engine.begin() as connection:
-            connection.exec_driver_sql(
-                "CREATE TABLE portfolios (id VARCHAR(32) NOT NULL PRIMARY KEY)"
-            )
-            connection.exec_driver_sql(
-                "CREATE TABLE balances (id VARCHAR(32) NOT NULL PRIMARY KEY)"
-            )
-            connection.exec_driver_sql(
-                """
-                CREATE TABLE trading_operations (
-                    portfolio_id VARCHAR(32) NOT NULL,
-                    balance_id VARCHAR(32),
-                    balance_label VARCHAR(60) NOT NULL,
-                    symbol VARCHAR(32) NOT NULL,
-                    side VARCHAR(4) NOT NULL,
-                    quantity NUMERIC(20, 8) NOT NULL,
-                    price NUMERIC(20, 8) NOT NULL,
-                    commission NUMERIC(20, 4) NOT NULL,
-                    currency VARCHAR(3) NOT NULL,
-                    executed_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                    id VARCHAR(32) NOT NULL PRIMARY KEY,
-                    CONSTRAINT ck_trading_operations_side CHECK (side IN ('BUY', 'SELL'))
-                )
-                """
-            )
-
-        with pytest.raises(RuntimeError, match="Legacy UUID-backed database detected"):
-            init_db(database_url)
-
-        table_names = set(inspect(engine).get_table_names())
-        assert table_names == {"balances", "portfolios", "trading_operations"}
-    finally:
-        engine.dispose()
 
 
 def test_init_db_creates_symbol_name_cache_as_unlogged_table(database_url: str) -> None:
@@ -1762,31 +608,23 @@ def test_init_db_creates_symbol_name_cache_as_unlogged_table(database_url: str) 
 
 
 def test_report_compile_crud_and_download(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Retirement", slug="retirement")
-    create_balance(client, str(portfolio["id"]), label="Cash", amount="1500.00")
-    create_position(
-        client, str(portfolio["id"]), symbol="AAPL", quantity="10", average_cost="185.50"
-    )
-
     template = create_template(
         client,
         name="Monthly Report",
-        content=(
-            "# Report\n\n"
-            "Slug: {{portfolios.retirement.slug}}\n"
-            "Positions:\n{{portfolios.retirement.positions}}"
-        ),
+        content="# Report\n\nTicker: {{inputs.ticker}}",
     )
 
-    compile_response = client.post(f"/api/v1/reports/compile/{template['id']}")
+    compile_response = client.post(
+        f"/api/v1/reports/compile/{template['id']}",
+        json={"inputs": {"ticker": "AAPL"}},
+    )
     assert compile_response.status_code == 201
     report = compile_response.json()
     assert report["name"].startswith("monthly_report_")
     assert report["slug"].startswith("monthly_report_")
     assert report["source"] == "compiled"
     assert "metadata" in report
-    assert "Slug: retirement" in report["content"]
-    assert "AAPL" in report["content"]
+    assert "Ticker: AAPL" in report["content"]
     assert "createdAt" in report
     assert "updatedAt" in report
 
@@ -1863,14 +701,14 @@ def test_report_name_generation_and_uniqueness(
 def test_report_name_normalization(client: TestClient) -> None:
     template = create_template(
         client,
-        name="My Portfolio — March",
+        name="My Report — March",
         content="# March",
     )
 
     response = client.post(f"/api/v1/reports/compile/{template['id']}")
     assert response.status_code == 201
     name = response.json()["name"]
-    assert re.fullmatch(r"my_portfolio_march_\d{8}_\d{6}", name)
+    assert re.fullmatch(r"my_report_march_\d{8}_\d{6}", name)
 
 
 def test_report_update_name_immutability(client: TestClient) -> None:
@@ -2004,7 +842,6 @@ def test_report_compile_accepts_extensible_metadata(client: TestClient) -> None:
                 "tags": [" weekly_review ", "reflection"],
                 "analysis": {
                     "ticker": "aapl",
-                    "portfolioSlug": "core_us",
                     "customKey": "custom-value",
                 },
                 "customBlock": {"foo": "bar"},
@@ -2018,17 +855,11 @@ def test_report_compile_accepts_extensible_metadata(client: TestClient) -> None:
     assert report["metadata"]["author"] == "Analyst"
     assert report["metadata"]["tags"] == ["weekly_review", "reflection"]
     assert report["metadata"]["analysis"]["ticker"] == "AAPL"
-    assert report["metadata"]["analysis"]["portfolioSlug"] == "core_us"
     assert report["metadata"]["analysis"]["customKey"] == "custom-value"
     assert report["metadata"]["customBlock"] == {"foo": "bar"}
 
 
 def test_report_compile_accepts_runtime_inputs(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Runtime Compile", slug="runtime_compile")
-    create_position(
-        client, str(portfolio["id"]), symbol="MSFT", quantity="7", average_cost="398.00"
-    )
-
     client.post(
         "/api/v1/reports",
         json={
@@ -2044,13 +875,7 @@ def test_report_compile_accepts_runtime_inputs(client: TestClient) -> None:
     template = create_template(
         client,
         name="Runtime Report Template",
-        content=(
-            "Ticker: {{inputs.ticker}}\n"
-            "Portfolio: {{portfolios.by_slug(inputs.portfolio_slug).name}}\n"
-            "Quantity: {{portfolios.by_slug(inputs.portfolio_slug).positions."
-            "by_symbol(inputs.ticker).quantity}}\n"
-            "Prior: {{reports.latest(inputs.ticker).content}}"
-        ),
+        content=("Ticker: {{inputs.ticker}}\n" "Prior: {{reports.latest(inputs.ticker).content}}"),
     )
 
     response = client.post(
@@ -2058,7 +883,6 @@ def test_report_compile_accepts_runtime_inputs(client: TestClient) -> None:
         json={
             "inputs": {
                 "ticker": "MSFT",
-                "portfolio_slug": "runtime_compile",
             },
             "metadata": {
                 "tags": ["runtime_compile"],
@@ -2068,12 +892,7 @@ def test_report_compile_accepts_runtime_inputs(client: TestClient) -> None:
 
     assert response.status_code == 201
     report = response.json()
-    assert report["content"] == (
-        "Ticker: MSFT\n"
-        "Portfolio: Runtime Compile\n"
-        "Quantity: 7.00000000\n"
-        "Prior: MSFT prior report body"
-    )
+    assert report["content"] == ("Ticker: MSFT\n" "Prior: MSFT prior report body")
     assert report["metadata"]["tags"] == ["runtime_compile"]
 
 
@@ -2176,7 +995,6 @@ def test_report_list_filters_and_pagination(client: TestClient) -> None:
                 "analysis": {
                     "ticker": "AAPL",
                     "reviewType": "weekly_review",
-                    "portfolioSlug": "core_us",
                 },
             }
         },
@@ -2192,7 +1010,6 @@ def test_report_list_filters_and_pagination(client: TestClient) -> None:
                 "analysis": {
                     "ticker": "AAPL",
                     "reviewType": "monthly_review",
-                    "portfolioSlug": "core_us",
                 },
             },
         },
@@ -2208,7 +1025,6 @@ def test_report_list_filters_and_pagination(client: TestClient) -> None:
                 "analysis": {
                     "ticker": "MSFT",
                     "reviewType": "weekly_review",
-                    "portfolioSlug": "growth",
                 },
             },
         },
@@ -2259,13 +1075,6 @@ def test_report_list_filters_and_pagination(client: TestClient) -> None:
         compiled["id"],
     ]
 
-    by_portfolio = client.get("/api/v1/reports", params={"portfolioSlug": "core_us"})
-    assert by_portfolio.status_code == 200
-    assert [report["id"] for report in by_portfolio.json()] == [
-        external_aapl["id"],
-        compiled["id"],
-    ]
-
     by_source = client.get("/api/v1/reports", params={"source": "external"})
     assert by_source.status_code == 200
     assert [report["id"] for report in by_source.json()] == [
@@ -2278,7 +1087,6 @@ def test_report_list_filters_and_pagination(client: TestClient) -> None:
         params={
             "ticker": "AAPL",
             "reviewType": "weekly_review",
-            "portfolioSlug": "core_us",
         },
     )
     assert combined.status_code == 200
@@ -2542,17 +1350,15 @@ def test_public_report_create_rejects_agent_created_by_provenance(
 
 
 def test_report_placeholder_all_paths(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Growth", slug="growth")
-    create_position(
-        client, str(portfolio["id"]), symbol="AAPL", quantity="10", average_cost="185.50"
-    )
-
     source_template = create_template(
         client,
         name="Source",
-        content="Name: {{portfolios.growth.name}}",
+        content="Name: {{inputs.name}}",
     )
-    report_response = client.post(f"/api/v1/reports/compile/{source_template['id']}")
+    report_response = client.post(
+        f"/api/v1/reports/compile/{source_template['id']}",
+        json={"inputs": {"name": "Growth"}},
+    )
     assert report_response.status_code == 201
     report = report_response.json()
     report_name = report["name"]
@@ -2596,26 +1402,20 @@ def test_report_placeholder_all_paths(client: TestClient) -> None:
 
 
 def test_report_placeholder_recompilation(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Recomp", slug="recomp")
-    create_position(
-        client, str(portfolio["id"]), symbol="TSLA", quantity="5", average_cost="200.00"
-    )
-
     source_template = create_template(
         client,
         name="Recomp Source",
-        content="Original: {{portfolios.recomp.name}}",
+        content="Original: {{inputs.name}}",
     )
-    report = client.post(f"/api/v1/reports/compile/{source_template['id']}").json()
+    report = client.post(
+        f"/api/v1/reports/compile/{source_template['id']}",
+        json={"inputs": {"name": "Recomp"}},
+    ).json()
     report_name = report["name"]
 
     client.patch(
         f"/api/v1/reports/{report['slug']}",
-        json={
-            "content": (
-                "Name: {{portfolios.recomp.name}}\nPositions: {{portfolios.recomp.positions}}"
-            )
-        },
+        json={"content": "Name: {{inputs.name}}\nTicker: {{inputs.ticker}}"},
     )
 
     embed_template = create_template(
@@ -2627,8 +1427,8 @@ def test_report_placeholder_recompilation(client: TestClient) -> None:
     assert compile_response.status_code == 200
     compiled = compile_response.json()["compiled"]
 
-    assert "Name: Recomp" in compiled
-    assert "TSLA" in compiled
+    assert "Name: [Missing input: name]" in compiled
+    assert "Ticker: [Missing input: ticker]" in compiled
 
 
 def test_report_placeholder_cycle_detection_self_reference(
@@ -2688,7 +1488,6 @@ def test_report_placeholder_cycle_detection_indirect(
 
 
 def test_placeholder_tree_includes_reports(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Tree Portfolio", slug="tree_portfolio")
     source_template = create_template(client, name="Tree Test", content="# Tree")
     report = client.post(f"/api/v1/reports/compile/{source_template['id']}").json()
 
@@ -2697,19 +1496,12 @@ def test_placeholder_tree_includes_reports(client: TestClient) -> None:
     tree = tree_response.json()
 
     assert "reports" in tree
-    portfolio_nodes = [node for node in tree["portfolios"] if node["slug"] == portfolio["slug"]]
-    assert len(portfolio_nodes) == 1
     report_names = [r["name"] for r in tree["reports"]]
     assert report["name"] in report_names
     assert "createdAt" in tree["reports"][0]
 
 
 def test_report_placeholder_dynamic_selectors(client: TestClient) -> None:
-    portfolio = create_portfolio(client, name="Growth", slug="growth")
-    create_position(
-        client, str(portfolio["id"]), symbol="AAPL", quantity="10", average_cost="185.50"
-    )
-
     source_template = create_template(client, name="Latest Report", content="Compiled AAPL")
     compiled_aapl = client.post(
         f"/api/v1/reports/compile/{source_template['id']}",
@@ -2719,7 +1511,6 @@ def test_report_placeholder_dynamic_selectors(client: TestClient) -> None:
                 "analysis": {
                     "ticker": "AAPL",
                     "reviewType": "weekly_review",
-                    "portfolioSlug": "core_us",
                 },
             }
         },
@@ -2729,13 +1520,12 @@ def test_report_placeholder_dynamic_selectors(client: TestClient) -> None:
         "/api/v1/reports",
         json={
             "name": "AAPL Dynamic Latest",
-            "content": "Dynamic AAPL: {{portfolios.growth.name}}",
+            "content": "Dynamic AAPL: {{inputs.ticker}}",
             "metadata": {
                 "tags": ["weekly_review"],
                 "analysis": {
                     "ticker": "AAPL",
                     "reviewType": "weekly_review",
-                    "portfolioSlug": "core_us",
                 },
             },
         },
@@ -2751,7 +1541,6 @@ def test_report_placeholder_dynamic_selectors(client: TestClient) -> None:
                 "analysis": {
                     "ticker": "MSFT",
                     "reviewType": "weekly_review",
-                    "portfolioSlug": "growth",
                 },
             },
         },
@@ -2783,7 +1572,7 @@ def test_report_placeholder_dynamic_selectors(client: TestClient) -> None:
     assert latest_meta_line.startswith(f"LatestMeta: **{external_msft['name']}**")
     assert f"LatestName: {external_msft['name']}" in compiled
     assert f"TickerLatestName: {external_aapl['name']}" in compiled
-    assert "TickerLatestContent: Dynamic AAPL: Growth" in compiled
+    assert "TickerLatestContent: Dynamic AAPL: [Missing input: ticker]" in compiled
     assert f"IndexZeroName: {external_msft['name']}" in compiled
     assert f"TagLatestName: {external_msft['name']}" in compiled
     assert "TagLatestContent: MSFT body" in compiled

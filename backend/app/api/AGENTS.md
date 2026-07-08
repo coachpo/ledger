@@ -24,11 +24,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 |---|---|---|
 | Router composition | `router.py`, `platform_router.py`, `../main.py` | `router.py` includes `signaldeck.finance` `/api/v1` registrations, `platform_router.py` composes `/api/*`, and `main.py` mounts both |
 | Service construction | `dependencies.py` | request-scoped session plus finance extension, extension state, model-connection, tool-catalog, workflow-package, schedule, and run service factories |
-| Portfolio routes | `portfolios.py` | portfolio CRUD |
-| Balance routes | `balances.py` | portfolio-scoped balance CRUD |
-| Position routes | `positions.py` | portfolio-scoped position CRUD, symbol lookup, CSV preview, and CSV commit imports |
-| Trading routes | `trading_operations.py` | simulated BUY/SELL/DIVIDEND/SPLIT operations |
-| Market data routes | `market_data.py` | delayed quote/history endpoints |
 | Template routes | `templates.py` | CRUD, placeholder tree, inline compile, stored compile |
 | Report routes | `reports.py` | filterable list/detail, compile from template, external create, upload markdown, edit, delete, download |
 | Platform routes | `workflow_packages.py`, `schedules.py`, `model_connections.py`, `extensions.py`, `tools.py`, `runs.py` | live `/api/*` routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs, including rerun endpoints under Runs |
@@ -44,7 +39,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Keep routes RESTful: HTTP verbs express intent, and success responses match the declared `response_model`.
 - Routes should let service-layer `ApiError` exceptions and request-validation failures bubble to the handlers in `app/main.py`.
 - Template routes split stored-template CRUD from compile-only endpoints; placeholder browsing is read-only.
-- Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `portfolioSlug`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only.
+- Report routes are slug-addressed after creation; the list endpoint supports metadata filters (`ticker`, `tag`, `reviewType`, `source`, `limit`, `offset`), where `source` filters the canonical report origins `compiled`, `uploaded`, `external`, and `agent`. Compile combines `TextTemplateService`, `TemplateCompilerService`, and `ReportService`; upload uses `multipart/form-data` markdown plus optional metadata; `POST /reports` supports direct true external JSON creation only.
 - Do not hand-build camelCase responses; let `CamelModel` serialize them.
 - Workflow Package routes are canonical for platform authoring. The mounted platform routers are Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs. Package manifests keep agents, output schemas, capability profiles, private MCP configs, and workflow graphs package-private.
 - Scheduled Task routes expose package-first automation only: list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now. They delegate recurrence, template rendering, idempotency, run materialization, and schedule-owned cleanup to services.

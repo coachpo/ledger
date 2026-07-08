@@ -22,11 +22,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## STRUCTURE
 ```text
 src/lib/api/
-├── portfolios.ts          # portfolio CRUD
-├── balances.ts            # portfolio-scoped balance CRUD
-├── positions.ts           # position CRUD, lookup, CSV preview/commit
-├── trading-operations.ts  # BUY/SELL/DIVIDEND/SPLIT requests
-├── market-data.ts         # quotes and history requests
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
 ├── extensions.ts          # statically resident extension list/toggle state
@@ -41,15 +36,14 @@ src/lib/api/
 | Task | Location | Notes |
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
-| Preserved product contracts | `portfolios.ts`, `balances.ts`, `positions.ts`, `trading-operations.ts`, `market-data.ts`, `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
+| Preserved product contracts | `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
 | Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, package secret bindings, Scheduled Tasks, read-only tool metadata, model bindings, and run inspection |
-| CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 
 ## CONVENTIONS
 - One module per backend resource family; keep path helpers and request bodies close to that resource.
 - Route network calls through `request()` or `requestPlatform()` from `../api-client.ts`.
-- Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
+- Keep upload/download specifics here: multipart report upload and markdown download URLs should not leak into hooks or pages.
 - Keep preserved `/api/v1` resource paths and current unversioned platform `/api/*` paths separate in the module layer.
 - `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
 - `workflow-packages.ts` owns package authoring, preflight, launch, import/export, and secret-binding helpers; do not hide those package-scoped APIs inside route components or generic run helpers.
@@ -65,5 +59,5 @@ src/lib/api/
 
 ## NOTES
 - The frontend does not ship v2, Studio, Tryout, or orchestration API helpers in this folder.
-- Platform resources, including extension state, Scheduled Tasks, and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
+- Platform resources, including extension state, Scheduled Tasks, and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while templates and reports stay on `/api/v1`.
 - Keep this file aligned with `src/hooks/AGENTS.md`, `src/lib/types/AGENTS.md`, and the live files under `src/lib/api/`.

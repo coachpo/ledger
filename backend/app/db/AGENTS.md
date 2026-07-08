@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers `app/db/`.
 
 ## OVERVIEW
-`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, numeric-id guardrails, bundled Workflow Package seeding, and startup stale-run recovery. There is no live migration framework; schema changes require a database reset until data must survive upgrades.
+`app/db/` owns engine/session creation, PostgreSQL-only database initialization, cache resets for tests, bundled Workflow Package seeding, and startup stale-run recovery. There is no live migration framework; schema changes require a database reset until data must survive upgrades.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -23,7 +23,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Engine/session factories | `engine.py` | cached `get_engine()` and `get_session_factory()` |
 | Request-scoped sessions | `engine.py` | `get_db_session()` generator used by API dependencies |
 | App startup DB init | `session.py` | `init_db()` composes model import, validation, table creation, bundled package seeding, and startup recovery |
-| Engine / id validation | `validation.py` | PostgreSQL requirement and numeric-id guardrails |
+| Engine validation | `validation.py` | PostgreSQL requirement |
 | Bundled package seed | `seed.py`, `*.sql` | idempotent insertion/update of shipped Workflow Package presets |
 | Startup recovery | `startup_recovery.py` | marks in-flight runs and child runtime rows failed/skipped after process restart |
 | Test cache resets | `engine.py` | `reset_db_caches()` for isolated test databases |
@@ -33,7 +33,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `init_db()` is the only startup path: import models, `create_all()`, seed bundled packages, and recover in-flight runs.
 - `init_db()` owns startup database validation, table creation, bundled package seeding, and stale-run recovery.
 - The backend requires PostgreSQL via `postgresql+psycopg`; unsupported engines should fail fast during `init_db()`.
-- Legacy UUID-backed portfolio tables are rejected before startup; this codebase only supports numeric ids.
 - Seed and recovery helpers live in code, so raw SQL must stay valid for PostgreSQL.
 - Treat `startup_recovery.py` as authoritative for startup recovery behavior; if stale-run recovery changes, update the code path and its regression tests together.
 - Do not add backfill, repair, cleanup, or compatibility paths for removed surfaces.
@@ -59,5 +58,5 @@ uv run pytest tests/test_api.py tests/test_db_bootstrap.py
 ## NOTES
 - `seed.py` loads bundled Workflow Package SQL presets idempotently.
 - `startup_recovery.py` recovers stale agent-platform runs.
-- `session.py` imports the full model package, validates the engine and numeric-id schema, creates tables, seeds bundled packages, and runs startup recovery.
+- `session.py` imports the full model package, validates the engine, creates tables, seeds bundled packages, and runs startup recovery.
 - `create_app(init_database=False)` lets tests control initialization explicitly through fixtures.

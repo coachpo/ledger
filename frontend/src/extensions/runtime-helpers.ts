@@ -164,12 +164,10 @@ export function assembleFinanceWorkspaceRoutes(): ExtensionRouteDefinition[] {
         return { Component: withFinanceWorkspaceGate(Component) };
       };
 
-      return contribution.path === "/"
-        ? { index: true, lazy }
-        : {
-            path: contribution.path.replace(/^\//, ""),
-            lazy,
-          };
+      return {
+        path: contribution.path.replace(/^\//, ""),
+        lazy,
+      };
     },
   );
 }

@@ -126,11 +126,6 @@ def test_bundled_extension_registry_discovers_default_enabled_extensions() -> No
     )
     assert DIGITAL_ORACLE_EXTENSION_KEY not in registry.package_private_mcp_tool_owners().values()
     assert {contribution.surface for contribution in registry.list_api_router_contributions()} == {
-        "/api/v1/portfolios",
-        "/api/v1/portfolios/{portfolio_id}/balances",
-        "/api/v1/portfolios/{portfolio_id}/positions",
-        "/api/v1/portfolios/{portfolio_id}/trading-operations",
-        "/api/v1/portfolios/{portfolio_id}/market-data",
         "/api/v1/templates",
         "/api/v1/reports",
     }

@@ -4,22 +4,18 @@
 
 ## Overview
 
-SignalDeck uses PostgreSQL for the Finance Workspace, templates, reports, package-first platform artifacts, runs, and package secrets. Startup bootstrap lives in `backend/app/db/`; there is no live Alembic path.
+SignalDeck uses PostgreSQL for finance templates/reports, package-first platform artifacts, runs, and package secrets. Startup bootstrap lives in `backend/app/db/`; there is no live Alembic path.
 
-The data model follows two boundaries. Finance-owned product tables support preserved portfolio, template, report, and market-data behavior. Platform-owned tables support Workflow Packages, Model Connections, bundled extension state, package secret bindings, Tools metadata references, Runs, run operation evidence, and typed failure and retry metadata.
+The data model follows two boundaries. Finance-owned product tables support preserved template, report, and rebuildable market-data cache behavior. Platform-owned tables support Workflow Packages, Model Connections, bundled extension state, package secret bindings, Tools metadata references, Runs, run operation evidence, and typed failure and retry metadata.
 
 ## Preserved Finance Product Tables
 
-| Table                | Role                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `portfolios`         | Isolated workspaces with slug, name, description, base currency, and timestamps.     |
-| `balances`           | Portfolio-scoped deposit/withdrawal cash rows with non-negative amounts.             |
-| `positions`          | Aggregate holdings keyed by `(portfolio_id, symbol)`.                                |
-| `trading_operations` | Append-only BUY, SELL, DIVIDEND, and SPLIT history with balance-label snapshots.     |
-| `market_quotes`      | Rebuildable quote cache keyed by provider, symbol, and `as_of`.                      |
-| `symbol_name_cache`  | Rebuildable symbol display-name cache.                                               |
-| `text_templates`     | Global reusable template documents.                                                  |
-| `reports`            | Markdown snapshots keyed by unique `name` and `slug` with source and JSONB metadata. |
+| Table               | Role                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| `market_quotes`     | Rebuildable quote cache keyed by provider, symbol, and `as_of`.                      |
+| `symbol_name_cache` | Rebuildable symbol display-name cache.                                               |
+| `text_templates`    | Global reusable template documents.                                                  |
+| `reports`           | Markdown snapshots keyed by unique `name` and `slug` with source and JSONB metadata. |
 
 ## Platform Tables
 
@@ -41,8 +37,6 @@ Package-private agents, output schemas, capability profiles, private MCP configs
 ## Integrity Rules
 
 - Money, quantities, and market values stay decimal-safe and cross the API as strings.
-- Portfolio-owned records enforce portfolio isolation through foreign keys and service lookups.
-- Trading operations are append-only; full sell-down may delete the current aggregate position row.
 - Reports keep immutable `name`, `slug`, `source`, and metadata after creation; only content updates are allowed. `source` values are `compiled`, `uploaded`, `external`, and `agent`; `external` is for true external user/API-created reports, not agent-created reports.
 - Workflow packages are mutable current definitions without a live status lifecycle. They store dependency keys as artifact references; current readiness is evaluated separately against live model connections, extension state, and package secret bindings.
 - Package exports and browser-visible manifest reads omit secret-bearing private MCP `env`, `headers`, and `query` values while omitting database ids, run history, package secret binding rows, and raw package secret binding values.

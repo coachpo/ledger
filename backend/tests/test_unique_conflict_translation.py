@@ -10,15 +10,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents import get_default_tool_catalog
 from app.core.errors import ApiError
-from app.extensions.signaldeck_finance.services.portfolio_service import PortfolioService
 from app.extensions.signaldeck_finance.services.report_service import ReportService
 from app.extensions.signaldeck_finance.services.text_template_service import TextTemplateService
-from app.models.portfolio import Portfolio
 from app.models.report import Report
 from app.models.text_template import TextTemplate
 from app.models.workflow_package import WorkflowPackage
 from app.schemas.model_connection import ModelConnectionCreate
-from app.schemas.portfolio import PortfolioCreate
 from app.schemas.text_template import TextTemplateCreate
 from app.schemas.workflow_package import (
     WorkflowPackageImportRequest,
@@ -75,40 +72,6 @@ def _model_connection_payload(key: str) -> ModelConnectionCreate:
             "apiKey": "test-api-key",
         }
     )
-
-
-def test_portfolio_create_translates_commit_time_slug_conflict(
-    session_factory: sessionmaker[Session],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with session_factory() as session:
-        service = PortfolioService(session)
-
-        def insert_duplicate() -> None:
-            with session_factory() as winner_session:
-                winner_session.add(
-                    Portfolio(
-                        name="Winner Portfolio",
-                        slug="race_portfolio",
-                        description=None,
-                    )
-                )
-                winner_session.commit()
-
-        _race_once_on_commit(monkeypatch, session, insert_duplicate)
-
-        with pytest.raises(ApiError) as excinfo:
-            _ = service.create_portfolio(
-                PortfolioCreate(
-                    name="Race Portfolio",
-                    slug="race_portfolio",
-                    description=None,
-                )
-            )
-
-        assert excinfo.value.status_code == status.HTTP_400_BAD_REQUEST
-        assert excinfo.value.code == "duplicate_portfolio_slug"
-        _assert_session_is_usable(session)
 
 
 def test_template_create_translates_commit_time_name_conflict(

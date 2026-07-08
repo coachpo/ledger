@@ -4,15 +4,15 @@
 
 ## Purpose
 
-Define the shipped SignalDeck requirements for a trusted single-user finance workspace and package-first agent platform. Live code is the source of truth; this document is the normative requirement owner for mounted browser/API surfaces, validation behavior, and acceptance criteria.
+Define the shipped SignalDeck requirements for a trusted single-user workflow/report workspace and package-first agent platform. Live code is the source of truth; this document is the normative requirement owner for mounted browser/API surfaces, validation behavior, and acceptance criteria.
 
 ## Product Scope
 
 ### In Scope
 
-- Portfolio CRUD with balances, positions, CSV import, quote/history context, and trading operations under the `signaldeck.finance` extension.
-- Template CRUD, placeholder browsing, inline compile, stored-template compile, and runtime inputs.
+- Template CRUD, placeholder browsing, inline compile, stored-template compile, and runtime inputs under the `signaldeck.finance` extension.
 - Report generation from templates, external JSON report creation, markdown upload, slug CRUD, filtering, and download.
+- Finance-owned market-data, indicators, fundamentals, news, social sentiment, insider data, and report lookup runtime tools for Workflow Package agents.
 - Workflow Package authoring with `signaldeck.workflowPackage/v1` YAML validation, package-private agents, output schemas, capability profiles, private MCP configs, HTTP operations, and workflow graphs in an authoring-only editor.
 - Package secret bindings for package-local encrypted HTTP operation secrets.
 - Package import/export with no database ids, no run history, no package secret binding rows, and no raw secret values.
@@ -33,17 +33,16 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 
 ## Functional Requirements
 
-### FR-1 Portfolios, Balances, Positions, And Trades
+### FR-1 Finance Templates, Reports, And Provider Tools
 
-- The system must isolate portfolio-owned balances, positions, trading operations, quote lookups, and analytics by `portfolioId`.
-- Position CSV import must use preview and commit endpoints with row-level errors and atomic upsert-by-symbol commit.
-- Trading operations must support BUY, SELL, DIVIDEND, and SPLIT with deterministic cash/position updates.
-- Quote/history failures must degrade to warnings rather than making local portfolio records unusable.
+- The `signaldeck.finance` extension must gate the preserved `/api/v1/templates` and `/api/v1/reports` route families.
+- Finance-owned market-data and provider-backed runtime tools must stay available to Workflow Package agents through server-declared tool grants.
+- Provider failures for quote/history/news/social/fundamentals/insider data must degrade to structured warnings where the tool contract defines a degraded path.
 
 ### FR-2 Templates, Runtime Inputs, And Reports
 
-- Templates must support the `inputs`, `portfolios`, and `reports` placeholder roots.
-- Dynamic portfolio and report selectors must accept runtime inputs where supported.
+- Templates must support the `inputs` and `reports` placeholder roots.
+- Dynamic report selectors must accept runtime inputs where supported.
 - Workflow package run input schemas may use JSON Schema `title` and `description` as display metadata only.
 - Runtime input `title` and `description` must not change runtime JSON, value-entry encoding, validation semantics, workflow wiring, or agent invocation semantics.
 - YAML comments, `comment` fields, `x-signaldeck-*` metadata, `patternProperties`, `oneOf`, `allOf`, `if`, `then`, `else`, `not`, and schema-valued `additionalProperties` must not be treated as supported help-text mechanisms.
@@ -113,7 +112,7 @@ Define the shipped SignalDeck requirements for a trusted single-user finance wor
 
 ## Acceptance Criteria
 
-- A user can manage portfolio records, templates, and reports without provider availability.
+- A user can manage templates and reports without provider availability.
 - A local operator can author Workflow Packages, configure Model Connections, select server-declared Tools metadata during package authoring, launch saved package runs from `/workflow-packages/:packageId/run`, schedule recurring package runs, hard-delete Scheduled Tasks, and inspect Runs.
 - The Digital Oracle researcher demo path is `demo/digital_oracle_researcher.yaml`; it must grant the seven shipped `signaldeck.digital_oracle` tools through package-local capability profiles and keep methodology in `systemPrompt`, not a global skill.
 - The TradingAgents advisory demo path is `demo/tradingagents_advisory_research.yaml`; it must grant only Finance-owned tools and must not add Digital Oracle, Finance-owned prediction-market, or ownerless prediction-market aliases.

@@ -121,9 +121,9 @@ function manifestFixture(workflows: Array<{ key: string; name: string }>): Workf
           inputSchema: {
             properties: {
               asOfDate: { title: "As of date", type: "string" },
-              portfolioSlug: { title: "Portfolio slug", type: "string" },
+              analysisTag: { title: "Analysis tag", type: "string" },
             },
-            required: ["asOfDate", "portfolioSlug"],
+            required: ["asOfDate", "analysisTag"],
             type: "object",
           },
           key,
@@ -140,7 +140,7 @@ function manifestFixture(workflows: Array<{ key: string; name: string }>): Workf
 function previewRead(): SchedulePreviewRead {
   return {
     ready: true,
-    renderedParameters: { asOfDate: "", portfolioSlug: "" },
+    renderedParameters: { asOfDate: "", analysisTag: "" },
     scheduleId: null,
     scheduledFor: "2026-06-01T13:00:00Z",
     templateContext: {},
@@ -204,7 +204,7 @@ describe("ScheduledTaskDetailPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
     const textarea = await screen.findByLabelText("Scheduled input template JSON");
     expect(textarea).toHaveValue(
-      JSON.stringify({ asOfDate: "", portfolioSlug: "" }, null, 2),
+      JSON.stringify({ analysisTag: "", asOfDate: "" }, null, 2),
     );
     expect(screen.queryByTestId("runtime-input-saved-inputs-helper")).not.toBeInTheDocument();
     expect(screen.queryByText(/saved runtime input preset/i)).not.toBeInTheDocument();
@@ -218,7 +218,7 @@ describe("ScheduledTaskDetailPage", () => {
 
     await waitFor(() =>
       expect(previewScheduledInputsMock).toHaveBeenCalledWith({
-        inputTemplate: { asOfDate: "", portfolioSlug: "" },
+        inputTemplate: { asOfDate: "", analysisTag: "" },
         packageId: 12,
         recurrence: scheduleFixture().recurrence,
         scheduledFor: "2026-06-01T13:00:00Z",

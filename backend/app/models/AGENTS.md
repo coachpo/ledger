@@ -21,10 +21,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Task | Location | Notes |
 |---|---|---|
 | Base mixins / metadata | `base.py` | declarative base, id/timestamp mixins |
-| Portfolio entity | `portfolio.py` | unique slug, summary relationships |
-| Balance entity | `balance.py` | balance rows scoped to portfolio, including `operation_type` |
-| Position entity | `position.py` | aggregate positions scoped to portfolio |
-| Trading operation entity | `trading_operation.py` | append-only operations and historical attribution metadata |
 | Market quote entity | `market_quote.py` | quote cache rows keyed by provider, symbol, and as-of |
 | Symbol-name cache | `symbol_name_cache.py` | unlogged cache table keyed by symbol |
 | Text templates | `text_template.py` | stored template names and content |
@@ -37,7 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Use explicit table names via `__tablename__` and explicit indexes or `CheckConstraint`s.
 - Relationships use `relationship()` only when the code actually needs them.
 - Models should be persistence-oriented: columns, constraints, defaults, and relationships only.
-- Unique constraints enforce business rules such as unique portfolio slugs, balance labels per portfolio, template names, extension keys, schedule fire keys, versioned platform keys, and quote-cache lookup keys.
+- Unique constraints enforce business rules such as unique template names, extension keys, schedule fire keys, versioned platform keys, and quote-cache lookup keys.
 - Use mixins from `base.py` instead of repeating `id`, `created_at`, or `updated_at` columns.
 
 ## ANTI-PATTERNS

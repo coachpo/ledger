@@ -1,6 +1,6 @@
 import type { ReportRead, ReportSource } from "@/lib/types/report";
 
-export type GroupByOption = "none" | "tags" | "source" | "month" | "ticker" | "portfolio";
+export type GroupByOption = "none" | "tags" | "source" | "month" | "ticker";
 
 export const GROUP_BY_LABELS: Record<GroupByOption, string> = {
   none: "None",
@@ -8,7 +8,6 @@ export const GROUP_BY_LABELS: Record<GroupByOption, string> = {
   source: "Source",
   month: "Month",
   ticker: "Ticker",
-  portfolio: "Portfolio",
 };
 
 export type SortField = "name" | "createdAt" | "source";
@@ -107,10 +106,6 @@ function getGroupKeys(report: ReportRead, groupBy: GroupByOption): string[] {
     case "ticker": {
       const ticker = report.metadata.analysis?.ticker;
       return ticker ? [ticker] : ["Unknown"];
-    }
-    case "portfolio": {
-      const slug = report.metadata.analysis?.portfolioSlug;
-      return slug ? [slug] : ["Unknown"];
     }
     default:
       return ["All Reports"];

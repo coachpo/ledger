@@ -34,7 +34,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/extensions/AGENTS.md` — `/extensions` system state route, slim statically resident extension contract, and toggle behavior
 - `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
-- `src/pages/portfolios/AGENTS.md` — portfolio list/detail workspace, metrics, balances, positions, and trades
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
 - `src/pages/templates/AGENTS.md` — stored-template inventory/editor, inline compile preview, runtime inputs, and saved-template report generation
 - `src/pages/workflow-packages/AGENTS.md` — package list, authoring-only editor, dedicated `/workflow-packages/:packageId/run` launch page, validation, import, and export flows
@@ -48,7 +47,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
 - `src/components/shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, tables, and field schemas
 - `src/components/shared/docs/README.md` — frontend-owned UI/UX standards, shared UI specs, page blueprints, and migration guidance
-- `src/components/portfolios/AGENTS.md` — portfolio feature sections, dialogs, tables, and trading forms
 
 ## STRUCTURE
 ```text
@@ -58,7 +56,7 @@ frontend/
 ├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types, platform-authoring helpers
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
 ├── src/pages/          # dashboard, extensions, finance workspace, Scheduled Tasks, and agent-platform routes
-├── src/components/     # layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, templates, portfolio UI, shadcn primitives
+├── src/components/     # layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, templates, and shadcn primitives
 ├── src/styles/         # fonts, theme tokens, and global CSS entrypoints; covered here
 ├── src/test/           # Vitest jsdom setup; covered here
 ├── e2e/                # Playwright route-family and shell-regression coverage
@@ -72,11 +70,10 @@ frontend/
 | Extension runtime and state | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | bundled frontend extensions, finance route/nav filtering, extension-owned tool filtering, and `/extensions` state UI |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
 | Shared route shells and UI state | `DESIGN.md`, `src/components/shared/docs/README.md`, `src/components/shared/AGENTS.md`, `src/hooks/AGENTS.md` | design-system source of truth, inventory/workspace/split-inspector shells, resource chrome, table/action/selection framing, and reusable filter/selection/inspector state helpers |
-| Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
 | Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/scheduled-tasks/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Scheduled Tasks, Model Connections, and Runs, including schedule fire history, backend-owned run progress/queue payloads, and current rerun readiness |
-| Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/*.tsx` | layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, portfolio feature folders |
+| Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/*.tsx` | layout shell, theme, shared UI, cross-route dialogs, and platform-authoring widgets |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config plus browser API mocks |
 | E2E flow setup | `playwright.config.ts`, `scripts/start-playwright-*.mjs` | backend `8001`, frontend `4173` |
@@ -107,7 +104,7 @@ frontend/
 - `src/test/setup.ts` owns global jsdom/browser shims only; route-specific mocks, network mocks, and feature data factories stay with the owning tests.
 - For ordinary removal-only validation, prefer manual confirmation over adding dedicated “proves not” UI tests; keep absence assertions only when the missing surface is itself a shipped contract or guardrail.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
-- Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, and agent-platform caches under dedicated namespaces.
+- Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and template, report, and agent-platform caches under dedicated namespaces.
 
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
@@ -144,4 +141,4 @@ pnpm test:e2e
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001`, fake provider `18081`, and frontend `4173`; the frontend helper builds before preview.
 - Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, shared route-shell, resource filter/selection state, template-editor, and layout pages.
 - Font and theme tokens live in `src/styles/theme.css`; Tailwind import/source control lives in `src/styles/tailwind.css`.
-- The live router exposes dashboard, extension-gated portfolio/template/report routes, `/extensions`, Workflow Packages, Scheduled Tasks, Model Connections, and Runs; the product-owned catch-all is covered in `src/routes.test.tsx`.
+- The live router exposes dashboard, extension-gated template/report routes, `/extensions`, Workflow Packages, Scheduled Tasks, Model Connections, and Runs; the product-owned catch-all is covered in `src/routes.test.tsx`.

@@ -14,13 +14,6 @@ describe("TemplatePlaceholderReference", () => {
         onClose={() => {}}
         onInsert={onInsert}
         placeholderTree={{
-          portfolios: [
-            {
-              slug: "growth",
-              name: "Growth",
-              positions: [{ symbol: "AAPL", name: "Apple Inc." }],
-            },
-          ],
           reports: [
             { name: "latest_report", createdAt: "2026-03-18T21:04:55Z" },
           ],
@@ -40,8 +33,6 @@ describe("TemplatePlaceholderReference", () => {
     expect(
       screen.getByRole("button", { name: /collapse placeholder reference/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /growth/i })).toBeInTheDocument();
-    expect(screen.queryByText("portfolios.<slug>.base_currency")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /latest_report/i }),
     ).toBeInTheDocument();

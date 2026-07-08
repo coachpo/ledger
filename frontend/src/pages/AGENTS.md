@@ -6,7 +6,6 @@
 
 - `extensions/AGENTS.md` — `/extensions` system-state route family
 - `model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test route family
-- `portfolios/AGENTS.md` — portfolio list/detail workspace route family
 - `reports/AGENTS.md` — report inventory/detail, upload, generation, and markdown-edit route family
 - `templates/AGENTS.md` — stored-template inventory/editor route family
 - `workflow-packages/AGENTS.md` — Workflow Package list/editor/preflight/launch/import/export route family
@@ -15,7 +14,7 @@
 
 ## OVERVIEW
 
-`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, statically resident extension state page, extension-gated portfolio/template/report pages, and the package-first platform pages for Workflow Packages, Scheduled Tasks, Model Connections, and Runs. Digital Oracle is visible only as extension state and package-authoring tools, not as a route or nav surface.
+`src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, statically resident extension state page, extension-gated template/report pages, and the package-first platform pages for Workflow Packages, Scheduled Tasks, Model Connections, and Runs. Digital Oracle is visible only as extension state and package-authoring tools, not as a route or nav surface.
 
 Extension model: statically resident extension-gated route families.
 
@@ -23,7 +22,7 @@ The repo has no users yet, so prefer clean architecture and current best practic
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
-This parent guide now delegates the contract-heavy Extensions, Model Connections, Scheduled Tasks, Portfolios, Reports, Templates, Workflow Packages, and Runs route families to child AGENTS files. Dashboard and shared route helpers stay here.
+This parent guide now delegates the contract-heavy Extensions, Model Connections, Scheduled Tasks, Reports, Templates, Workflow Packages, and Runs route families to child AGENTS files. Dashboard and shared route helpers stay here.
 
 Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 
@@ -43,7 +42,6 @@ src/pages/
 ├── scheduled-tasks/             # scheduled package-run list, create, and detail routes
 ├── model-connections/           # saved model connection list and editor routes
 ├── runs/                        # run list and detail routes
-├── portfolios/                  # portfolio workspace routes
 ├── templates/                   # stored-template list/editor routes
 ├── reports/                     # report inventory and detail routes
 ```
@@ -58,7 +56,6 @@ src/pages/
 | Scheduled Task pages         | `scheduled-tasks/AGENTS.md`, `../hooks/use-scheduled-tasks.ts`                          | scheduled package-run inventory, create/detail editors, preview, fire history, delete, and run-now          |
 | Model connection pages       | `model-connections/AGENTS.md`, `../hooks/use-model-connections.ts`                      | saved connection inventory, write-only secrets, delete flow, and connection-test UI                         |
 | Run pages                    | `runs/AGENTS.md`                                                                        | run list, detail, root-parameter rerun, trace views, and execution evidence reads |
-| Portfolio workspace          | `portfolios/AGENTS.md`, `../components/portfolios/AGENTS.md`                            | portfolio list/detail workspace                                                                             |
 | Template list/editor         | `templates/AGENTS.md`, `../components/templates/AGENTS.md`, `../hooks/use-templates.ts` | stored-template CRUD, inline compile preview, placeholder browser, and saved-template report generation     |
 | Report routes                | `reports/AGENTS.md`, `../hooks/use-reports.ts`, `../lib/report-grouping.ts`             | list/detail, upload/generate, markdown view/edit/download                                                   |
 | UI/UX standards and page blueprints | `../../DESIGN.md`, `../components/shared/docs/README.md`                         | design-system source of truth, reusable component specs, examples, and migration guidance                   |
@@ -99,7 +96,7 @@ src/pages/
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.
 - `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, delete confirmation and post-delete absence states, and run-now links into run detail.
 - `e2e/model-connections.spec.ts` and `e2e/runs.spec.ts` cover model-connection secret-safe flows and run inspection/rerun paths.
-- `e2e/shell-regression.spec.ts`, `e2e/smoke.spec.ts`, `e2e/functional.spec.ts`, and `e2e/workflow-package-tradingagents-smoke.spec.ts` cover route-shell regressions, smoke navigation, and TradingAgents package smoke behavior.
+- `e2e/shell-regression.spec.ts`, `e2e/smoke.spec.ts`, and `e2e/workflow-package-tradingagents-smoke.spec.ts` cover route-shell regressions, smoke navigation, and TradingAgents package smoke behavior.
 
 ## ANTI-PATTERNS
 
@@ -129,5 +126,4 @@ pnpm test:e2e
 ## NOTES
 
 - Pages are thin route-layer components; the real complexity lives in hooks, shared components, and nearby page helpers.
-- Portfolio detail pages are routable but not exposed separately in the sidebar.
-- The live router exposes dashboard, `/extensions`, extension-gated portfolio/template/report routes, Workflow Packages, Scheduled Tasks, Model Connections, and Runs.
+- The live router exposes dashboard, `/extensions`, extension-gated template/report routes, Workflow Packages, Scheduled Tasks, Model Connections, and Runs.

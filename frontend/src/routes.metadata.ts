@@ -119,6 +119,24 @@ const financeRouteMetadata: RouteMetadata[] =
 
 const platformAndSystemRouteMetadata = [
   {
+    archetype: "dashboard",
+    breadcrumb: { title: "Dashboard" },
+    nav: {
+      group: AGENT_PLATFORM_NAV_GROUP,
+      iconName: "LayoutDashboard",
+      label: "Dashboard",
+      path: "/",
+      sidebar: true,
+      testId: "nav-dashboard",
+    },
+    owner: { kind: "platform" },
+    pattern: "/",
+    shellMode: "scroll",
+    widthMode: "wide",
+    stateVariants: ["loading", "ready", "error"],
+    testId: "route-dashboard",
+  },
+  {
     archetype: "systemState",
     breadcrumb: { title: "Extensions" },
     nav: {

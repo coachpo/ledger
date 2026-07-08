@@ -44,5 +44,5 @@ pnpm test:run src/components/templates/template-placeholder-reference.test.tsx s
 ```
 
 ## NOTES
-- Static guidance covers both exact placeholder paths and dynamic selectors like `reports.latest(inputs.ticker)` and `portfolios.by_slug(inputs.portfolio_slug)`.
+- Static guidance covers both exact placeholder paths and dynamic selectors like `reports.latest(inputs.ticker)` and `reports.by_tag(inputs.analysis_tag).latest`.
 - The runtime-inputs section stays visible whenever rows exist, even if the user collapses it, so active parameters are hard to miss.

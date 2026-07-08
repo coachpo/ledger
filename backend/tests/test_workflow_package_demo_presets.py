@@ -52,7 +52,6 @@ _FINANCE_TOOL_KEYS = {
     "signaldeck.finance.market_data.ohlcv_lookup",
     "signaldeck.finance.market_data.quote_lookup",
     "signaldeck.finance.news.lookup",
-    "signaldeck.finance.positions.lookup",
     "signaldeck.finance.reports.lookup",
     "signaldeck.finance.social_sentiment.lookup",
 }

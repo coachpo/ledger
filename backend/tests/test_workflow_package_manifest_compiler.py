@@ -17,8 +17,8 @@ from tests.test_workflow_package_manifest_parser import _valid_package_manifest_
 _DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
 _EXPECTED_DEMO_HASHES = {
     "tradingagents_advisory_research": (
-        "c58db1b4bb8e66dcd95b479e238dda0d5a2f894d03c8986c0787f6638c31dc62",
-        "73dc336ac6dc58ab610529ca748d351ea30281e4054f3bfe3eb1fe1498a7e416",
+        "3df8647615102158222ae3a2baad60c773362132e0c634c63c579dd9a6ffd4d6",
+        "4623cfd3afe30dbd3a028254ddd90cf6ec02f0c9b4ce9a3552ecfbe5608ff899",
     ),
     "digital_oracle_researcher": (
         "9cdde0eaf311164747948b386c9901cd3a70c0ef981c8296e616c52e212ac0c4",
@@ -251,7 +251,6 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
                 "signaldeck.finance.market_data.ohlcv_lookup",
                 "signaldeck.finance.market_data.quote_lookup",
                 "signaldeck.finance.news.lookup",
-                "signaldeck.finance.positions.lookup",
                 "signaldeck.finance.reports.lookup",
                 "signaldeck.finance.social_sentiment.lookup",
             },

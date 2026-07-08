@@ -18,7 +18,6 @@ const FIXTURE_PATH = resolve(
 const LAUNCH_PARAMETERS = {
   ticker: "AAPL",
   asOfDate: "2026-05-08",
-  portfolioId: "tradingagents_demo",
   horizonDays: 30,
   benchmarkSymbol: "SPY",
 };

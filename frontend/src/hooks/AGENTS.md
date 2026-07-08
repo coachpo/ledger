@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, Extensions, Workflow Packages, Scheduled Tasks, extension-filtered read-only Tools metadata for package authoring, Model Connections, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
+`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for templates, reports, Extensions, Workflow Packages, Scheduled Tasks, extension-filtered read-only Tools metadata for package authoring, Model Connections, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
 
 Extension model: statically resident extension state flows.
 
@@ -22,11 +22,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Portfolio list/detail mutations | `use-portfolios.ts` | list/detail hooks plus portfolio invalidation |
-| Balance flows | `use-balances.ts` | portfolio-scoped CRUD |
-| Position + CSV flows | `use-positions.ts` | CRUD, symbol lookup, preview/commit imports |
-| Trading operations | `use-trading-operations.ts` | list plus create trading operations |
-| Market data | `use-market-data.ts` | quotes/history with symbol guards |
 | Template flows | `use-templates.ts` | list/detail CRUD, inline compile with runtime inputs, placeholder tree |
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
 | Extension state flows | `use-extensions.ts` | `/api/extensions` list/toggle state, finance cache invalidation, route/tool visibility support |
@@ -40,8 +35,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Generic timing helper | `use-debounce.ts` | small debounce helper used by the template editor |
 
 ## CONVENTIONS
-- Portfolio-scoped query hooks accept `portfolioId | undefined`, derive a resolved id, and gate execution with `enabled`.
-- Mutations invalidate either list/detail keys or `invalidatePortfolioScope()`; do not hand-roll cache clearing in components.
 - Template hooks invalidate `queryKeys.templates.list()` and keep placeholder/detail query composition inside the hooks layer.
 - Report hooks invalidate `queryKeys.reports.list()` for writes and additionally invalidate slug-scoped detail keys after content edits so the detail route refreshes without a redirect.
 - `useTools()` composes `/api/tools` with `useExtensions()` and returns extension-filtered read-only tool metadata for package capability-profile pickers.
@@ -75,9 +68,8 @@ pnpm test:run
 ```
 
 ## NOTES
-- `invalidatePortfolioScope()` is the shared invalidation path for portfolio-scoped mutations.
 - Template and report hooks keep cache policy intentionally simple: list/detail invalidation in hooks, navigation and toasts in callers.
 - `invalidateWorkflowPackageScope()` is the central package-side invalidation helper; keep route surfaces aligned with it instead of inventing page-local refresh rules.
 - `use-scheduled-tasks.ts` owns schedule list/detail/fire invalidation plus linked run refresh after run-now; pages own recurrence/input-template draft UI, navigation, and toasts.
 - Package-first platform hooks follow the same split: cache policy, extension-state filtering, and invalidation live here, while routed pages own UI, navigation, and feedback.
-- The route-shell state hooks are reusable across finance inventories and platform workspace/console pages; current cross-route usage varies by hook, so keep filter/selection/inspector behavior aligned here instead of cloning page-local implementations.
+- The route-shell state hooks are reusable across finance template/report inventories and platform workspace/console pages; current cross-route usage varies by hook, so keep filter/selection/inspector behavior aligned here instead of cloning page-local implementations.

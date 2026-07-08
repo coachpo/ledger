@@ -30,12 +30,6 @@ spec:
         default: 30
         description: Required advisory horizon, in calendar days, for the
           research and risk framing.
-      portfolioId:
-        type: string
-        title: Portfolio ID
-        default: ""
-        description: Optional SignalDeck portfolio identifier used to include
-          current positions when available. Leave blank for standalone research.
       outputLanguage:
         type: string
         title: Output language
@@ -97,11 +91,6 @@ spec:
         context.
       toolKeys:
         - signaldeck.finance.reports.lookup
-    - key: portfolio_context_tools
-      name: Portfolio Context Tools
-      description: Reads persisted SignalDeck positions for portfolio context.
-      toolKeys:
-        - signaldeck.finance.positions.lookup
   outputSchemas:
     - key: analyst_report
       name: Analyst Report
@@ -789,9 +778,9 @@ spec:
         authority.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents trader role translated into SignalDeck advisory semantics. Use the research plan, supplied context, and granted SignalDeck portfolio position lookup when portfolioId is present.
+        You are the TradingAgents trader role translated into SignalDeck advisory semantics. Use the research plan and supplied context.
 
-        Convert the research plan into an advisory exposure posture for the requested horizon, considering current holdings when available. Disclose missing or unavailable portfolio context. Do not place orders, imply live execution, draft trade operations, create order tickets, or instruct an operator to execute immediately.
+        Convert the research plan into an advisory exposure posture for the requested horizon. Disclose missing context and key limitations. Do not place orders, imply live execution, draft trade operations, create order tickets, or instruct an operator to execute immediately.
 
         Return only structured content matching the local trader_proposal schema: posture, rationale, and sizingNotes. The sizingNotes field must be educational and risk-aware, not an executable trade instruction.
       inputSchema:
@@ -819,8 +808,6 @@ spec:
                   type: string
           horizonDays:
             type: integer
-          portfolioId:
-            type: string
           marketReport:
             type: object
             required:
@@ -888,8 +875,7 @@ spec:
                 items:
                   type: string
       outputSchema: trader_proposal
-      capabilityProfiles:
-        - portfolio_context_tools
+      capabilityProfiles: []
       mcpServers: []
     - key: aggressive_risk_analyst
       name: Aggressive Risk Analyst
@@ -1042,7 +1028,7 @@ spec:
       systemPrompt: |-
         You are the TradingAgents neutral risk analyst in a bounded risk debate. Use the provided research plan, trader proposal, analyst reports, and prior risk debate state; you do not have direct tools.
 
-        Argue from a balanced risk perspective. Test whether the proposed exposure is proportional to evidence quality, uncertainty, horizon, and portfolio context. Identify compromise postures and monitoring conditions when aggressive or conservative views overreach.
+        Argue from a balanced risk perspective. Test whether the proposed exposure is proportional to evidence quality, uncertainty, horizon, and supplied context. Identify compromise postures and monitoring conditions when aggressive or conservative views overreach.
 
         Return a debate-stage response in outputLanguage suitable for updating neutralCase and debateHistory. Keep it advisory-only and do not provide executable trade instructions.
       inputSchema:
@@ -1325,9 +1311,9 @@ spec:
       description: Final structured advisory decision maker for the package.
       modelConnection: tradingagents_primary_model
       systemPrompt: |-
-        You are the TradingAgents portfolio manager translated into SignalDeck advisory semantics. Use the final risk debate state, trader proposal, research plan, and granted SignalDeck report/portfolio context tools only when needed for final synthesis.
+        You are the TradingAgents portfolio manager translated into SignalDeck advisory semantics. Use the final risk debate state, trader proposal, research plan, and supplied report context only when needed for final synthesis.
 
-        Act as the final arbiter. Weigh the aggressive, neutral, and conservative risk arguments; incorporate current position/report context when available; and produce a final advisory posture for the requested horizon. Disclose unavailable context and key limitations. Do not place orders, imply live execution, draft trade operations, or create implementation artifacts.
+        Act as the final arbiter. Weigh the aggressive, neutral, and conservative risk arguments; incorporate supplied report context when available; and produce a final advisory posture for the requested horizon. Disclose unavailable context and key limitations. Do not place orders, imply live execution, draft trade operations, or create implementation artifacts.
 
         Return only structured content matching the local portfolio_decision schema: posture, rationale, riskSummary, and implementationNotes. The implementationNotes field must describe advisory considerations and follow-up checks, not executable instructions.
       inputSchema:
@@ -1384,8 +1370,6 @@ spec:
                   type: string
           horizonDays:
             type: integer
-          portfolioId:
-            type: string
           marketReport:
             type: object
             required:
@@ -1467,7 +1451,6 @@ spec:
                   type: string
       outputSchema: portfolio_decision
       capabilityProfiles:
-        - portfolio_context_tools
         - report_context_tools
       mcpServers: []
   workflows:
@@ -1500,13 +1483,6 @@ spec:
             default: 30
             description: Required advisory horizon, in calendar days, for the
               research and risk framing.
-          portfolioId:
-            type: string
-            title: Portfolio ID
-            default: ""
-            description: Optional SignalDeck portfolio identifier used to
-              include current positions when available. Leave blank for
-              standalone research.
           outputLanguage:
             type: string
             title: Output language
@@ -1646,7 +1622,6 @@ spec:
             with:
               ticker: ${{ inputs.ticker }}
               horizonDays: ${{ inputs.horizonDays }}
-              portfolioId: ${{ inputs.portfolioId }}
               researchPlan: ${{ nodes.research_management.outputs.research_plan
                 }}
               outputLanguage: ${{ inputs.outputLanguage }}
@@ -1729,7 +1704,6 @@ spec:
               ticker: ${{ inputs.ticker }}
               riskState: ${{ nodes.risk_debate.outputs.risk_debate_state }}
               horizonDays: ${{ inputs.horizonDays }}
-              portfolioId: ${{ inputs.portfolioId }}
               researchPlan: ${{ nodes.research_management.outputs.research_plan
                 }}
               outputLanguage: ${{ inputs.outputLanguage }}

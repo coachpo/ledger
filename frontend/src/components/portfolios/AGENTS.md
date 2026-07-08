@@ -1,58 +1,19 @@
-# FRONTEND PORTFOLIOS GUIDE
+# RETIRED PORTFOLIO COMPONENTS GUIDE
 
-> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/components/AGENTS.md`. This file only covers `src/components/portfolios/`.
+> Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/components/AGENTS.md`.
 
 ## OVERVIEW
-`src/components/portfolios/` owns the portfolio workspace sections, dialogs, tables, and trading forms that support the routed list/detail pages. Reusable destructive confirmation behavior now lives in `../shared/confirm-delete-dialog.tsx`.
 
-The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
+`src/components/portfolios/` is retired migration residue pending Task 4.2 deletion. It no longer supports live routed pages, navigation, API calls, or Finance Workspace scope.
 
-Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or outside current goals, not live acceptance paths.
-
-Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
-
-## Compatibility, Upgrades, and Removal Policy
-
-- This repository has no external users yet. Prefer clean architecture, current best practices, and simple maintainable designs over backward-compatibility shims, speculative legacy paths, deprecated API shapes, or compatibility layers.
-- During upgrade work, favor the best current implementation and clean internal boundaries. Preserve legacy shapes, migration bridges, fallback behavior, or compatibility shims only when the task explicitly requests them.
-- For ordinary removal-only validation, prefer manual confirmation and focused review over adding dedicated “proves not” tests. Keep absence assertions only when the removed or missing surface is itself a shipped contract, safety guardrail, regression boundary, or externally visible behavior.
-
-## WHERE TO LOOK
-| Task | Location | Notes |
-|---|---|---|
-| Portfolio list route | `../../pages/portfolios/list.tsx` | portfolio creation, navigation, table inventory, search, and batch delete |
-| Portfolio workspace route | `../../pages/portfolios/detail.tsx` | orchestrates hooks, quotes, analytics, tabs, dialogs |
-| Balances section | `portfolio-balances-section.tsx`, `balance-form-dialog.tsx` | balance table + create/edit dialog |
-| Positions section | `portfolio-positions-section.tsx`, `position-form-dialog.tsx` | position table, quote warnings, create/edit dialog |
-| Trading operations | `portfolio-trades-section.tsx`, `record-trading-operation-dialog.tsx`, `trading-operation-form.tsx` | operation history + BUY/SELL/DIVIDEND/SPLIT flows |
-| Shared dialogs | `../forms/portfolio-form-dialog.tsx`, `../shared/confirm-delete-dialog.tsx` | create/edit/delete flows reused across routes |
-| Focused tests | `*.test.tsx` | portfolio form, positions, trades, trading-operation dialog/form |
+Portfolio bookkeeping, balances, positions, trades, and related dialogs are outside the mini-Jenkins product. Do not add new behavior here; remove remaining references when executing the frontend deletion task.
 
 ## CONVENTIONS
-- Page components orchestrate hooks, analytics helpers, and local dialog state; section/dialog components keep narrower responsibilities.
-- Quote-enriched position metrics come from `src/lib/portfolio-analytics.ts`, not inline page math.
-- Use `formatCurrency()` and `formatDateTime()` for display consistency.
-- Quote warnings are informational; show them without blocking the rest of the workspace.
-- Mutation success/error feedback uses toasts close to the routed page or section that initiated the action.
-- `ConfirmDeleteDialog` lives in shared UI and stays presentation-oriented so template pages can reuse it without importing portfolio-specific data logic.
 
-## ANTI-PATTERNS
-- Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
-- Do not scatter decimal parsing across portfolio components; prefer shared analytics/format helpers and keep any current page-level aggregate parsing localized.
-- Do not bypass section/dialog components by stuffing every portfolio action into the detail page.
-- Do not treat quote-warning states as fatal for balances, positions, or trade history.
-- Do not change CSV import, trade, or balance contract assumptions without coordinating with backend tests, `src/lib/api/positions.ts`, and `src/hooks/use-positions.ts`.
-- Do not move request or mutation logic into table-only helpers just because the UI is tabular.
+- Prefer deletion over maintenance in this directory.
+- Do not reintroduce portfolio APIs, hooks, route metadata, navigation, or tests.
+- Do not describe portfolio bookkeeping as a live feature surface.
 
 ## VALIDATION
-```bash
-cd frontend
-pnpm lint
-pnpm typecheck
-pnpm test:run
-pnpm build
-```
 
-## NOTES
-- `../../pages/portfolios/detail.tsx` is the main orchestration hub: it combines portfolio, balance, position, trade, and quote hooks in one workspace.
-- `../../pages/portfolios/detail.tsx` still computes the cash aggregate locally from balance strings; keep similar exceptions isolated rather than spreading parse logic through sections/dialogs.
+Use the migration task validation from the parent frontend guide after deleting remaining files.

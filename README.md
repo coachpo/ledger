@@ -1,6 +1,6 @@
 # SignalDeck
 
-SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, a React/Vite frontend, markdown report workflows, and the current agent-platform surfaces.
+SignalDeck is a monorepo for a self-hosted workflow/report stack with a FastAPI backend, a React/Vite frontend, markdown report workflows, and the current agent-platform surfaces.
 
 ## Repository Layout
 
@@ -12,8 +12,8 @@ SignalDeck is a monorepo for a portfolio-tracking stack with a FastAPI backend, 
 
 ## What Ships
 
-- Frontend routes for `portfolios`, `templates`, `reports`, `workflow-packages`, `scheduled-tasks`, `model-connections`, and `runs`
-- Backend `/api/v1` resource routes for portfolios, balances, positions, trading operations, market data, templates, and reports
+- Frontend routes for `templates`, `reports`, `workflow-packages`, `scheduled-tasks`, `model-connections`, and `runs`
+- Backend `/api/v1` resource routes for templates and reports
 - Backend `/api/*` platform routes for workflow packages, scheduled tasks, model connections, tools, and runs, including reruns
 
 ## Workflow Package Contract
@@ -158,7 +158,7 @@ The direct Compose path uses the same local/demo-only root image and keeps datab
 
 ## Runtime Notes
 
-- The normal browser-facing execution surfaces are Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus the preserved portfolio, template, and report routes. In Runs, rerun is for root parameters.
+- The normal browser-facing execution surfaces are Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus the preserved template and report routes. In Runs, rerun is for root parameters.
 - Workflow package manifests use `signaldeck.workflowPackage/v1`; package-private agents, output schemas, capability profiles, private MCP configs, and workflow graphs are authored inside one package. Private MCP `env`, `headers`, and `query` fields are secret-bearing authoring/runtime config and are omitted from browser-visible manifest reads and exports.
 - Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest.
 - Playwright E2E uses Chromium only with dedicated startup helpers: backend `8001`, frontend preview `4173`, deterministic quote provider, and frontend API base `http://127.0.0.1:8001/api/v1` by default.

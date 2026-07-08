@@ -30,82 +30,6 @@ function financeRouteOwnerNav(
 
 const financeRouteContributions = [
   {
-    lazy: async () => ({ Component: (await import("@/pages/dashboard")).Dashboard }),
-    path: "/",
-    requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-    routeMetadata: {
-      archetype: "dashboard",
-      breadcrumb: { title: "Dashboard" },
-      nav: {
-        group: FINANCE_WORKSPACE_LABEL,
-        iconName: "LayoutDashboard",
-        label: "Dashboard",
-        path: "/",
-        sidebar: true,
-        testId: "nav-dashboard",
-      },
-      shellMode: "scroll",
-      widthMode: "wide",
-      stateVariants: ["loading", "ready", "error", "disabledExtension"],
-      testId: "route-dashboard",
-    },
-  },
-  {
-    lazy: async () => ({
-      Component: (await import("@/pages/portfolios/list")).PortfolioListPage,
-    }),
-    path: "/portfolios",
-    requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-    routeMetadata: {
-      archetype: "inventory",
-      breadcrumb: { title: "Portfolios" },
-      nav: {
-        group: FINANCE_WORKSPACE_LABEL,
-        iconName: "Briefcase",
-        label: "Portfolios",
-        path: "/portfolios",
-        sidebar: true,
-        testId: "nav-portfolios",
-      },
-      shellMode: "scroll",
-      widthMode: "wide",
-      stateVariants: ["loading", "ready", "error", "empty", "disabledExtension"],
-      testId: "route-portfolios-list",
-    },
-  },
-  {
-    lazy: async () => ({
-      Component: (await import("@/pages/portfolios/detail")).PortfolioDetailPage,
-    }),
-    path: "/portfolios/:portfolioId",
-    requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-    routeMetadata: {
-      archetype: "detail",
-      breadcrumb: {
-        parent: { href: "/portfolios", title: "Portfolios" },
-        title: "Portfolio Detail",
-      },
-      nav: {
-        group: FINANCE_WORKSPACE_LABEL,
-        iconName: "Briefcase",
-        label: "Portfolios",
-        path: "/portfolios",
-        sidebar: false,
-        testId: "nav-portfolios",
-      },
-      shellMode: "scroll",
-      widthMode: "wide",
-      stateVariants: [
-        "loading",
-        "ready",
-        "error",
-        "notFound",
-        "disabledExtension",
-      ],
-      testId: "route-portfolio-detail",
-    },
-  },
-  {
     lazy: async () => ({
       Component: (await import("@/pages/templates/list")).TemplateListPage,
     }),
@@ -300,10 +224,6 @@ export const financeWorkspaceFrontendExtension = {
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
       toolKeyPrefix: "signaldeck.finance.insider_data.",
-    },
-    {
-      requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
-      toolKeyPrefix: "signaldeck.finance.positions.",
     },
     {
       requiredExtensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,

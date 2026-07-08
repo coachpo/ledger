@@ -78,13 +78,6 @@ FINANCE_WORKSPACE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...]
         owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
     ),
     ServerDeclaredToolSpec(
-        key="signaldeck.finance.positions.lookup",
-        display_name="Position Lookup",
-        description="Read persisted SignalDeck positions through server-owned position lookups.",
-        module=_SERVER_DECLARED_MODULE,
-        owner_extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
-    ),
-    ServerDeclaredToolSpec(
         key="signaldeck.finance.reports.lookup",
         display_name="Report Lookup",
         description="Read persisted SignalDeck reports through server-owned report lookups.",

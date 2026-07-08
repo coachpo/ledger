@@ -167,7 +167,7 @@ export function TemplateListPage() {
         !templatesQuery.isError &&
         templates.length === 0 ? (
           <InventoryStatePanel
-            description="Create a reusable markdown template with portfolio, report, and runtime-input placeholders."
+            description="Create a reusable markdown template with runtime input and report placeholders."
             testId="templates-empty-state"
             title="No templates yet."
           />

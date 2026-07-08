@@ -23,12 +23,12 @@ describe("runtime-inputs", () => {
   it("creates row lists from runtime input maps", () => {
     const runtimeInputs = {
       ticker: "MSFT",
-      portfolio_slug: "growth",
+      analysis_tag: "daily_research",
     } satisfies RuntimeInputMap;
 
     expect(createRuntimeInputRows("report", runtimeInputs)).toEqual([
       expect.objectContaining({ key: "ticker", value: "MSFT" }),
-      expect.objectContaining({ key: "portfolio_slug", value: "growth" }),
+      expect.objectContaining({ key: "analysis_tag", value: "daily_research" }),
     ]);
   });
 
@@ -36,7 +36,7 @@ describe("runtime-inputs", () => {
     const rows = [
       { id: "one", key: " ticker ", value: " MSFT " },
       { id: "two", key: "", value: "ignored" },
-      { id: "three", key: "portfolio_slug", value: "   " },
+      { id: "three", key: "analysis_tag", value: "   " },
     ];
 
     expect(buildRuntimeInputs(rows)).toEqual({ ticker: "MSFT" });

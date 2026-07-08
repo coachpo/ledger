@@ -20,13 +20,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Portfolio CRUD / existence checks | `portfolio_service.py` | shared portfolio lookup boundary for other services |
-| Balance workflows | `balance_service.py` | balance CRUD + validation |
-| Position workflows | `position_service.py` | manual position CRUD plus symbol-name lookup cache |
-| CSV import preview/commit | `csv_import_service.py` | atomic preview/commit contract |
-| Trading simulation rules | `trading_operation_service.py` | BUY/SELL/DIVIDEND/SPLIT + balance/position effects |
-| Quote/history/cache logic | `market_data_service.py` | `QuoteProvider`, fallback cache, stale/warning behavior |
-| Template placeholder resolution | `template_compiler_service.py` | `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, and report re-compilation |
+| Quote/history/cache logic | `market_data_service.py` | `QuoteProvider`, fallback cache, stale/warning behavior for runtime tools |
+| Template placeholder resolution | `template_compiler_service.py` | `{{inputs...}}` and `{{reports...}}` trees, inline compile, stored compile, dynamic selectors, and report re-compilation |
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Quote/social provider contracts | `quote_provider.py`, `social_sentiment_provider.py`, `social_sentiment_service.py` | provider protocols, Yahoo/deterministic quotes, Reddit/StockTwits sentiment adapters, degraded warnings |
@@ -42,13 +37,11 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 - Persistence-backed domain services are constructed with a `Session` and compose repositories or dependent services in `__init__`.
-- Public methods validate portfolio, balance, or position existence before mutating related state.
 - Multi-step writes commit once inside the service and rollback on exceptions; routers should not manage those transactions.
 - Return API-facing read models via `*.model_validate(...)`, not ORM objects.
 - `quote_provider.py` and `social_sentiment_provider.py` own provider protocols and data-transfer objects; concrete HTTP response shapes should not leak into service methods.
 - `app.extensions.signaldeck_finance.provider_factories` creates quote and social sentiment providers; services consume factories/dependencies instead of constructing providers ad hoc.
-- `PositionService` may consult the quote provider to resolve symbol names and caches successful lookups in `symbol_name_cache`; lookup failures should not block manual position CRUD.
-- `TemplateCompilerService` resolves the `{{inputs...}}`, `{{portfolios...}}`, and `{{reports...}}` placeholder contract against repositories and runtime input maps; it powers inline preview compile, stored-template compile, exact-name report embeds, dynamic report selectors, and report-content re-compilation with cycle detection.
+- `TemplateCompilerService` resolves the `{{inputs...}}` and `{{reports...}}` placeholder contract against repositories and runtime input maps; it powers inline preview compile, stored-template compile, exact-name report embeds, dynamic report selectors, and report-content re-compilation with cycle detection.
 - `ReportService` treats `source` as report origin: `compiled` for template snapshots, `uploaded` for markdown uploads, `external` for true external user/API-created JSON reports, and `agent` for historical agent-origin reports.
 - Model-visible prompt and tool-output projections stay report-free: no report ids, slugs, names, raw markdown, URLs, downloads, or audit links.
 - `model_gateway*.py` owns provider-protocol execution, output/tool validation, and official-SDK adapter behavior; persisted connection state, capability probes, and capability and runtime-profile truth stay in the `model_connection_*` services.
@@ -66,7 +59,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not commit from routers or repositories when a service already owns the workflow.
 - Do not bypass repository or service helpers inside trade flows just to mutate ORM models inline.
 - Do not treat quote-provider failures as fatal if the existing cache and warning path should keep the request usable.
-- Do not change CSV preview or commit payloads without updating backend tests and frontend callers.
 - Do not change template placeholder paths or compile payloads without updating backend tests, frontend types, and the template editor.
 - Do not change report compile/upload/download contracts, slug generation, or `reports.<name>.content` cycle handling without updating backend tests and frontend callers.
 - Do not bypass `ExtensionService` or extension-owned factories to expose finance tools/providers when `signaldeck.finance` is disabled.
@@ -85,7 +77,6 @@ uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extensio
 ```
 
 ## NOTES
-- `TradingOperationService` may delete positions on full sell-down and supports DIVIDEND/SPLIT as well as BUY/SELL.
 - `MarketDataService` caches quotes by provider/symbol/as-of and recomputes staleness when falling back to cached rows.
 - `ModelConnectionService` preserves stored keys on blank edit, records last connection-test results, archives instead of hard-deleting, and masks secrets in user-facing messages.
 - `RunService` persists run status, totals, package provenance, optional Logfire trace/span identifiers, scheduled run/fire metadata, rerun lineage, dependency-only extension records, and per-step/per-agent detail for the run monitor.

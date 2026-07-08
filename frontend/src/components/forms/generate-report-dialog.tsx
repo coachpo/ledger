@@ -202,8 +202,8 @@ export function GenerateReportDialog({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Use key/value pairs like `ticker`, `portfolio_slug`, or
-              `analysis_tag` when the selected template is parameterized.
+              Use key/value pairs like `ticker`, `analysis_tag`, or
+              `review_type` when the selected template is parameterized.
             </p>
             {runtimeInputRows.length === 0 ? (
               <p className="text-xs italic text-muted-foreground">

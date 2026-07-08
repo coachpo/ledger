@@ -147,7 +147,7 @@ def test_extensions_openapi_contract_exposes_slim_state(client: TestClient) -> N
 def test_extension_disabled_error_contract_helper() -> None:
     error = extension_disabled_error(
         extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,
-        surface="/api/v1/portfolios",
+        surface="/api/v1/templates",
     )
 
     assert error.status_code == status.HTTP_403_FORBIDDEN
@@ -156,7 +156,7 @@ def test_extension_disabled_error_contract_helper() -> None:
     assert error.details == [
         {
             "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "/api/v1/portfolios",
+            "surface": "/api/v1/templates",
         }
     ]
 

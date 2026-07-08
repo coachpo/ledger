@@ -18,8 +18,7 @@ REPORT_LOOKUP_OPENAI_FUNCTION_NAME = "signaldeck_finance_reports_lookup"
 
 _REPORT_LOOKUP_DISPLAY_NAME = "Report Lookup"
 _REPORT_LOOKUP_DESCRIPTION = (
-    "Read persisted SignalDeck reports by ticker, tag, review type, portfolio slug, source, "
-    "limit, and offset."
+    "Read persisted SignalDeck reports by ticker, tag, review type, source, limit, and offset."
 )
 _REPORT_LOOKUP_GUIDANCE = (
     "When you need persisted SignalDeck report context, call the "
@@ -31,7 +30,6 @@ _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "ticker": {"type": ["string", "null"]},
         "tag": {"type": ["string", "null"]},
         "reviewType": {"type": ["string", "null"]},
-        "portfolioSlug": {"type": ["string", "null"]},
         "source": {
             "type": ["string", "null"],
             "enum": ["compiled", "uploaded", "external", "agent", None],
@@ -47,7 +45,6 @@ _REPORT_LOOKUP_PARAMETERS_SCHEMA: dict[str, object] = {
         "ticker",
         "tag",
         "reviewType",
-        "portfolioSlug",
         "source",
         "limit",
         "offset",
@@ -74,7 +71,7 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         )
     raw_arguments = cast(dict[str, object], raw_payload)
 
-    allowed_keys = {"ticker", "tag", "reviewType", "portfolioSlug", "source", "limit", "offset"}
+    allowed_keys = {"ticker", "tag", "reviewType", "source", "limit", "offset"}
     unexpected_keys = sorted(set(raw_arguments) - allowed_keys)
     if unexpected_keys:
         raise RuntimeToolError(
@@ -101,7 +98,6 @@ def parse_report_lookup_arguments(arguments_json: str) -> dict[str, object]:
         "ticker": ticker,
         "tag": _parse_optional_string_argument(raw_arguments.get("tag")),
         "review_type": _parse_optional_string_argument(raw_arguments.get("reviewType")),
-        "portfolio_slug": _parse_optional_string_argument(raw_arguments.get("portfolioSlug")),
         "source": source,
         "limit": _parse_optional_integer_argument(
             raw_arguments.get("limit"),
@@ -130,7 +126,6 @@ def execute_report_lookup(
             ticker=cast(str | None, arguments["ticker"]),
             tag=cast(str | None, arguments["tag"]),
             review_type=cast(str | None, arguments["review_type"]),
-            portfolio_slug=cast(str | None, arguments["portfolio_slug"]),
             source=cast(str | None, arguments["source"]),
             limit=cast(int, arguments["limit"]),
             offset=cast(int, arguments["offset"]),

@@ -23,80 +23,7 @@ const STATIC_PLACEHOLDER_GROUPS: PlaceholderReferenceGroup[] = [
     items: [
       { path: "inputs", type: "object" },
       { path: "inputs.ticker", type: "string" },
-      { path: "inputs.portfolio_slug", type: "string" },
       { path: "inputs.analysis_tag", type: "string" },
-    ],
-  },
-  {
-    title: "Portfolio",
-    items: [
-      { path: "portfolios", type: "list" },
-      { path: "portfolios.<slug>", type: "object" },
-      { path: "portfolios.<slug>.name", type: "string" },
-      { path: "portfolios.<slug>.description", type: "string" },
-      { path: "portfolios.<slug>.position_count", type: "number" },
-      { path: "portfolios.<slug>.balance_count", type: "number" },
-      { path: "portfolios.<slug>.total_value", type: "number" },
-      { path: "portfolios.<slug>.unrealized_pnl", type: "number" },
-      { path: "portfolios.<slug>.created_at", type: "datetime" },
-      { path: "portfolios.<slug>.updated_at", type: "datetime" },
-    ],
-  },
-  {
-    title: "Dynamic Portfolio Selectors",
-    items: [
-      {
-        path: "portfolios.by_slug(inputs.portfolio_slug).name",
-        type: "string",
-      },
-      {
-        path: "portfolios.by_slug(inputs.portfolio_slug).positions",
-        type: "list",
-      },
-      {
-        path: "portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).quantity",
-        type: "string",
-      },
-      {
-        path: "portfolios.by_slug(inputs.portfolio_slug).positions.by_symbol(inputs.ticker).market_value",
-        type: "number",
-      },
-    ],
-  },
-  {
-    title: "Balance",
-    items: [
-      { path: "portfolios.<slug>.balance", type: "object" },
-      { path: "portfolios.<slug>.balance.label", type: "string" },
-      { path: "portfolios.<slug>.balance.amount", type: "string" },
-      { path: "portfolios.<slug>.balance.operation_type", type: "string" },
-      { path: "portfolios.<slug>.balance.currency", type: "string" },
-    ],
-  },
-  {
-    title: "Position",
-    items: [
-      { path: "portfolios.<slug>.positions", type: "list" },
-      { path: "portfolios.<slug>.positions.<SYMBOL>", type: "object" },
-      { path: "portfolios.<slug>.positions.<SYMBOL>.quantity", type: "string" },
-      {
-        path: "portfolios.<slug>.positions.<SYMBOL>.average_cost",
-        type: "string",
-      },
-      { path: "portfolios.<slug>.positions.<SYMBOL>.currency", type: "string" },
-      { path: "portfolios.<slug>.positions.<SYMBOL>.name", type: "string" },
-      {
-        path: "portfolios.<slug>.positions.<SYMBOL>.market_value",
-        type: "number",
-      },
-      {
-        path: "portfolios.<slug>.positions.<SYMBOL>.unrealized_pnl",
-        type: "number",
-      },
-      {
-        path: "portfolios.<slug>.positions.<SYMBOL>.unrealized_pnl_percent",
-        type: "number",
-      },
     ],
   },
   {
@@ -188,20 +115,6 @@ export function TemplatePlaceholderReference({
             />
           ))}
 
-          {placeholderTree?.portfolios.map((portfolio) => (
-            <PlaceholderGroup
-              key={portfolio.slug}
-              title={portfolio.name}
-              items={[
-                { path: `portfolios.${portfolio.slug}`, type: "object" },
-                ...portfolio.positions.map((position) => ({
-                  path: `portfolios.${portfolio.slug}.positions.${position.symbol}`,
-                  type: "object",
-                })),
-              ]}
-              onInsert={onInsert}
-            />
-          ))}
           {placeholderTree?.reports.map((report) => (
             <PlaceholderGroup
               key={report.name}

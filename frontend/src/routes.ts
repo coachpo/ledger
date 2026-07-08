@@ -16,6 +16,12 @@ const financeWorkspaceRoutes: AppRouteDefinition[] =
   assembleFinanceWorkspaceRoutes();
 const platformRoutes: AppRouteDefinition[] = [
   {
+    index: true,
+    lazy: async () => ({
+      Component: (await import("./pages/dashboard")).Dashboard,
+    }),
+  },
+  {
     path: "extensions",
     lazy: async () => ({
       Component: (await import("./pages/extensions/list")).ExtensionsListPage,

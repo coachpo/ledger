@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file covers shared components, feature-specific components, and UI primitives in `src/components/`.
 
 ## OVERVIEW
-`src/components/` contains the layout shell, theme system, shared component library, small cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, portfolio-specific UI folders, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, while `src/components/shared/docs/README.md` defines the shared UI contract these components implement.
+`src/components/` contains the layout shell, theme system, shared component library, small cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, while `src/components/shared/docs/README.md` defines the shared UI contract these components implement.
 
 Extension model: statically resident extension runtime nav groups and extension state.
 
@@ -27,13 +27,11 @@ src/components/
 ├── theme-toggle.tsx        # header control for light/dark/system
 ├── theme.ts                # theme context types
 ├── shared/                 # reusable components across features
-├── forms/                  # small cross-feature dialog/form helpers for templates, reports, portfolios, and model-connection secrets
+├── forms/                  # small cross-feature dialog/form helpers for templates, reports, and model-connection secrets
 │   └── AGENTS.md
 ├── platform-authoring/     # schema composer, generated forms, workflow builder, refs, inspectors
 │   └── AGENTS.md
 ├── templates/              # template-editor support components and placeholder/runtime-input UI
-│   └── AGENTS.md
-├── portfolios/             # portfolio feature-specific components
 │   └── AGENTS.md
 └── ui/                     # shadcn/ui primitives and helpers
 ```
@@ -44,10 +42,9 @@ src/components/
 | App shell / navigation | `layout.tsx`, `shared/error-boundary.tsx` | sidebar shell, metadata-driven shell/width framing, and route-safe fallback UI |
 | Theme behavior | `theme-provider.tsx`, `theme-toggle.tsx`, `theme.ts` | persisted theme state and system-sync logic |
 | Shared components | `shared/AGENTS.md` | reusable inventory/workspace shells, resource chrome, evidence helpers, tables, management-list actions/selection, metrics, and field schemas |
-| Cross-route dialogs and form helpers | `forms/AGENTS.md`, `forms/portfolio-form-dialog.tsx`, `forms/generate-report-dialog.tsx`, `forms/report-upload-dialog.tsx`, `forms/secret-input.tsx`, `shared/confirm-delete-dialog.tsx` | small shared dialogs, destructive confirmations, uploads, and write-only secret input UI |
+| Cross-route dialogs and form helpers | `forms/AGENTS.md`, `forms/generate-report-dialog.tsx`, `forms/report-upload-dialog.tsx`, `forms/secret-input.tsx`, `shared/confirm-delete-dialog.tsx` | small shared dialogs, destructive confirmations, uploads, and write-only secret input UI |
 | Platform authoring widgets | `platform-authoring/AGENTS.md` | schema composer, generated form, workflow builder, refs, inspectors |
 | Template-editor support UI | `templates/AGENTS.md` | placeholder reference and runtime-input surfaces used by template routes |
-| Portfolio feature UI | `portfolios/AGENTS.md` | sections, dialogs, trading form, feature-specific logic |
 | Pure UI primitives | `ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 
 ## CHILD DOCS
@@ -56,18 +53,16 @@ src/components/
 - `platform-authoring/AGENTS.md` — schema composer, generated form, workflow builder, refs, and inspectors
 - `forms/AGENTS.md` — small cross-route dialogs, report-generation/upload forms, and write-only secret input UI
 - `templates/AGENTS.md` — template-editor support components such as placeholder reference and runtime-input sections
-- `portfolios/AGENTS.md` — portfolio feature sections, dialogs, and trades UI
 - `ui/AGENTS.md` — presentational shadcn/ui wrappers, sidebar context, and shared style helpers
 
 ## CONVENTIONS
 - Routed page components live in `src/pages/` and are thin route-layer components.
-- Shared components in `shared/` are reusable across multiple features and should not contain portfolio-specific request logic.
+- Shared components in `shared/` are reusable across multiple features and should not contain feature-specific request logic.
 - `shared/` is where the app keeps reusable inventory/workspace shells, resource chrome, data tables, management-list actions/selection helpers, metric cards, field schemas, and error boundaries; if a component only makes sense inside one feature route, keep it out of this folder.
-- `forms/` is reserved for small cross-feature form surfaces such as portfolio creation/editing, shared report-generation dialogs reused by template/report routes, and write-only secret inputs used by model-connection flows.
+- `forms/` is reserved for small cross-feature form surfaces such as shared report-generation dialogs reused by template/report routes and write-only secret inputs used by model-connection flows.
 - Form/dialog components accept data and callbacks from parents; they should not own navigation, toasts, hooks, or direct API calls.
 - `platform-authoring/` is reserved for reusable agent-platform authoring widgets driven by `src/lib/platform-authoring/**`.
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
-- Feature-specific components in `portfolios/` own their domain logic and should not be reused outside that feature without a clear abstraction.
 - Preserved product and agent-platform routes stay page-centric and reuse shared components; platform-authoring widgets are the exception because schema/value/ref/workflow UIs are shared across package-local agents, output schemas, capability profiles, MCP configs, and workflow graphs.
 - `Layout` consumes route metadata plus extension runtime nav groups/state; shell mode, width mode, breadcrumbs, and sidebar composition belong there, not in leaf pages or sidebar primitives.
 - Shared route-shell patterns such as inventory stacks, workspace shells, and split inspectors belong in `shared/`, not in `ui/` or copied page-local wrappers.
@@ -79,7 +74,6 @@ src/components/
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not put business rules or raw request code in `ui/` components.
 - Do not put feature-specific logic in `shared/` components.
-- Do not duplicate portfolio feature rules in shared components when the portfolio folder already owns them.
 - Do not move feature-rich components into `ui/` just because they render cards or forms.
 - Do not create one-off form helpers in feature folders when they should live in `forms/` or a shared dialog component.
 - Do not let form/dialog helpers own navigation, toasts, hooks, or API calls when the parent route should supply that behavior.

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, Extensions, Workflow Packages, Scheduled Tasks, Tools, Model Connections, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
+`src/lib/types/` mirrors the backend wire contracts for templates, reports, Extensions, Workflow Packages, Scheduled Tasks, Tools, Model Connections, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
 
 Extension model: statically resident extension state.
 
@@ -22,12 +22,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Portfolio, balance, and position types | `portfolio.ts`, `balance.ts`, `position.ts` | preserved product CRUD payloads plus read models |
-| Trading payload unions | `trading.ts` | BUY, SELL, DIVIDEND, and SPLIT request shapes |
-| Market data types | `market-data.ts` | quote, history, and warning payloads |
 | Template contract | `text-template.ts` | template CRUD, compile payloads, runtime-input maps, and placeholder tree |
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
-| Shared helpers | `common.ts`, `csv.ts` | common ids, timestamps, and CSV preview shapes |
+| Shared helpers | `common.ts` | common ids and timestamps |
 | Extension state contract | `extension.ts` | statically resident extension `key`, `label`, `enabled`, and toggle payloads |
 | Workflow Package contracts | `workflow-package.ts` | package manifests, secret bindings, versions, diagnostics, preflight, launch, import, and export payloads |
 | Workflow Package authoring contracts | `workflow-package.ts`, `../platform-authoring/schema/types.ts` | package manifest API payloads and local schema-builder IR |
@@ -38,7 +35,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## CONVENTIONS
 - Keep frontend field names aligned with backend camelCase aliases; do not reintroduce snake_case here.
 - Money, quantities, market values, and similar numeric payloads stay as strings on the wire; conversion belongs in shared formatting and analytics helpers, not in the type layer.
-- Model enum-like values as exact string unions so invalid report sources, trading sides, and platform status values fail at compile time.
+- Model enum-like values as exact string unions so invalid report sources and platform status values fail at compile time.
 - Use these files for API shapes only; derive view models separately when the UI needs extra formatting or enrichment.
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.
 - Keep route forms, hook inputs, extension-state consumers, and shared type names aligned with the current backend contract.
@@ -50,7 +47,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not declare ad-hoc wire types inside hooks or page components.
-- Do not collapse backend distinctions such as slug-based report lookup vs numeric portfolio ids or versioned platform references.
+- Do not collapse backend distinctions such as slug-based report lookup vs versioned platform references.
 - Do not convert decimal strings to numbers at the type layer.
 - Do not change template, report, extension, Scheduled Task, or agent-platform payload shapes without coordinating backend schemas, hooks, and tests.
 

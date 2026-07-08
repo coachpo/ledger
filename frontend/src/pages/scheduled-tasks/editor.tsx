@@ -172,8 +172,8 @@ function TemplateVariableRows({ rows, onRowsChange }: { rows: RuntimeInputRow[];
       </div>
       {rows.map((row) => (
         <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(8rem,14rem)_minmax(0,1fr)]" key={row.id}>
-          <Input aria-label={`Template variable key ${row.key || row.id}`} className="h-8 text-xs" placeholder="portfolioSlug" value={row.key} onChange={(event) => updateRow(row.id, "key", event.target.value)} />
-          <Input aria-label={`Template variable value ${row.key || row.id}`} className="h-8 text-xs" placeholder="core_portfolio" value={row.value} onChange={(event) => updateRow(row.id, "value", event.target.value)} />
+          <Input aria-label={`Template variable key ${row.key || row.id}`} className="h-8 text-xs" placeholder="analysisTag" value={row.key} onChange={(event) => updateRow(row.id, "key", event.target.value)} />
+          <Input aria-label={`Template variable value ${row.key || row.id}`} className="h-8 text-xs" placeholder="daily_research" value={row.value} onChange={(event) => updateRow(row.id, "value", event.target.value)} />
         </div>
       ))}
     </div>
