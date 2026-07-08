@@ -40,6 +40,12 @@ export function getRun(runId: IdParam, signal?: AbortSignal): Promise<RunRead> {
   return requestPlatform<RunRead>(runPath(runId), { signal });
 }
 
+export function cancelRun(runId: IdParam): Promise<RunRead> {
+  return requestPlatform<RunRead>(`${runPath(runId)}/cancel`, {
+    method: "POST",
+  });
+}
+
 export function getRunRerunDraft(
   runId: IdParam,
   signal?: AbortSignal,
@@ -58,6 +64,7 @@ export function createRunRerun(
 }
 
 export const runsApi = {
+  cancel: cancelRun,
   createRerun: createRunRerun,
   get: getRun,
   getRerunDraft: getRunRerunDraft,

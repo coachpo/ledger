@@ -131,6 +131,22 @@ describe("runs api", () => {
     expect(init?.body).toBe(JSON.stringify({ parameters: { ticker: "MSFT" } }));
   });
 
+  it("cancels runs through the platform cancel endpoint", async () => {
+    const { cancelRun } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 42, status: "cancelled" }, 200));
+
+    await expect(cancelRun(42)).resolves.toEqual({
+      id: 42,
+      status: "cancelled",
+    });
+
+    const { init, url } = getLastFetchCall(fetchMock);
+
+    expect(`${url.origin}${url.pathname}`).toBe("https://signaldeck.example.com/api/runs/42/cancel");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeUndefined();
+  });
+
   it("reads run details from the run endpoint", async () => {
     const { getRun } = await loadRunsApi("https://signaldeck.example.com/api/v1/");
     const runDetail = {

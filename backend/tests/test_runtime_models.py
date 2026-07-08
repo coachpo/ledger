@@ -235,7 +235,7 @@ def test_agent_platform_run_models_persist_steps_invocations_totals_timestamps_a
         assert stored_run.queued_at == queued_at
 
 
-def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_status(
+def test_agent_platform_run_model_allows_queued_cancelled_statuses_and_rejects_unknown_status(
     session_factory,
 ) -> None:
     queued_at = datetime(2026, 4, 20, 11, 0, tzinfo=UTC_TZ)
@@ -262,11 +262,29 @@ def test_agent_platform_run_model_allows_queued_status_and_rejects_unknown_statu
         assert queued_run.started_at is None
         assert queued_run.finished_at is None
 
+        cancelled_run = _build_run(
+            target_id=1,
+            target_key="queued_workflow_package",
+            status=RunStatus.CANCELLED.value,
+            final_output=None,
+            total_tokens=0,
+            trace_id=None,
+            started_at=None,
+            finished_at=queued_at,
+            workflow_key="queued_workflow",
+        )
+        session.add(cancelled_run)
+        session.commit()
+        session.refresh(cancelled_run)
+
+        assert cancelled_run.status == "cancelled"
+        assert cancelled_run.finished_at == queued_at
+
         session.add(
             _build_run(
                 target_id=1,
                 target_key="queued_workflow_package",
-                status="cancelled",
+                status="abandoned",
                 final_output=None,
                 total_tokens=0,
                 trace_id=None,

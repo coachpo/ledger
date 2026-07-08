@@ -16,6 +16,7 @@ from app.schemas.run import (
 from app.services.run_service import RunService
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+RunServiceDep = Annotated[RunService, Depends(get_run_service)]
 
 
 @router.get("", response_model=RunListRead)
@@ -64,15 +65,20 @@ def create_run_rerun(
 @router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_run(
     run_id: int,
-    service: Annotated[RunService, Depends(get_run_service)],
+    service: RunServiceDep,
 ) -> Response:
     service.delete_run(run_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{run_id}/cancel", response_model=RunRead)
+def cancel_run(run_id: int, service: RunServiceDep) -> RunRead:
+    return service.cancel_run(run_id)
+
+
 @router.get("/{run_id}", response_model=RunRead)
 def get_run(
     run_id: int,
-    service: Annotated[RunService, Depends(get_run_service)],
+    service: RunServiceDep,
 ) -> RunRead:
     return service.get_run(run_id)

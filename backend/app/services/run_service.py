@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
+from fastapi import status
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -111,6 +112,13 @@ _RUN_STATUS_QUEUED = "queued"
 _RUN_STATUS_RUNNING = "running"
 _RUN_STATUS_SUCCEEDED = "succeeded"
 _RUN_STATUS_FAILED = "failed"
+_RUN_STATUS_CANCELLED = "cancelled"
+_RUN_TERMINAL_STATUSES = {
+    _RUN_STATUS_SUCCEEDED,
+    _RUN_STATUS_FAILED,
+    _RUN_STATUS_CANCELLED,
+}
+_RUN_CANCELLED_MESSAGE = "cancelled by operator"
 
 
 @dataclass(frozen=True)
@@ -272,6 +280,37 @@ class RunService:
 
     def get_run(self, run_id: int) -> RunRead:
         return self._run_read_projection.to_read_model(self._get_run_or_raise(run_id))
+
+    def cancel_run(self, run_id: int) -> RunRead:
+        try:
+            run = self.session.scalar(select(Run).where(Run.id == run_id).with_for_update())
+            if run is None:
+                raise not_found_error("Run")
+            cancelled_at = utcnow()
+            if run.status == _RUN_STATUS_QUEUED:
+                run.cancel_requested_at = cancelled_at
+                run.status = _RUN_STATUS_CANCELLED
+                run.error = _RUN_CANCELLED_MESSAGE
+                run.finished_at = cancelled_at
+                run.lease_owner = None
+                run.lease_expires_at = None
+                run.heartbeat_at = None
+                self._skip_pending_steps_for_cancellation(
+                    run_id=run.id,
+                    from_step_index=1,
+                    now=cancelled_at,
+                )
+            elif run.status == _RUN_STATUS_RUNNING:
+                run.cancel_requested_at = run.cancel_requested_at or cancelled_at
+            elif run.status in _RUN_TERMINAL_STATUSES:
+                raise self._run_cancel_conflict_error(run.status)
+            else:
+                raise self._run_cancel_conflict_error(run.status)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        return self.get_run(run_id)
 
     def delete_run(self, run_id: int) -> None:
         run = self.run_repository.get(run_id)
@@ -503,6 +542,14 @@ class RunService:
             "workflow_package_run_artifact_unavailable",
             message,
             details=[{"field": "packageProvenance", "issue": message}],
+        )
+
+    @staticmethod
+    def _run_cancel_conflict_error(current_status: str) -> ApiError:
+        return ApiError(
+            status_code=status.HTTP_409_CONFLICT,
+            code="run_cancel_conflict",
+            message=f"Cannot cancel a run with status {current_status!r}.",
         )
 
     @staticmethod
@@ -1159,7 +1206,11 @@ class RunService:
         executed_tokens = 0
 
         for step in plan.steps:
-            if not self._run_claim_is_active(run, lease_owner=lease_owner):
+            if self._stop_if_cancel_requested(
+                run,
+                lease_owner=lease_owner,
+                from_step_index=step.index,
+            ):
                 return
             slot_outputs = self._hydrate_slot_outputs(run.id, before_step_index=step.index)
             run_step = self._get_planned_step_or_raise(run_id=run.id, step_index=step.index)
@@ -1200,6 +1251,12 @@ class RunService:
             for slot, value in step_slot_outputs.items():
                 slot_outputs[(step.index, slot)] = value
 
+        if self._stop_if_cancel_requested(
+            run,
+            lease_owner=lease_owner,
+            from_step_index=len(plan.steps) + 1,
+        ):
+            return
         slot_outputs = self._hydrate_slot_outputs(run.id)
         final_output, final_error = self._resolve_final_output(
             plan=plan,
@@ -1230,6 +1287,35 @@ class RunService:
         if current is None or current.status != _RUN_STATUS_RUNNING:
             return False
         return lease_owner is None or current.lease_owner == lease_owner
+
+    def _stop_if_cancel_requested(
+        self,
+        run: Run,
+        *,
+        lease_owner: str | None,
+        from_step_index: int,
+    ) -> bool:
+        current = self._refresh_run_for_claim_check(run)
+        if current is None or current.status != _RUN_STATUS_RUNNING:
+            self.session.rollback()
+            return True
+        if lease_owner is not None and current.lease_owner != lease_owner:
+            self.session.rollback()
+            return True
+        if current.cancel_requested_at is None:
+            return False
+
+        cancelled_at = utcnow()
+        self._skip_pending_steps_for_cancellation(
+            run_id=current.id,
+            from_step_index=from_step_index,
+            now=cancelled_at,
+        )
+        current.status = _RUN_STATUS_CANCELLED
+        current.error = _RUN_CANCELLED_MESSAGE
+        current.finished_at = cancelled_at
+        self.session.commit()
+        return True
 
     def _refresh_run_for_claim_check(self, run: Run) -> Run | None:
         self.session.expire(run)
@@ -1428,6 +1514,47 @@ class RunService:
             duration_ms=duration_ms,
             trace_span_id=trace_span_id,
         )
+
+    def _skip_pending_steps_for_cancellation(
+        self,
+        *,
+        run_id: int,
+        from_step_index: int,
+        now: datetime,
+    ) -> None:
+        for step in self.run_step_repository.list_by_run(run_id):
+            if step.step_index < from_step_index or step.status != "pending":
+                continue
+            _ = self.run_step_repository.persist_skipped(
+                step,
+                error=_RUN_CANCELLED_MESSAGE,
+                finished_at=now,
+                persisted_at=now,
+            )
+            for invocation in self.run_agent_invocation_repository.list_by_run_step(
+                run_id,
+                step.step_index,
+            ):
+                if invocation.status == "pending":
+                    _ = self.run_agent_invocation_repository.persist_skipped(
+                        invocation,
+                        error_code="run_cancelled",
+                        error_message=_RUN_CANCELLED_MESSAGE,
+                        finished_at=now,
+                        persisted_at=now,
+                    )
+            for operation in self.run_operation_invocation_repository.list_by_run_step(
+                run_id,
+                step.step_index,
+            ):
+                if operation.status == "pending":
+                    _ = self.run_operation_invocation_repository.persist_skipped(
+                        operation,
+                        error_code="run_cancelled",
+                        error_message=_RUN_CANCELLED_MESSAGE,
+                        finished_at=now,
+                        persisted_at=now,
+                    )
 
     def _skip_pending_steps_after_failure(self, *, run_id: int, after_step_index: int) -> None:
         for step in self.run_step_repository.list_by_run(run_id):

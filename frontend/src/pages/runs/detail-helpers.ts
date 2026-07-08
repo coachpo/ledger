@@ -91,7 +91,13 @@ export function progressForInvocations(
 }
 
 export function formatUnfinishedRunStatus(status: RunStatus): string {
-  return status === "queued" ? " · Queued" : " · Still running";
+  if (status === "queued") {
+    return " · Queued";
+  }
+  if (status === "cancelled") {
+    return " · Cancelled";
+  }
+  return " · Still running";
 }
 
 export function formatQueueReasonTitle(reason: RunQueueReason): string {
@@ -109,6 +115,10 @@ export function runStatusTone(
 
   if (status === "failed") {
     return "danger";
+  }
+
+  if (status === "cancelled") {
+    return "neutral";
   }
 
   return status === "queued" ? "warning" : "neutral";

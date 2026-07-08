@@ -9,7 +9,13 @@ import { useRuns } from "@/hooks/use-runs";
 import { RunsTable } from "@/pages/runs/list";
 import type { RunStatus } from "@/lib/types/run";
 
-const RUN_STATUSES: RunStatus[] = ["queued", "running", "succeeded", "failed"];
+const RUN_STATUSES: RunStatus[] = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+];
 
 function DashboardHeader() {
   return (
@@ -75,7 +81,7 @@ export function Dashboard() {
   return (
     <div className="flex max-w-7xl flex-col gap-4 p-4" data-testid="dashboard-page">
       <DashboardHeader />
-      <div className="grid gap-2 sm:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-5">
         {statusCounts.map(({ count, status }) => (
           <div
             className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2"

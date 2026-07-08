@@ -19,6 +19,7 @@ vi.mock("react-router", () => ({
 }));
 
 vi.mock("@/hooks/use-runs", () => ({
+  useCancelRun: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateRunRerun: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useRun: () => useRunMock(),
   useRunRerunDraft: () => ({ data: undefined, error: null, isError: false, isPending: false }),

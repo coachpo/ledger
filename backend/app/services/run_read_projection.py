@@ -110,7 +110,11 @@ class RunReadProjection:
             + counts[RunStepStatus.SKIPPED.value]
         )
         total_count = sum(counts.values())
-        if run_status in {RunStatus.SUCCEEDED.value, RunStatus.FAILED.value}:
+        if run_status in {
+            RunStatus.SUCCEEDED.value,
+            RunStatus.FAILED.value,
+            RunStatus.CANCELLED.value,
+        }:
             percent = 100
         else:
             percent = 0 if total_count == 0 else terminal_count * 100 // total_count

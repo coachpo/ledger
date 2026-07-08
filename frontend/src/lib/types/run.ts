@@ -10,7 +10,12 @@ import type {
   ModelConnectionStreamingPolicy,
 } from "./model-connection";
 
-export type RunStatus = "queued" | "running" | "succeeded" | "failed";
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 export type RunQueueState = "waiting" | "blocked";
 export type RunQueueReason =
   | "awaiting-worker-capacity"

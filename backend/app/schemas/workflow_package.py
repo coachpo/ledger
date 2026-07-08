@@ -164,7 +164,7 @@ class WorkflowPackageLaunchCreateRequest(CamelModel):
 
 class WorkflowPackageLaunchCreateResponse(CamelModel):
     id: int
-    status: Literal["queued", "running", "succeeded", "failed"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     workflow_package_id: int
     workflow_package_key: str
     workflow_key: str

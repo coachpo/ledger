@@ -7,6 +7,7 @@ const reactQueryState = vi.hoisted(() => ({
 }));
 
 const runsApiState = vi.hoisted(() => ({
+  cancelRunMock: vi.fn(),
   createRunRerunMock: vi.fn(),
   getRunMock: vi.fn(),
   getRunRerunDraftMock: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@/lib/api/runs", () => ({
+  cancelRun: runsApiState.cancelRunMock,
   createRunRerun: runsApiState.createRunRerunMock,
   getRun: runsApiState.getRunMock,
   getRunRerunDraft: runsApiState.getRunRerunDraftMock,
@@ -30,7 +32,8 @@ import { queryKeys } from "@/lib/query-keys";
 import type { RunListRead, RunRead, RunStatus } from "@/lib/types/run";
 import * as runsHooks from "./use-runs";
 
-const { useCreateRunRerun, useRun, useRunRerunDraft, useRuns } = runsHooks;
+const { useCancelRun, useCreateRunRerun, useRun, useRunRerunDraft, useRuns } =
+  runsHooks;
 
 type RefetchIntervalResolver<TData> = (query: {
   state: { data: TData | undefined };
@@ -263,4 +266,23 @@ describe("useRuns hooks", () => {
     });
   });
 
+  it("invalidates run list and detail after cancellation", async () => {
+    reactQueryState.useMutationMock.mockClear();
+    reactQueryState.invalidateQueriesMock.mockClear();
+
+    useCancelRun();
+
+    const mutationOptions = reactQueryState.useMutationMock.mock.calls.at(-1)?.[0] as {
+      onSuccess: (_cancelledRun: unknown, runId: number) => Promise<void>;
+    };
+
+    await mutationOptions.onSuccess({}, 18);
+
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.all,
+    });
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: queryKeys.platform.runs.detail(18),
+    });
+  });
 });

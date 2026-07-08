@@ -13,7 +13,13 @@ from app.schemas.run import (
 
 
 def test_run_status_contract_is_frozen() -> None:
-    assert {status.value for status in RunStatus} == {"queued", "running", "succeeded", "failed"}
+    assert {status.value for status in RunStatus} == {
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+    }
 
 
 def test_run_target_kind_contract_is_package_only() -> None:

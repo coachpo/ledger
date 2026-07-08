@@ -304,7 +304,7 @@ def test_model_connection_delete_allows_current_package_ref_as_future_readiness_
         ]
 
 
-@pytest.mark.parametrize("run_status", ["queued", "running", "succeeded", "failed"])
+@pytest.mark.parametrize("run_status", ["queued", "running", "succeeded", "failed", "cancelled"])
 def test_model_connection_delete_ignores_run_snapshot_refs(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -429,7 +429,7 @@ def test_model_connection_delete_ignores_run_snapshot_refs(
 def test_delete_package_with_queued_running_runs_deletes_package_runs(
     session_factory: sessionmaker[Session],
 ) -> None:
-    statuses = ("queued", "running", "succeeded", "failed")
+    statuses = ("queued", "running", "succeeded", "failed", "cancelled")
     with session_factory() as session:
         package = _seed_workflow_package_target(
             session,

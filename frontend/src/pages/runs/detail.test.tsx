@@ -24,12 +24,18 @@ import { RunsDetailPage } from "./detail";
 import type { RunDetailTabKey } from "./detail-tabs";
 
 const createRunRerunMutateAsyncMock = vi.fn();
+const cancelRunMutateAsyncMock = vi.fn();
 const navigateMock = vi.fn();
 const setSearchParamsMock = vi.fn();
 const runDetailSectionStackPropsMock = vi.fn();
+const useCancelRunMock = vi.fn();
 const useCreateRunRerunMock = vi.fn();
 const useRunRerunDraftMock = vi.fn();
 const useRunMock = vi.fn();
+const toastState = vi.hoisted(() => ({
+  error: vi.fn(),
+  success: vi.fn(),
+}));
 let locationHashMock = "";
 let searchParamsMock = new URLSearchParams();
 
@@ -48,9 +54,17 @@ vi.mock("react-router", () => ({
 }));
 
 vi.mock("@/hooks/use-runs", () => ({
+  useCancelRun: () => useCancelRunMock(),
   useCreateRunRerun: () => useCreateRunRerunMock(),
   useRun: () => useRunMock(),
   useRunRerunDraft: (...args: unknown[]) => useRunRerunDraftMock(...args),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: toastState.error,
+    success: toastState.success,
+  },
 }));
 
 vi.mock("./detail-sections", async (importOriginal) => {
@@ -405,12 +419,20 @@ function latestRunDetailSectionStackProps(): ObservedRunDetailSectionStackProps 
 
 describe("RunsDetailPage", () => {
   beforeEach(() => {
+    cancelRunMutateAsyncMock.mockReset();
     createRunRerunMutateAsyncMock.mockReset();
     navigateMock.mockReset();
     locationHashMock = "";
     runDetailSectionStackPropsMock.mockReset();
     searchParamsMock = new URLSearchParams();
     setSearchParamsMock.mockReset();
+    toastState.error.mockReset();
+    toastState.success.mockReset();
+    useCancelRunMock.mockReset();
+    useCancelRunMock.mockReturnValue({
+      isPending: false,
+      mutateAsync: cancelRunMutateAsyncMock,
+    });
     useCreateRunRerunMock.mockReset();
     useCreateRunRerunMock.mockReturnValue({
       isPending: false,
@@ -788,7 +810,7 @@ describe("RunsDetailPage", () => {
     ["running", "execution"],
     ["queued", "summary"],
     ["failed", "execution"],
-    ["canceled", "summary"],
+    ["cancelled", "summary"],
   ])("defaults %s runs to %s mode", (status, expectedMode) => {
     useRunMock.mockReturnValue(
       queryResult(buildRun({ status: status as RunRead["status"] })),
@@ -2543,6 +2565,83 @@ describe("RunsDetailPage", () => {
       screen.queryByText(/blocked by package serial policy/i),
     ).not.toBeInTheDocument();
   });
+
+  it.each(["queued", "running"] satisfies RunRead["status"][])(
+    "shows cancel for %s runs and submits the cancellation mutation",
+    async (status) => {
+      const run = buildRun({
+        finalOutput: null,
+        finishedAt: null,
+        progress: {
+          percent: status === "queued" ? 0 : 50,
+          terminalCount: status === "queued" ? 0 : 1,
+          totalCount: 2,
+          unit: "invocation",
+        },
+        queue:
+          status === "queued"
+            ? {
+                blockingRunId: null,
+                message: "Eligible to run and waiting for a worker.",
+                reason: "awaiting-worker-capacity",
+                state: "waiting",
+              }
+            : null,
+        status,
+        steps: [
+          buildStep({
+            finishedAt: null,
+            invocations: [
+              buildInvocation({
+                finishedAt: status === "queued" ? null : NOW,
+                status: status === "queued" ? "pending" : "succeeded",
+              }),
+            ],
+            status: status === "queued" ? "pending" : "succeeded",
+          }),
+          buildStep({
+            id: 102,
+            index: 2,
+            invocations: [
+              buildInvocation({
+                finishedAt: null,
+                id: 1002,
+                runStepId: 102,
+                slot: "decision",
+                status: status === "queued" ? "pending" : "running",
+                stepIndex: 2,
+              }),
+            ],
+            status: status === "queued" ? "pending" : "running",
+          }),
+        ],
+      });
+      cancelRunMutateAsyncMock.mockResolvedValue({ ...run, status: "cancelled" });
+      useRunMock.mockReturnValue(queryResult(run));
+
+      render(<RunsDetailPage />);
+
+      fireEvent.click(screen.getByTestId("runs-detail-cancel"));
+
+      await waitFor(() =>
+        expect(cancelRunMutateAsyncMock).toHaveBeenCalledWith(42),
+      );
+      expect(toastState.success).toHaveBeenCalledWith(
+        "Run cancellation requested",
+      );
+    },
+  );
+
+  it.each(["succeeded", "failed"] satisfies RunRead["status"][])(
+    "hides cancel for %s runs",
+    (status) => {
+      useRunMock.mockReturnValue(queryResult(buildRun({ status })));
+
+      render(<RunsDetailPage />);
+
+      expect(screen.queryByTestId("runs-detail-cancel")).not.toBeInTheDocument();
+    },
+  );
 
   it("submits a full rerun with changed root parameters and navigates to the created run", async () => {
     searchParamsMock = new URLSearchParams("rerun=1");

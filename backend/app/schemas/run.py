@@ -15,6 +15,7 @@ class RunStatus(str, Enum):  # noqa: UP042
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class RunQueueState(str, Enum):  # noqa: UP042

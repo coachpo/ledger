@@ -1,13 +1,14 @@
-import { AlertCircle, PlayCircle, Timer } from "lucide-react";
+import { AlertCircle, PlayCircle, StopCircle, Timer } from "lucide-react";
 import { useMemo } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
+import { toast } from "sonner";
 
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useRun } from "@/hooks/use-runs";
+import { useCancelRun, useRun } from "@/hooks/use-runs";
 import { formatDateTime } from "@/lib/format";
 
 import {
@@ -38,6 +39,7 @@ export function RunsDetailPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const runQuery = useRun(runId, { refetchInterval: 2_000 });
+  const cancelRun = useCancelRun();
 
   const steps = useMemo(
     () =>
@@ -142,6 +144,16 @@ export function RunsDetailPage() {
     isTerminalStatus(invocation.status),
   ).length;
   const canRerunRun = run.targetKind === "workflowPackage";
+  const canCancelRun = run.status === "queued" || run.status === "running";
+
+  const handleCancelRun = async () => {
+    try {
+      await cancelRun.mutateAsync(run.id);
+      toast.success("Run cancellation requested");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to cancel run");
+    }
+  };
 
   const updateSelectedTab = (tab: RunDetailTabKey) => {
     setSearchParams((current) => withRunDetailTab(current, tab));
@@ -282,6 +294,20 @@ export function RunsDetailPage() {
           <Link to={`/workflow-packages/${run.packageProvenance.workflowPackageId}`}>
             Open current package
           </Link>
+        </Button>
+      ) : null}
+      {canCancelRun ? (
+        <Button
+          className="cursor-pointer"
+          data-testid="runs-detail-cancel"
+          disabled={cancelRun.isPending}
+          onClick={handleCancelRun}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <StopCircle data-icon="inline-start" />
+          Cancel run
         </Button>
       ) : null}
       {canRerunRun ? (

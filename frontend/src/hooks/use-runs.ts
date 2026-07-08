@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import {
+  cancelRun,
   createRunRerun,
   getRun,
   getRunRerunDraft,
@@ -47,6 +48,20 @@ export type CreateRunRerunVariables = {
   runId: IdParam;
   payload: RunRerunCreateRequest;
 };
+
+export function useCancelRun() {
+  const queryClient = useQueryClient();
+
+  return useMutation<RunRead, Error, IdParam>({
+    mutationFn: cancelRun,
+    onSuccess: async (_cancelledRun, runId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.platform.runs.detail(runId) }),
+      ]);
+    },
+  });
+}
 
 export function useRuns(
   params: RunListParams = {},

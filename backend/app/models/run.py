@@ -20,7 +20,7 @@ class Run(IdMixin, TimestampMixin, Base):
             name="ck_runs_target_kind",
         ),
         CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'failed')",
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
             name="ck_runs_status",
         ),
         CheckConstraint("target_version > 0", name="ck_runs_target_version_positive"),
@@ -123,6 +123,10 @@ class Run(IdMixin, TimestampMixin, Base):
         nullable=True,
     )
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     attempt_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     last_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

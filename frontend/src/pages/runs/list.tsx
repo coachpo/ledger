@@ -57,6 +57,9 @@ function statusTone(
   if (status === "failed") {
     return "danger";
   }
+  if (status === "cancelled") {
+    return "neutral";
+  }
   return status === "queued" ? "warning" : "neutral";
 }
 
@@ -116,6 +119,7 @@ function RunMonitorFilters({
             <SelectItem value="running">running</SelectItem>
             <SelectItem value="succeeded">succeeded</SelectItem>
             <SelectItem value="failed">failed</SelectItem>
+            <SelectItem value="cancelled">cancelled</SelectItem>
           </SelectGroup>
         </SelectContent>
       </Select>

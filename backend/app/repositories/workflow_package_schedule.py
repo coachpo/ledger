@@ -17,6 +17,7 @@ from app.models.workflow_package_schedule import (
 from app.repositories.base import BaseRepository
 
 _ACTIVE_RUN_STATUSES = ("queued", "running")
+_TERMINAL_RUN_STATUSES = ("succeeded", "failed", "cancelled")
 _FIRE_UNIQUE_CONSTRAINT = "uq_workflow_package_schedule_fires_schedule_fire_key"
 
 
@@ -368,7 +369,7 @@ class WorkflowPackageScheduleFireRepository(BaseRepository[WorkflowPackageSchedu
             select(Run)
             .where(
                 Run.schedule_id == schedule_id,
-                Run.status.in_(("succeeded", "failed")),
+                Run.status.in_(_TERMINAL_RUN_STATUSES),
             )
             .order_by(
                 Run.scheduled_for.desc().nulls_last(),
