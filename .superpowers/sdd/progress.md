@@ -16,3 +16,4 @@
 | 6.2 | done | Commit `da259a3f`; backend full validation passed (742 tests); fresh spec reviewer approved, code-quality reviewers found import-cycle regressions that were fixed, then final fresh code-quality reviewer approved. |
 | 6.5.1 | done | Commit `7b081d94`; backend full validation passed (744 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 6.5.2 | done | Commit `48e55a96`; backend full validation passed (744 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
+| 6.5.3 | done | Commit `9c448143`; backend full validation passed (748 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
