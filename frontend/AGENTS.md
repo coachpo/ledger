@@ -45,7 +45,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `src/components/forms/AGENTS.md` — cross-route dialogs, report-generation/upload forms, and write-only secret input UI
 - `src/components/templates/AGENTS.md` — placeholder browser and runtime-input support components
 - `src/components/ui/AGENTS.md` — shadcn/ui wrappers, sidebar primitives, and shared variant tokens
-- `src/components/shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, tables, and field schemas
+- `src/components/shared/AGENTS.md` — reusable inventory/workspace shells, resource chrome, evidence helpers, and tables
 - `src/components/shared/docs/README.md` — frontend-owned UI/UX standards, shared UI specs, page blueprints, and migration guidance
 
 ## STRUCTURE
@@ -53,7 +53,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 frontend/
 ├── src/components/shared/docs/ # frontend design-system rules for tokens, shared UI, and route migration
 ├── src/extensions/     # frontend extension registry, route/nav assembly, and tool filtering
-├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types, platform-authoring helpers
+├── src/lib/            # API contract, query keys, formatting, grouping, types, platform-authoring helpers
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
 ├── src/pages/          # dashboard, extensions, finance workspace, Scheduled Tasks, and agent-platform routes
 ├── src/components/     # layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, templates, and shadcn primitives

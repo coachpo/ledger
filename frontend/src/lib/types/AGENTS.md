@@ -34,7 +34,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## CONVENTIONS
 - Keep frontend field names aligned with backend camelCase aliases; do not reintroduce snake_case here.
-- Money, quantities, market values, and similar numeric payloads stay as strings on the wire; conversion belongs in shared formatting and analytics helpers, not in the type layer.
+- Money, quantities, market values, and similar numeric payloads stay as strings on the wire; conversion belongs in shared formatting helpers, not in the type layer.
 - Model enum-like values as exact string unions so invalid report sources and platform status values fail at compile time.
 - Use these files for API shapes only; derive view models separately when the UI needs extra formatting or enrichment.
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.

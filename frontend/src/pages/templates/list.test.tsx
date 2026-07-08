@@ -55,7 +55,7 @@ function templateShellRegions() {
 const quarterlyTemplate = {
   id: 7,
   name: "Quarterly Review",
-  content: "Portfolio summary {{inputs.ticker}}",
+  content: "Market summary {{inputs.ticker}}",
   createdAt: "2026-05-01T10:00:00Z",
   updatedAt: "2026-05-02T10:00:00Z",
 };
@@ -144,7 +144,6 @@ describe("TemplateListPage", () => {
         "Create a reusable markdown template with runtime input and report placeholders.",
       ),
     ).toBeVisible();
-    expect(inventory).not.toHaveTextContent("portfolio");
   });
 
   it("keeps filtered-empty deterministic while preserving search and new-template controls", () => {

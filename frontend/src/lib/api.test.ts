@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PortfolioRead, PortfolioWriteInput } from "./types/portfolio";
+import type { TextTemplateRead, TextTemplateWriteInput } from "./types/text-template";
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
 const ORIGINAL_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -32,26 +32,20 @@ async function loadApiModule(baseUrl: string = "") {
   const [
     apiClient,
     extensionsApi,
-    marketDataApi,
     modelConnectionsApi,
-    portfoliosApi,
-    positionsApi,
+    templatesApi,
   ] = await Promise.all([
     import("./api-client"),
     import("./api/extensions"),
-    import("./api/market-data"),
     import("./api/model-connections"),
-    import("./api/portfolios"),
-    import("./api/positions"),
+    import("./api/templates"),
   ]);
 
   return {
     ...apiClient,
     ...extensionsApi,
-    ...marketDataApi,
     ...modelConnectionsApi,
-    ...portfoliosApi,
-    ...positionsApi,
+    ...templatesApi,
   };
 }
 
@@ -69,21 +63,17 @@ function getLastFetchCall(fetchMock: ReturnType<typeof createFetchMock>): {
   return { init, url: String(input) };
 }
 
-const portfolioFixture: PortfolioRead = {
+const templateFixture: TextTemplateRead = {
   id: 1,
-  name: "Retirement",
-  slug: "retirement",
-  description: "Long-term holdings",
-  positionCount: 3,
-  balanceCount: 2,
+  name: "Daily summary",
+  content: "Market summary",
   createdAt: "2024-03-15T12:00:00Z",
   updatedAt: "2024-03-15T12:00:00Z",
 };
 
-const portfolioInput: PortfolioWriteInput = {
-  name: "Retirement",
-  slug: "retirement",
-  description: "Long-term holdings",
+const templateInput: TextTemplateWriteInput = {
+  name: "Daily summary",
+  content: "Market summary",
 };
 
 let fetchMock = createFetchMock();
@@ -101,31 +91,31 @@ afterEach(() => {
 });
 
 describe("api client", () => {
-  it("sends a successful GET request for listPortfolios", async () => {
-    const { listPortfolios } = await loadApiModule();
-    fetchMock.mockResolvedValueOnce(jsonResponse([portfolioFixture], 200));
+  it("sends a successful GET request for listTemplates", async () => {
+    const { listTemplates } = await loadApiModule();
+    fetchMock.mockResolvedValueOnce(jsonResponse([templateFixture], 200));
 
-    await expect(listPortfolios()).resolves.toEqual([portfolioFixture]);
+    await expect(listTemplates()).resolves.toEqual([templateFixture]);
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe(`${DEFAULT_API_BASE_URL}/portfolios`);
+    expect(url).toBe(`${DEFAULT_API_BASE_URL}/templates`);
     expect(init?.method).toBe("GET");
     expect(init?.body).toBeUndefined();
     expect(new Headers(init?.headers).get("Accept")).toBe("application/json");
   });
 
-  it("sends a successful POST request for createPortfolio", async () => {
-    const { createPortfolio } = await loadApiModule();
-    fetchMock.mockResolvedValueOnce(jsonResponse(portfolioFixture, 201));
+  it("sends a successful POST request for createTemplate", async () => {
+    const { createTemplate } = await loadApiModule();
+    fetchMock.mockResolvedValueOnce(jsonResponse(templateFixture, 201));
 
-    await expect(createPortfolio(portfolioInput)).resolves.toEqual(
-      portfolioFixture,
+    await expect(createTemplate(templateInput)).resolves.toEqual(
+      templateFixture,
     );
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe(`${DEFAULT_API_BASE_URL}/portfolios`);
+    expect(url).toBe(`${DEFAULT_API_BASE_URL}/templates`);
     expect(init?.method).toBe("POST");
-    expect(init?.body).toBe(JSON.stringify(portfolioInput));
+    expect(init?.body).toBe(JSON.stringify(templateInput));
     expect(new Headers(init?.headers).get("Accept")).toBe("application/json");
     expect(new Headers(init?.headers).get("Content-Type")).toBe(
       "application/json",
@@ -133,7 +123,7 @@ describe("api client", () => {
   });
 
   it("preserves status, code, message, and validation details for 422 responses", async () => {
-    const { ApiRequestError, createPortfolio } = await loadApiModule();
+    const { ApiRequestError, createTemplate } = await loadApiModule();
     fetchMock.mockResolvedValueOnce(
       jsonResponse(
         {
@@ -141,7 +131,7 @@ describe("api client", () => {
           message: "Validation failed",
           details: [
             { field: "name", issue: "Required" },
-            { field: "slug", issue: "Invalid slug" },
+            { field: "content", issue: "Required" },
             {
               code: "extension_disabled",
               extensionKey: "signaldeck.finance",
@@ -168,7 +158,7 @@ describe("api client", () => {
 
     let error: unknown;
     try {
-      await createPortfolio(portfolioInput);
+      await createTemplate(templateInput);
     } catch (caught) {
       error = caught;
     }
@@ -180,7 +170,7 @@ describe("api client", () => {
       message: "Validation failed",
       details: [
         { field: "name", issue: "Required" },
-        { field: "slug", issue: "Invalid slug" },
+        { field: "content", issue: "Required" },
         {
           code: "extension_disabled",
           extensionKey: "signaldeck.finance",
@@ -195,7 +185,7 @@ describe("api client", () => {
   });
 
   it("drops malformed non-array details from JSON error envelopes", async () => {
-    const { ApiRequestError, listPortfolios } = await loadApiModule();
+    const { ApiRequestError, listTemplates } = await loadApiModule();
     fetchMock.mockResolvedValueOnce(
       jsonResponse(
         {
@@ -209,7 +199,7 @@ describe("api client", () => {
 
     let error: unknown;
     try {
-      await listPortfolios();
+      await listTemplates();
     } catch (caught) {
       error = caught;
     }
@@ -224,12 +214,12 @@ describe("api client", () => {
   });
 
   it("falls back to a generic request_failed error for 500 text responses", async () => {
-    const { ApiRequestError, listPortfolios } = await loadApiModule();
+    const { ApiRequestError, listTemplates } = await loadApiModule();
     fetchMock.mockResolvedValueOnce(textResponse("Internal Server Error", 500));
 
     let error: unknown;
     try {
-      await listPortfolios();
+      await listTemplates();
     } catch (caught) {
       error = caught;
     }
@@ -248,8 +238,8 @@ describe("api client", () => {
       "https://signaldeck.example.com/api/v2/",
     );
 
-    expect(buildApiUrl("/portfolios")).toBe(
-      "https://signaldeck.example.com/api/v1/portfolios",
+    expect(buildApiUrl("/templates")).toBe(
+      "https://signaldeck.example.com/api/v1/templates",
     );
     expect(buildPlatformApiUrl("/workflow-packages")).toBe(
       "https://signaldeck.example.com/api/workflow-packages",
@@ -294,21 +284,21 @@ describe("api client", () => {
     expect(init?.body).toBe(JSON.stringify({ enabled: false }));
   });
 
-  it("encodes symbol lookup requests against the derived v1 base URL", async () => {
-    const { getPositionSymbolLookup } = await loadApiModule(
+  it("encodes v1 path segments against the derived base URL", async () => {
+    const { getTemplate } = await loadApiModule(
       "https://signaldeck.example.com/api/",
     );
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ symbol: "BRK/B", name: "Berkshire Hathaway Inc." }, 200),
+      jsonResponse(templateFixture, 200),
     );
 
-    await expect(
-      getPositionSymbolLookup("portfolio with/slash", "BRK/B"),
-    ).resolves.toEqual({ symbol: "BRK/B", name: "Berkshire Hathaway Inc." });
+    await expect(getTemplate("template with/slash")).resolves.toEqual(
+      templateFixture,
+    );
 
     const { url } = getLastFetchCall(fetchMock);
     expect(url).toBe(
-      "https://signaldeck.example.com/api/v1/portfolios/portfolio%20with%2Fslash/positions/lookup?symbol=BRK%2FB",
+      "https://signaldeck.example.com/api/v1/templates/template%20with%2Fslash",
     );
   });
 });

@@ -190,7 +190,7 @@ Common mistakes: moving route callbacks into the component, using generic labels
 
 Purpose: compact resource card for inventory lists with title link, metadata, badges, evidence, status, provenance, footer, and trailing actions.
 
-Use for portfolio, template, report, run, or platform resource lists where cards are clearer than a table.
+Use for template, report, run, or platform resource lists where cards are clearer than a table.
 Don't use for static metric summaries or deeply nested editor panes.
 
 API: `title`, optional `subtitle`, `description`, `metadata`, `badges`, `leading`, `actions`, `primaryAction`, `bodyAction`, `selected`, `statusStrip`, `provenance`, `factsGrid`, `evidenceChips`, `evidence`, `footer`, `density`, `className`, and `testId`.

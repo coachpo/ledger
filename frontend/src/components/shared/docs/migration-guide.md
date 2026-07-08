@@ -75,7 +75,7 @@ Don't add `/src/ui` or a second library structure.
 Don't move a one-off route widget into `components/shared` before there is real reuse.
 
 Don't document removed route families as active migration targets.
-Don't put portfolio-only, report-only, template-only, package-only, run-only, or extension-only request logic into shared components.
+Don't put report-only, template-only, package-only, run-only, or extension-only request logic into shared components.
 
 Don't change API field names, query keys, route paths, or extension gates as part of a UI-only migration.
 

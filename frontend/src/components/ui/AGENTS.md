@@ -42,7 +42,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not add toasts, navigation decisions, or request handling here.
 - Do not fork `sidebar.tsx` with SignalDeck menu items; compose navigation from `../layout.tsx`.
 - Do not bury reusable token sets inline when a dedicated `*-variants.ts` helper is already the pattern.
-- Do not move portfolio, report, or template feature markup into `ui/` just because it renders cards, tables, or dialogs.
+- Do not move report or template feature markup into `ui/` just because it renders cards, tables, or dialogs.
 
 ## VALIDATION
 ```bash

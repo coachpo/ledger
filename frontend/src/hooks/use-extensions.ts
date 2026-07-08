@@ -40,7 +40,6 @@ export function invalidateExtensionToolStateCaches(queryClient: QueryClient) {
 
 export function invalidateFinanceWorkspaceExtensionCaches(queryClient: QueryClient) {
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.portfolios.all }),
     queryClient.invalidateQueries({ queryKey: queryKeys.templates.all }),
     queryClient.invalidateQueries({ queryKey: queryKeys.reports.all }),
   ]);

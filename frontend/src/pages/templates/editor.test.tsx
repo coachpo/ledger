@@ -245,7 +245,7 @@ describe("TemplateEditorPage", () => {
           {
             id: 7,
             name: "Quarterly Review",
-            content: "Portfolio summary",
+            content: "Market summary",
             createdAt: "2026-05-01T10:00:00Z",
             updatedAt: "2026-05-02T10:00:00Z",
           },

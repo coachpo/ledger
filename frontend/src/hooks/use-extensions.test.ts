@@ -92,7 +92,7 @@ describe("useExtensions", () => {
 
     await mutationOptions.onSuccess?.(financeExtension, {});
 
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(8);
+    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledTimes(7);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.extensions.all,
     });
@@ -107,9 +107,6 @@ describe("useExtensions", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.rerunDrafts(),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.portfolios.all,
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.templates.all,
@@ -150,9 +147,6 @@ describe("useExtensions", () => {
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.rerunDrafts(),
-    });
-    expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalledWith({
-      queryKey: queryKeys.portfolios.all,
     });
     expect(reactQueryState.invalidateQueriesMock).not.toHaveBeenCalledWith({
       queryKey: queryKeys.templates.all,

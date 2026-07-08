@@ -27,7 +27,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Evidence / state helpers | `console-section.tsx`, `evidence-cluster.tsx`, `constraint-inspector.tsx`, `empty-state-panel.tsx`, `inventory-state-panel.tsx`, `inline-state-panel.tsx` | wide payload, evidence, and empty/error/loading presentation |
 | Generic tables | `data-table.tsx`, `data-table-column-header.tsx`, `resource-table-frame.tsx` | lightweight sortable tables and route-owned table framing |
 | Summary metrics | `metric-card.tsx` | consistent KPI card layout |
-| Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for current shared forms |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
 | Row-card inventory UI | `resource-row-card.tsx` | compact resource cards used by platform inventories when a card surface is still warranted |
 | Design-system source | `../../../DESIGN.md` | source of truth for page layout, shared shells, tokens, and management UI patterns |
@@ -40,7 +39,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Inventory/workspace shells preserve consistent region order, inspector behavior, and mobile containment; do not fork context/toolbar/filter/action/selection/inspector scaffolding per route.
 - Shared status components (`ResourceStatusBadge` and `ResourceStatusStrip`) own reusable status presentation; do not recreate route-local colored badge spans in routed pages.
 - Shared action, bulk-action, selection, and confirmation components stay presentational. Routes still own selected ids, mutation sequencing, toasts, navigation, and domain-specific labels.
-- Shared validation snippets belong in `form-schemas.ts` when they are reused across preserved product forms or dialogs.
+- Shared validation snippets belong here only when they are reused across current route families.
 - Error-boundary components stay UI-focused; logging or recovery policy belongs in higher-level app code.
 - Keep shared helpers presentational; request logic and route ownership stay in pages, hooks, or feature folders.
 
@@ -50,9 +49,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not hard-code route metadata, URL params, or fetch logic inside reusable shells.
 - Do not turn a one-off route widget into a shared component before a second real use case exists.
 - Do not hard-code API types or query keys inside reusable table/search/action/selection wrappers.
-- Do not duplicate form validation that already exists in `form-schemas.ts`.
+- Do not move route-local form validation here before a second current route needs it.
 
 ## NOTES
-- Shared schemas here are the canonical place for cross-route validation rules that are still reused after the cutover.
+- Shared schemas here are reserved for cross-route validation rules that are still reused after the cutover.
 - The inventory/workspace/split-inspector shells plus management-list helpers are the current shared page chrome for finance template/report inventories, platform workspace/console pages, and shared UI migrations.
 - This folder no longer owns retired orchestration, Studio, Tryout, or runtime-v2 helper surfaces.

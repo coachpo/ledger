@@ -297,20 +297,3 @@ export async function requestPlatform<T>(
 ): Promise<T> {
   return requestWithBaseUrl<T>(PLATFORM_API_BASE_URL, path, options);
 }
-
-export function createCsvFormData(file: File): FormData {
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-  return formData;
-}
-
-export function serializeSymbols(symbols: readonly string[]): string {
-  return symbols
-    .map((symbol) => symbol.trim())
-    .filter((symbol) => symbol.length > 0)
-    .join(",");
-}
-
-export function portfolioPath(portfolioId: IdParam): string {
-  return `/portfolios/${toPathSegment(portfolioId)}`;
-}

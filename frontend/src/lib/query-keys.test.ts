@@ -4,37 +4,19 @@ import { queryKeys } from "./query-keys";
 
 describe("query keys", () => {
   it("normalizes string and numeric ids to the same key", () => {
-    expect(queryKeys.portfolios.detail("1")).toEqual(
-      queryKeys.portfolios.detail(1),
+    expect(queryKeys.templates.detail("1")).toEqual(
+      queryKeys.templates.detail(1),
     );
-    expect(queryKeys.balances.list("1")).toEqual(queryKeys.balances.list(1));
-    expect(queryKeys.positions.detail("1", "7")).toEqual(
-      queryKeys.positions.detail(1, 7),
+    expect(queryKeys.reports.detail("42")).toEqual(
+      queryKeys.reports.detail(42),
     );
-  });
-
-  it("normalizes symbol filters inside history params", () => {
-    expect(
-      queryKeys.marketHistory.series("1", {
-        range: "3mo",
-        symbols: ["MSFT", "AAPL", "MSFT"],
-      }),
-    ).toEqual(
-      queryKeys.marketHistory.series(1, {
-        range: "3mo",
-        symbols: ["AAPL", "MSFT"],
-      }),
-    );
-  });
-
-  it("normalizes position lookup symbols inside query keys", () => {
-    expect(queryKeys.positions.lookup("1", " aapl ")).toEqual(
-      queryKeys.positions.lookup(1, "AAPL"),
+    expect(queryKeys.platform.workflowPackages.detail("7")).toEqual(
+      queryKeys.platform.workflowPackages.detail(7),
     );
   });
 
   it("keeps existing v1 query key shapes stable", () => {
-    expect(queryKeys.portfolios.list()).toEqual(["api", "portfolios", "list"]);
+    expect(queryKeys.templates.list()).toEqual(["api", "templates", "list"]);
     expect(queryKeys.reports.list()).toEqual(["api", "reports", "list"]);
   });
 
@@ -91,7 +73,7 @@ describe("query keys", () => {
       queryKeys.reports.detail(42),
     );
     expect(queryKeys.platform.workflowPackages.all).not.toEqual(
-      queryKeys.portfolios.all,
+      queryKeys.templates.all,
     );
     expect(queryKeys.platform.extensions.detail("signaldeck.finance")).toEqual([
       "api",

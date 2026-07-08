@@ -42,7 +42,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `api-client.ts` is the only place that should know the base URL, query-string encoding, and error-envelope parsing.
 - `api-client.ts` falls back to `http://127.0.0.1:8000/api/v1` only when `VITE_API_BASE_URL` is absent; `start.sh` and Playwright override that value for real runs.
 - Domain-specific API functions live in `api/*.ts` modules, organized by resource type.
-- Wire decimals remain strings until shared format/analytics helpers convert them for display math.
+- Wire decimals remain strings until shared format helpers convert them for display math.
 - `query-keys.ts` normalizes ids as strings, extension keys as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and history params so cache keys stay stable across callers.
 - Reports, extension state, and platform resources use dedicated query-key namespaces.
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
