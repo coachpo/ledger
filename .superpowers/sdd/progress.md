@@ -22,3 +22,4 @@
 | 7.3 | done | Commit `e50f685c`; backend full validation passed (761 tests); frontend lint/typecheck/test:run/build passed (389 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 7.4 | done | Commit `63ab7d73`; startup smoke passed; backend full validation passed (762 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 7.5 | done | Commit `ba75bd01`; backend full validation passed (763 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
+| 7.6 | done | Commit `9607ea4d`; `git diff --check` passed; fresh spec reviewer approved and fresh code-quality reviewer approved. |
