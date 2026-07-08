@@ -98,6 +98,28 @@ def test_health_endpoint_is_liveness_only(monkeypatch: pytest.MonkeyPatch) -> No
     assert response.json() == {"status": "ok"}
 
 
+def test_create_app_instruments_fastapi_with_logfire(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_runtime_env(monkeypatch)
+    instrumented_apps: list[object] = []
+
+    class FakeLogfire:
+        @staticmethod
+        def configure(**_: object) -> None:
+            return None
+
+        @staticmethod
+        def instrument_fastapi(app: object) -> None:
+            instrumented_apps.append(app)
+
+    monkeypatch.setattr("app.core.telemetry._LOGFIRE_CONFIGURED", False)
+    monkeypatch.setattr("app.core.telemetry._LOGFIRE_MODULE", None)
+    monkeypatch.setattr("app.core.telemetry._get_logfire_module", lambda: FakeLogfire)
+
+    app = create_app(init_database=False)
+
+    assert instrumented_apps == [app]
+
+
 def test_readiness_endpoint_reports_database_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     clear_runtime_env(monkeypatch)
     monkeypatch.setattr("app.main._database_is_ready", lambda: True)

@@ -6,6 +6,7 @@ from typing import Any
 
 _LOGFIRE_CONFIG_LOCK = Lock()
 _LOGFIRE_CONFIGURED = False
+_LOGFIRE_MODULE: Any | None = None
 
 
 def _get_logfire_module() -> Any:
@@ -13,7 +14,7 @@ def _get_logfire_module() -> Any:
 
 
 def configure_logfire() -> None:
-    global _LOGFIRE_CONFIGURED
+    global _LOGFIRE_CONFIGURED, _LOGFIRE_MODULE
     if _LOGFIRE_CONFIGURED:
         return
 
@@ -28,12 +29,24 @@ def configure_logfire() -> None:
             console=False,
             inspect_arguments=False,
         )
+        _LOGFIRE_MODULE = logfire
         _LOGFIRE_CONFIGURED = True
 
 
-def create_logfire_span(message_template: str, /, **attributes: Any) -> Any:
+def _get_configured_logfire_module() -> Any:
     configure_logfire()
-    logfire = _get_logfire_module()
+    if _LOGFIRE_MODULE is None:
+        raise RuntimeError("Logfire configuration did not initialize the logfire module.")
+    return _LOGFIRE_MODULE
+
+
+def instrument_fastapi_app(app: Any) -> None:
+    logfire = _get_configured_logfire_module()
+    logfire.instrument_fastapi(app)
+
+
+def create_logfire_span(message_template: str, /, **attributes: Any) -> Any:
+    logfire = _get_configured_logfire_module()
     return logfire.span(message_template, **attributes)
 
 

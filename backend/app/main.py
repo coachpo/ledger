@@ -16,7 +16,7 @@ from app.api.router import api_router
 from app.core.auth import BearerTokenMiddleware
 from app.core.config import get_settings
 from app.core.errors import ApiError, browser_safe_error_details, request_validation_to_details
-from app.core.telemetry import configure_logfire
+from app.core.telemetry import configure_logfire, instrument_fastapi_app
 from app.db.engine import get_engine
 from app.db.session import init_db
 
@@ -44,6 +44,7 @@ def create_app(*, init_database: bool = True) -> FastAPI:
     app = FastAPI(
         title="SignalDeck Backend", version="0.1.0", lifespan=lifespan if init_database else None
     )
+    instrument_fastapi_app(app)
     if settings.api_token:
         app.add_middleware(BearerTokenMiddleware, token=settings.api_token)
     app.add_middleware(
