@@ -104,6 +104,35 @@ Runtime env vars:
 
 Compose sets safe local defaults for `SIGNALDECK_RUNTIME_MODE`, `SIGNALDECK_ROOT_IMAGE_SCOPE`, `DATABASE_URL`, `PUBLIC_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `RUN_SCHEDULER`, `BACKEND_PORT`, and `PORT`. The defaults `POSTGRES_PASSWORD=signaldeck` and `AGENT_PLATFORM_ENCRYPTION_KEY=signaldeck-agent-platform-dev-key` are for local development only; do not use them as production secrets.
 
+## Security
+
+Deployments must either set `SIGNALDECK_API_TOKEN` and send `Authorization: Bearer <token>` to the app, or place SignalDeck behind an authenticated reverse proxy such as oauth2-proxy, Tailscale, or another access gateway.
+
+Small nginx `auth_basic` example:
+
+```nginx
+location / {
+    auth_basic "SignalDeck";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+    proxy_pass http://signaldeck:8080;
+}
+```
+
+## Backup
+
+Use a libpq-style PostgreSQL URL for database client tools:
+
+```bash
+pg_dump "$POSTGRES_URL" > signaldeck.sql
+psql "$POSTGRES_URL" < signaldeck.sql
+```
+
+Run history retention can be controlled with `SIGNALDECK_RUN_RETENTION_DAYS`.
+
+## Schema changes
+
+SignalDeck has no migration framework; schema changes require rebuilding the database.
+
 ## Run the Full Stack Locally
 
 ### 1. Start everything with the local helper
