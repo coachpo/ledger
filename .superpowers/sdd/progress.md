@@ -10,3 +10,4 @@
 | 4.1 | done | Commit `264bd7b7`; backend full validation passed (772 tests); frontend lint/typecheck/test:run/build passed (448 tests); full e2e passed (25 tests); fresh code-quality reviewers found stale portfolio dashboard/docs/fixtures/e2e issues that were fixed, then final fresh reviewer approved. |
 | 4.2 | done | Commit `58f54195`; frontend lint/typecheck/test:run/build passed (413 tests); full e2e passed (25 tests); fresh spec reviewer and fresh code-quality reviewer approved. |
 | 5.1 | done | Commit `9f8cf549`; TDD red/green recorded; backend full validation passed (776 tests); fresh spec reviewer and fresh code-quality reviewer approved. |
+| 5.2 | done | Commit `84a8b3a5`; backend full validation passed (742 tests); fresh spec reviewer approved earlier, fresh code-quality reviewers found stale static-contract docs/API residue that were fixed, then final fresh code-quality reviewer approved. |
