@@ -8,6 +8,26 @@ from app.services.workflow_package_manifest_compiler import compile_workflow_pac
 from tests.test_workflow_package_manifest_http_node import http_node_package_source
 
 
+def test_export_returns_stored_manifest_source(client: TestClient) -> None:
+    manifest_source = http_node_package_source().replace(
+        "key: http_callbacks\n",
+        "key: http_callbacks_export_source\n",
+        1,
+    )
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": manifest_source},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+
+    export_response = client.get(f"/api/workflow-packages/{package['id']}/export")
+
+    assert export_response.status_code == 200, export_response.text
+    assert export_response.text == manifest_source
+    assert "apiVersion: signaldeck.workflowPackage/v1" in export_response.text
+
+
 def test_secret_binding_export_keeps_manifest_secret_references(client: TestClient) -> None:
     create_response = client.post(
         "/api/workflow-packages",

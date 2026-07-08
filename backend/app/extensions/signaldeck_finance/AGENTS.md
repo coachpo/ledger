@@ -29,10 +29,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Service gates and grants | `service_gate.py`, `grant_policy.py`, `execution_dependencies.py` | extension enabled checks, runtime grant policy, and dependency-only run records |
 | Runtime tool specs | `tool_specs.py` | finance-owned server-declared tool metadata |
 | Runtime executors | `runtime_executors.py`, `runtime_market_data.py`, `runtime_positions.py`, `runtime_reports.py`, `runtime_types.py` | finance-owned OpenAI tool definitions, parser/executor modules, and typed runtime payloads |
-| Report hooks | `hooks.py` | report lookup, template placeholder, and return-resolution ownership hooks |
 
 ## CONVENTIONS
-- `FINANCE_WORKSPACE_EXTENSION_KEY` stays `signaldeck.finance` and is the owner key for finance routes, tools, providers, and hooks.
+- `FINANCE_WORKSPACE_EXTENSION_KEY` stays `signaldeck.finance` and is the owner key for finance routes, tools, and providers.
 - Finance route registrations must remain guarded by `require_extension_enabled()`.
 - Finance runtime tool keys use only the canonical `signaldeck.<owner>.<tool_collection>.<tool>` contract: `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.positions.lookup`, and `signaldeck.finance.reports.lookup`.
 - OpenAI function names are mechanical underscore mappings from canonical keys, for example `signaldeck.finance.market_data.quote_lookup` -> `signaldeck_finance_market_data_quote_lookup`. Digital Oracle tool keys and function names belong to `signaldeck.digital_oracle`.

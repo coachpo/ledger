@@ -766,7 +766,7 @@ class WorkflowPackagePreflightService:
         surfaces = dependency.get("surfaces")
         if not isinstance(surfaces, list):
             return "workflowPackage.extensionDependency"
-        for prefix in ("tool.", "runtime.tool.", "mcp.", "provider.", "hook."):
+        for prefix in ("tool.", "runtime.tool.", "mcp.", "provider."):
             for surface in surfaces:
                 if isinstance(surface, str) and surface.startswith(prefix):
                     return surface

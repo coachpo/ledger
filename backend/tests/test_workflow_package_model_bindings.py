@@ -22,7 +22,6 @@ from app.services.workflow_package_manifest_compiler import (
     WorkflowPackageManifestCompilerError,
     compile_workflow_package_manifest,
 )
-from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_manifest
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
 
@@ -67,7 +66,7 @@ def test_package_export_uses_model_key_and_binding_summary(
         package_definition = cast(dict[str, object], compiled["packageDefinition"])
         compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
         session.flush()
-        package = repository.create_package(
+        repository.create_package(
             key="tradingagents_research",
             name="TradingAgents Research Package",
             description="Portable package for the representative research workflow.",
@@ -83,20 +82,12 @@ def test_package_export_uses_model_key_and_binding_summary(
             require_api_key=True,
         )
         session.commit()
-        package_payload = {
-            "packageDefinition": package.package_definition,
-            "compiledPlan": package.compiled_plan,
-        }
-
-    roundtrip = decompile_workflow_package_manifest(package_payload)
     binding_payload = asdict(binding)
-    roundtrip_compiled = compile_workflow_package_manifest(roundtrip.source)
-    roundtrip_definition = cast(dict[str, object], roundtrip_compiled["packageDefinition"])
-    roundtrip_spec = cast(dict[str, object], roundtrip_definition["spec"])
-    roundtrip_agent = cast(list[dict[str, object]], roundtrip_spec["agents"])[0]
+    spec = cast(dict[str, object], cast(dict[str, object], compiled["packageDefinition"])["spec"])
+    compiled_agent = cast(list[dict[str, object]], spec["agents"])[0]
 
-    assert "modelConnection: tradingagents_primary_model" in roundtrip.source
-    assert roundtrip_agent["modelConnection"] == "tradingagents_primary_model"
+    assert "modelConnection: tradingagents_primary_model" in source
+    assert compiled_agent["modelConnection"] == "tradingagents_primary_model"
     assert set(binding_payload) == {
         "key",
         "name",

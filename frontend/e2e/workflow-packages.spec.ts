@@ -505,16 +505,13 @@ test.describe("Workflow packages", () => {
       "agents",
       "capabilityProfiles",
       "inputs",
-      "mcpServers",
       "outputSchemas",
       "workflows",
     ]);
     expect(Object.keys(exportedAgent).sort()).toEqual([
       "capabilityProfiles",
-      "description",
       "inputSchema",
       "key",
-      "mcpServers",
       "modelConnection",
       "name",
       "outputSchema",

@@ -3131,10 +3131,10 @@ def test_workflow_package_validation_redacts_and_reads_omit_inline_private_mcp_v
     assert "inline-query-secret" not in manifest_payload
     exported = client.get(f"/api/workflow-packages/{package_id}/export")
     assert exported.status_code == 200, exported.text
-    assert "headers:" not in exported.text
-    assert "query:" not in exported.text
-    assert "Authorization: Bearer inline-header-secret" not in exported.text
-    assert "exaApiKey: inline-query-secret" not in exported.text
+    assert "headers" not in exported.text
+    assert "query" not in exported.text
+    assert "inline-header-secret" not in exported.text
+    assert "inline-query-secret" not in exported.text
 
 
 def test_workflow_package_runtime_uses_fake_provider_endpoint(

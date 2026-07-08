@@ -12,7 +12,6 @@ from app.services.workflow_package_manifest_compiler import (
     WorkflowPackageManifestCompilerError,
     compile_workflow_package_manifest,
 )
-from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_manifest
 from tests.test_workflow_package_manifest_parser import _valid_package_manifest_source
 
 _DEMO_ROOT = Path(__file__).resolve().parents[2] / "demo"
@@ -124,8 +123,6 @@ spec:
 
 def test_compile_valid_package_manifest_roundtrips_current_contract() -> None:
     compiled = compile_workflow_package_manifest(_valid_package_manifest_source())
-    roundtrip = decompile_workflow_package_manifest(compiled)
-    recompiled = compile_workflow_package_manifest(roundtrip.source)
 
     assert set(compiled) == {
         "packageDefinition",
@@ -140,11 +137,6 @@ def test_compile_valid_package_manifest_roundtrips_current_contract() -> None:
     assert len(cast(str, compiled["manifestHash"])) == 64
     assert isinstance(compiled["compiledHash"], str)
     assert len(cast(str, compiled["compiledHash"])) == 64
-    assert _canonical_json(compiled) == _canonical_json(recompiled)
-    assert roundtrip.source.startswith(
-        "apiVersion: signaldeck.workflowPackage/v1\nkind: WorkflowPackage\n"
-    )
-    assert "modelConnection: tradingagents_primary_model" in roundtrip.source
 
     package_definition = cast(dict[str, object], compiled["packageDefinition"])
     compiled_plan = cast(dict[str, object], compiled["compiledPlan"])
@@ -187,7 +179,7 @@ def test_compile_valid_package_manifest_roundtrips_current_contract() -> None:
         "env": {"RESEARCH_CONTEXT_TOKEN": "local-token"},
         "toolKeys": ["research_context.search"],
     }
-    assert "RESEARCH_CONTEXT_TOKEN: local-token" in roundtrip.source
+    assert "RESEARCH_CONTEXT_TOKEN: local-token" in _valid_package_manifest_source()
     compiled_agents = cast(list[dict[str, object]], compiled_plan["agents"])
     assert compiled_agents[0]["capabilityProfiles"] == ["market_research_tools"]
     assert compiled_agents[0]["mcpServers"] == ["research_context"]
@@ -211,9 +203,7 @@ def test_compile_valid_package_manifest_roundtrips_current_contract() -> None:
 
 def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> None:
     compiled = compile_workflow_package_manifest(_inline_private_mcp_manifest_source())
-    roundtrip = decompile_workflow_package_manifest(compiled)
-    recompiled = compile_workflow_package_manifest(roundtrip.source)
-    package_definition = cast(dict[str, object], recompiled["packageDefinition"])
+    package_definition = cast(dict[str, object], compiled["packageDefinition"])
     spec = cast(dict[str, object], package_definition["spec"])
     profiles = cast(list[dict[str, object]], spec["capabilityProfiles"])
     profiles_by_key = {str(profile["key"]): profile for profile in profiles}
@@ -233,11 +223,6 @@ def test_compile_inline_private_mcp_preserves_report_and_quote_tool_keys() -> No
         "query": {"api_key": "test-api-key"},
         "toolKeys": ["web_search_exa"],
     }
-    assert "Authorization: Bearer test-token" in roundtrip.source
-    assert "api_key: test-api-key" in roundtrip.source
-    assert "signaldeck.finance.reports.lookup" in roundtrip.source
-    assert "signaldeck.finance.market_data.quote_lookup" in roundtrip.source
-    assert _canonical_json(compiled) == _canonical_json(recompiled)
 
 
 @pytest.mark.parametrize(

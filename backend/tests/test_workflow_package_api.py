@@ -317,24 +317,7 @@ def test_manifest_reads_return_hydrated_safe_package_resources(
         + "filename*=UTF-8''tradingagents_advisory_research.yaml"
     )
     assert export.headers["content-disposition"] == expected_content_disposition
-    assert "apiVersion: signaldeck.workflowPackage/v1" in export.text
-    assert "modelConnection: tradingagents_primary_model" in export.text
-    assert "headers:" not in export.text
-    assert "query:" not in export.text
-    assert "Authorization: Bearer exa-inline-token" not in export.text
-    assert "exaApiKey: exa-inline-key" not in export.text
-    for forbidden in (
-        "modelConnectionId",
-        "outputSchemaId",
-        "capabilityId",
-        "mcpServerId",
-        "secretPayload",
-        "secretRefs",
-        "requiredBindings",
-        "encrypted",
-        "sk-package-api-secret",
-    ):
-        assert forbidden not in export.text
+    assert export.text == _package_source()
 
     conflict = client.post(
         "/api/workflow-packages/import",

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/backend/AGENTS.md`, and `/backend/app/extensions/AGENTS.md`.
 
 ## OVERVIEW
-`signaldeck_digital_oracle/` owns the bundled `signaldeck.digital_oracle` backend extension. It is tool-only in this upgrade: seven server-declared/runtime tools, provider wrappers, normalization mappers, warning models, and extension-owned access-denied messages. It adds no API router, frontend route, nav group, provider bundle, lifecycle hook, or finance behavior.
+`signaldeck_digital_oracle/` owns the bundled `signaldeck.digital_oracle` backend extension. It is tool-only in this upgrade: seven server-declared/runtime tools, provider wrappers, normalization mappers, warning models, and extension-owned access-denied messages. It adds no API router, frontend route, nav group, provider bundle, or finance behavior.
 
 Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 
@@ -39,7 +39,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
-- Do not add API routers, frontend routes, nav entries, provider bundles, or lifecycle hooks here in this upgrade.
+- Do not add API routers, frontend routes, nav entries, or provider bundles here in this upgrade.
 - Do not move Digital Oracle tool implementations into platform-core runtime modules.
 - Do not reuse Finance Workspace report/memory ownership for Digital Oracle outputs.
 - Do not change tool keys, OpenAI function names, denied messages, or result shapes without updating runtime/tool-catalog/package tests.

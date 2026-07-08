@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from io import StringIO
 from typing import Any, cast
 
+from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import LiteralScalarString
+
 from app.schemas.workflow_package_manifest import WorkflowPackageManifest
-from app.services.workflow_package_manifest_compiler import (
-    MCP_SECRET_PROJECTION_AUTHORING,
-    compile_workflow_package_manifest,
-)
-from app.services.workflow_package_manifest_decompiler import decompile_workflow_package_definition
+from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 
 _FORBIDDEN_EXPORT_KEYS = {
     "id",
@@ -38,23 +38,30 @@ _MCP_EXPORT_KEYS = {
 
 
 def export_workflow_package_yaml(package_payload: dict[str, Any]) -> str:
-    hydrated = build_workflow_package_manifest_hydration_payload(package_payload)
-    return cast(str, hydrated["manifestSource"])
+    manifest_source = package_payload.get("manifestSource", package_payload.get("manifest_source"))
+    if not isinstance(manifest_source, str):
+        raise ValueError("manifestSource must be a string")
+    compiled = compile_workflow_package_manifest(manifest_source)
+    package_definition = cast(dict[str, object], compiled["packageDefinition"])
+    sanitized_definition = _sanitize_package_definition(deepcopy(package_definition))
+    if sanitized_definition == package_definition:
+        return manifest_source
+    safe_definition = build_safe_package_definition(compiled)
+    return _dump_manifest_yaml(safe_definition)
 
 
 def build_workflow_package_manifest_hydration_payload(
     package_payload: dict[str, Any],
 ) -> dict[str, object]:
-    safe_definition = build_safe_package_definition(package_payload)
-    result = decompile_workflow_package_definition(
-        safe_definition,
-        verify_lossless=True,
-        secret_projection_mode=MCP_SECRET_PROJECTION_AUTHORING,
+    manifest_source = export_workflow_package_yaml(package_payload)
+    safe_definition = build_safe_package_definition(
+        compile_workflow_package_manifest(manifest_source)
     )
-    compiled = compile_workflow_package_manifest(result.source)
+    safe_source = _dump_manifest_yaml(safe_definition)
+    compiled = compile_workflow_package_manifest(safe_source)
     return {
-        "manifestSource": result.source,
-        "packageDefinition": result.package_definition,
+        "manifestSource": safe_source,
+        "packageDefinition": safe_definition,
         "manifestHash": str(compiled["manifestHash"]),
         "compiledHash": str(compiled["compiledHash"]),
     }
@@ -68,7 +75,9 @@ def build_safe_package_definition(package_payload: dict[str, Any]) -> dict[str, 
     manifest = WorkflowPackageManifest.model_validate(sanitized)
     return cast(
         dict[str, object],
-        manifest.model_dump(mode="json", by_alias=True, exclude_none=True),
+        _sanitize_package_definition(
+            manifest.model_dump(mode="json", by_alias=True, exclude_none=True)
+        ),
     )
 
 
@@ -107,8 +116,40 @@ def _sanitize_mcp_server(server: dict[Any, Any]) -> dict[str, object]:
     for raw_key, item in server.items():
         if not isinstance(raw_key, str) or raw_key not in _MCP_EXPORT_KEYS:
             continue
-        sanitized[raw_key] = _sanitize_package_definition(item)
+        sanitized_item = _sanitize_package_definition(item)
+        if raw_key == "args" and sanitized_item == []:
+            continue
+        if raw_key in {"env", "headers", "query"} and sanitized_item == {}:
+            continue
+        sanitized[raw_key] = sanitized_item
     return sanitized
+
+
+def _literalize_system_prompts(package_definition: dict[str, object]) -> None:
+    spec = package_definition.get("spec")
+    if not isinstance(spec, dict):
+        return
+    agents = spec.get("agents")
+    if not isinstance(agents, list):
+        return
+    for agent in agents:
+        if not isinstance(agent, dict):
+            continue
+        system_prompt = agent.get("systemPrompt")
+        if isinstance(system_prompt, str) and "\n" in system_prompt:
+            agent["systemPrompt"] = LiteralScalarString(system_prompt)
+
+
+def _dump_manifest_yaml(manifest: dict[str, object]) -> str:
+    literalized = deepcopy(manifest)
+    _literalize_system_prompts(literalized)
+    yaml = YAML()
+    yaml.default_flow_style = False
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    yaml.representer.ignore_aliases = lambda *_args: True
+    stream = StringIO()
+    yaml.dump(literalized, stream)
+    return stream.getvalue()
 
 
 __all__ = [

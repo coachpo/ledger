@@ -102,7 +102,7 @@ class WorkflowPackageService:
     ) -> WorkflowPackageManifestRead:
         package = self._get_package(package_id)
         hydrated = build_workflow_package_manifest_hydration_payload(
-            {"packageDefinition": package.package_definition}
+            {"manifestSource": package.manifest_source}
         )
         return WorkflowPackageManifestRead.model_validate(
             {
@@ -226,12 +226,7 @@ class WorkflowPackageService:
 
     def export_package(self, package_id: int) -> Response:
         package = self._get_package(package_id)
-        exported = export_workflow_package_yaml(
-            {
-                "packageDefinition": package.package_definition,
-                "compiledPlan": package.compiled_plan,
-            }
-        )
+        exported = export_workflow_package_yaml({"manifestSource": package.manifest_source})
         filename = f"{package.key}.yaml"
         encoded_filename = quote(filename, safe="")
         return Response(

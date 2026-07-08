@@ -4,56 +4,33 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, cast
 
-from app.services.workflow_package_export import export_workflow_package_yaml
-from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
-from tests.test_workflow_package_manifest_parser import _valid_http_sse_package_manifest_source
+from app.services.workflow_package_export import (
+    build_workflow_package_manifest_hydration_payload,
+    export_workflow_package_yaml,
+)
+from tests.test_workflow_package_manifest_parser import (
+    _valid_http_sse_package_manifest_source,
+    _valid_package_manifest_source,
+)
 
 
-def test_export_emits_authoring_safe_mcp_manifest() -> None:
-    compiled = compile_workflow_package_manifest(_valid_http_sse_package_manifest_source())
-    package_definition = deepcopy(cast(dict[str, Any], compiled["packageDefinition"]))
-    compiled_plan = deepcopy(cast(dict[str, Any], compiled["compiledPlan"]))
-    spec = cast(dict[str, Any], package_definition["spec"])
-    spec["id"] = 99
-    agent = cast(list[dict[str, Any]], spec["agents"])[0]
-    agent.update(
-        {
-            "id": 123,
-            "agentId": 456,
-            "modelConnectionId": 789,
-            "secretPayload": {"apiKey": "sk-export-secret"},
-            "password": "raw-password",
-        }
+def test_manifest_hydration_keeps_stored_source_and_safe_package_definition() -> None:
+    manifest_source = _valid_http_sse_package_manifest_source()
+    hydrated = build_workflow_package_manifest_hydration_payload(
+        {"manifestSource": manifest_source}
     )
-    mcp_server = cast(list[dict[str, Any]], spec["mcpServers"])[0]
-    mcp_server.update(
-        {
-            "id": 321,
-            "mcpServerId": 654,
-            "env": {"EXA_TOKEN": "raw-env-token"},
-            "headers": {
-                "Authorization": "Bearer raw-header-token",
-                "X-Api-Key": "raw-api-key",
-            },
-            "query": {"api_key": "raw-query-token"},
-            "auth": {"header": "X-Api-Key", "apiKey": "raw-auth-token"},
-            "encrypted": {"ciphertext": "encrypted-bytes"},
-        }
-    )
-
-    exported = export_workflow_package_yaml(
-        {"packageDefinition": package_definition, "compiledPlan": compiled_plan}
-    )
-    recompiled = compile_workflow_package_manifest(exported)
-    safe_definition = cast(dict[str, Any], recompiled["packageDefinition"])
+    safe_definition = deepcopy(cast(dict[str, Any], hydrated["packageDefinition"]))
     safe_spec = cast(dict[str, Any], safe_definition["spec"])
     safe_agents = cast(list[dict[str, Any]], safe_spec["agents"])
     safe_mcp_server = cast(list[dict[str, Any]], safe_spec["mcpServers"])[0]
 
-    assert "apiVersion: signaldeck.workflowPackage/v1" in exported
-    assert "modelConnection: tradingagents_primary_model" in exported
-    assert "transport: http-sse" in exported
-    assert "url: https://mcp.example.test/sse" in exported
+    hydrated_source = cast(str, hydrated["manifestSource"])
+    assert hydrated_source.startswith("apiVersion: signaldeck.workflowPackage/v1")
+    assert "modelConnection: tradingagents_primary_model" in hydrated_source
+    assert "transport: http-sse" in hydrated_source
+    assert "url: https://mcp.example.test/sse" in hydrated_source
+    assert "headers:" not in hydrated_source
+    assert "query:" not in hydrated_source
     assert set(safe_spec) == {
         "inputs",
         "capabilityProfiles",
@@ -81,3 +58,30 @@ def test_export_emits_authoring_safe_mcp_manifest() -> None:
         "url": "https://mcp.example.test/sse",
         "toolKeys": ["research_context.search"],
     }
+
+
+def test_manifest_hydration_strips_inline_private_mcp_env() -> None:
+    hydrated = build_workflow_package_manifest_hydration_payload(
+        {"manifestSource": _valid_package_manifest_source()}
+    )
+
+    hydrated_source = cast(str, hydrated["manifestSource"])
+    assert "env:" not in hydrated_source
+    assert "local-token" not in hydrated_source
+
+
+def test_export_strips_inline_private_mcp_values() -> None:
+    http_sse_exported = export_workflow_package_yaml(
+        {"manifestSource": _valid_http_sse_package_manifest_source()}
+    )
+    stdio_exported = export_workflow_package_yaml(
+        {"manifestSource": _valid_package_manifest_source()}
+    )
+
+    assert "headers:" not in http_sse_exported
+    assert "query:" not in http_sse_exported
+    assert "Authorization" not in http_sse_exported
+    assert "test-token" not in http_sse_exported
+    assert "test-api-key" not in http_sse_exported
+    assert "env:" not in stdio_exported
+    assert "local-token" not in stdio_exported

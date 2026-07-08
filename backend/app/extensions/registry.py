@@ -11,7 +11,6 @@ from app.services.execution_providers import (
     ExecutionProviderBundle,
     merge_execution_provider_bundles,
 )
-from app.services.run_lifecycle import ExtensionRunLifecycleHooks
 
 if TYPE_CHECKING:
     from app.agents.runtime_tools.types import RuntimeToolSpec
@@ -38,7 +37,6 @@ type ServerDeclaredToolContributionLoader = Callable[
 ]
 type RuntimeToolContributionLoader = Callable[[], tuple[RuntimeToolSpec, ...]]
 type ExecutionProviderBundleLoader = Callable[[], ExecutionProviderBundle]
-type RunLifecycleContributionLoader = Callable[[], tuple[ExtensionRunLifecycleHooks, ...]]
 
 
 class _FinanceRegistrarsModule(Protocol):
@@ -51,8 +49,6 @@ class _FinanceRegistrarsModule(Protocol):
     def load_runtime_tool_contributions(self) -> tuple[RuntimeToolSpec, ...]: ...
 
     def load_execution_provider_bundle(self) -> ExecutionProviderBundle: ...
-
-    def load_run_lifecycle_hooks(self) -> tuple[ExtensionRunLifecycleHooks, ...]: ...
 
 
 class _DigitalOracleRegistrarsModule(Protocol):
@@ -105,17 +101,12 @@ def _load_finance_execution_provider_bundle() -> ExecutionProviderBundle:
     return _finance_registrars().load_execution_provider_bundle()
 
 
-def _load_finance_run_lifecycle_hooks() -> tuple[ExtensionRunLifecycleHooks, ...]:
-    return _finance_registrars().load_run_lifecycle_hooks()
-
-
 @dataclass(frozen=True, slots=True)
 class BundledExtensionContributionLoaders:
     api_routers: ApiRouterContributionLoader | None = None
     server_declared_tools: ServerDeclaredToolContributionLoader | None = None
     runtime_tools: RuntimeToolContributionLoader | None = None
     execution_provider_bundle: ExecutionProviderBundleLoader | None = None
-    run_lifecycle_hooks: RunLifecycleContributionLoader | None = None
     runtime_dependency_surfaces: tuple[str, ...] = ()
     package_private_mcp_tool_keys: tuple[str, ...] = ()
 
@@ -198,22 +189,6 @@ class BundledExtensionRegistry:
             bundles.append(loaders.execution_provider_bundle())
         return merge_execution_provider_bundles(bundles)
 
-    def list_run_lifecycle_hooks(
-        self,
-        extension_keys: Iterable[str],
-    ) -> tuple[ExtensionRunLifecycleHooks, ...]:
-        hooks: list[ExtensionRunLifecycleHooks] = []
-        for extension in self._selected_extensions(extension_keys):
-            loaders = self._contribution_loaders_by_key.get(extension.key)
-            if loaders is None or loaders.run_lifecycle_hooks is None:
-                continue
-            hooks.extend(
-                hook
-                for hook in loaders.run_lifecycle_hooks()
-                if hook.extension_key == extension.key
-            )
-        return tuple(hooks)
-
     def runtime_dependency_surfaces_for_extensions(
         self,
         extension_keys: Iterable[str],
@@ -284,7 +259,6 @@ def get_bundled_extension_registry() -> BundledExtensionRegistry:
                 server_declared_tools=_load_finance_server_declared_tool_contributions,
                 runtime_tools=_load_finance_runtime_tool_contributions,
                 execution_provider_bundle=_load_finance_execution_provider_bundle,
-                run_lifecycle_hooks=_load_finance_run_lifecycle_hooks,
                 runtime_dependency_surfaces=(
                     "provider.fallbackQuote",
                     "provider.quote",

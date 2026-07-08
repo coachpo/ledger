@@ -31,8 +31,8 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
 - `backend/app/api/router.py` composes preserved `/api/v1` finance routes behind extension gates.
 - `backend/app/api/platform_router.py` mounts `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
-- `backend/app/extensions/signaldeck_finance/` contributes current finance/product/provider routes, finance tools, hooks, and registrars as `signaldeck.finance`.
-- `backend/app/extensions/signaldeck_digital_oracle/` contributes only Digital Oracle runtime tools as `signaldeck.digital_oracle`; Digital Oracle has no route or nav surface, and it adds no API routers, frontend routes, provider bundles, or lifecycle hooks in this upgrade.
+- `backend/app/extensions/signaldeck_finance/` contributes current finance/product/provider routes, finance tools, and registrars as `signaldeck.finance`.
+- `backend/app/extensions/signaldeck_digital_oracle/` contributes only Digital Oracle runtime tools as `signaldeck.digital_oracle`; Digital Oracle has no route or nav surface, and it adds no API routers, frontend routes, or provider bundles in this upgrade.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting.
 - `backend/app/db/` owns PostgreSQL session lifecycle, `create_all` bootstrap, bundled package seeds, and startup recovery.

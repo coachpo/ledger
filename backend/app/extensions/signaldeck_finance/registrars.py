@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from app.extensions import BundledApiRouterContribution, BundledServerDeclaredToolContribution
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.run_lifecycle import ExtensionRunLifecycleHooks
 
 if TYPE_CHECKING:
     from app.agents.runtime_tools.types import RuntimeToolSpec
@@ -46,16 +45,9 @@ def load_execution_provider_bundle() -> ExecutionProviderBundle:
     return create_execution_provider_bundle()
 
 
-def load_run_lifecycle_hooks() -> tuple[ExtensionRunLifecycleHooks, ...]:
-    from app.extensions.signaldeck_finance.hooks import register_run_lifecycle_hooks
-
-    return register_run_lifecycle_hooks()
-
-
 __all__ = [
     "load_api_router_contributions",
     "load_execution_provider_bundle",
-    "load_run_lifecycle_hooks",
     "load_runtime_tool_contributions",
     "load_server_declared_tool_contributions",
 ]

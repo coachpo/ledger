@@ -124,7 +124,6 @@ def test_bundled_extension_registry_discovers_default_enabled_extensions() -> No
         registry.build_execution_provider_bundle((DIGITAL_ORACLE_EXTENSION_KEY,)).contributions
         == ()
     )
-    assert registry.list_run_lifecycle_hooks((DIGITAL_ORACLE_EXTENSION_KEY,)) == ()
     assert DIGITAL_ORACLE_EXTENSION_KEY not in registry.package_private_mcp_tool_owners().values()
     assert {contribution.surface for contribution in registry.list_api_router_contributions()} == {
         "/api/v1/portfolios",

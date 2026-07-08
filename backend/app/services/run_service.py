@@ -99,7 +99,6 @@ from app.services.package_execution_plan_builder import (
     PackageExecutionPlanBuilder,
     WorkflowPackageExecutionPlanError,
 )
-from app.services.run_lifecycle import WorkflowPackageStartContext
 from app.services.run_read_projection import RunReadProjection
 from app.services.run_rerun import RunRerunPreparation
 from app.services.workflow_package_preflight import (
@@ -647,7 +646,7 @@ class RunService:
         surfaces = dependency.get("surfaces")
         if not isinstance(surfaces, list):
             return fallback
-        for prefix in ("tool.", "runtime.tool.", "mcp.", "provider.", "hook."):
+        for prefix in ("tool.", "runtime.tool.", "mcp.", "provider."):
             for surface in surfaces:
                 if isinstance(surface, str) and surface.startswith(prefix):
                     return surface
@@ -1171,10 +1170,8 @@ class RunService:
             return
         self._assert_run_extension_dependencies_enabled(run)
         if run.started_at is None:
-            started_at = utcnow()
-            run.started_at = started_at
+            run.started_at = utcnow()
             self.session.commit()
-            self._run_workflow_package_start_lifecycle(run, now=started_at)
         plan = self._build_plan_for_run(run)
         try:
             trace_session = self._start_trace_session(run=run, plan=plan)
@@ -1343,20 +1340,6 @@ class RunService:
         current.finished_at = utcnow()
         self.session.commit()
         return True
-
-    def _run_workflow_package_start_lifecycle(self, run: Run, *, now: datetime) -> None:
-        if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
-            return
-        extension_keys = self._run_extension_dependency_keys(run)
-        context = WorkflowPackageStartContext(
-            session=self.session,
-            provider_bundle=self.provider_bundle,
-            now=now,
-        )
-        hooks = self.extension_service.get_run_lifecycle_hooks(extension_keys)
-        for hook in hooks:
-            if hook.on_workflow_package_start is not None:
-                hook.on_workflow_package_start(context)
 
     def _hydrate_slot_outputs(
         self,

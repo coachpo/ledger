@@ -5,13 +5,13 @@
 ## OVERVIEW
 FastAPI + SQLAlchemy + Pydantic backend for SignalDeck. Routers stay thin, services own business rules and transaction boundaries, shared formatting/error/telemetry helpers live in `app/core`, PostgreSQL initialization is composed in `app/db/session.py`, and executable agent workflows are accepted only through Workflow Package APIs. The live request path includes the statically resident `signaldeck.finance` Finance Workspace extension, the tool-only `signaldeck.digital_oracle` extension, and platform routes for Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs.
 
-Extension model: SignalDeck Core ships statically resident extensions in code, while backend state and gates decide which routes, tools, providers, and hooks are exposed.
+Extension model: SignalDeck Core ships statically resident extensions in code, while backend state and gates decide which routes, tools, and providers are exposed.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
-Future backend upgrade work must keep generic platform behavior separate from extension-owned behavior. Promote extension-owned routes, providers, runtime tools, or hooks into core layers only when a shared contract is intentional and the registries, docs, and tests move with it.
+Future backend upgrade work must keep generic platform behavior separate from extension-owned behavior. Promote extension-owned routes, providers, or runtime tools into core layers only when a shared contract is intentional and the registries, docs, and tests move with it.
 
 Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
 
@@ -29,7 +29,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `app/extensions/AGENTS.md` — statically resident extension registry, slim state, private registrar, and ownership boundaries
 - `app/extensions/signaldeck_finance/AGENTS.md` — `signaldeck.finance` route/tool/provider/report ownership
 - `app/agents/AGENTS.md` — tool catalog, native runtime tools, and MCP security/runtime boundaries
-- `app/services/AGENTS.md` — service orchestration, extension state, manifests, Scheduled Tasks, execution providers/lifecycle hooks, runtime execution, and quote-provider wiring
+- `app/services/AGENTS.md` — service orchestration, extension state, manifests, Scheduled Tasks, execution providers, runtime execution, and quote-provider wiring
 - `app/schemas/AGENTS.md` — request/response validation, manifests, and serialization
 - `app/models/AGENTS.md` — ORM entities, constraints, indexes, cache tables, manifests, and runtime metadata
 - `app/repositories/AGENTS.md` — SQLAlchemy query/repository patterns
@@ -62,7 +62,7 @@ backend/
 | Preserved v1 route families | `app/extensions/signaldeck_finance/api_routers.py`, `app/api/portfolios.py`, `app/api/balances.py`, `app/api/positions.py`, `app/api/trading_operations.py`, `app/api/market_data.py`, `app/api/templates.py`, `app/api/reports.py` | preserved finance routes registered behind `signaldeck.finance` gates |
 | Shared config / errors / telemetry / normalization | `app/core/AGENTS.md` | env aliases, `ApiError`, Logfire setup, decimal/symbol/currency helpers |
 | DB init/session | `app/db/AGENTS.md` | engine/session caches, `init_db()`, PostgreSQL upgrades, and startup repair |
-| Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/decompiler, schedule recurrence/materialization, execution providers/lifecycle hooks, runtime execution, queue claims/read projections, and market-data fallback |
+| Service internals | `app/services/AGENTS.md` | transactions, manifest parser/compiler/export, schedule recurrence/materialization, execution providers, runtime execution, queue claims/read projections, and market-data fallback |
 | API payload shape | `app/schemas/AGENTS.md` | Pydantic validation, manifest contracts, run progress/queue read models, serialization, camelCase aliasing |
 | Persistence / constraints | `app/models/AGENTS.md`, `app/repositories/AGENTS.md` | ORM entities, report/cache/model-connection tables, manifest fields, and runtime data access |
 | Core test coverage | `tests/AGENTS.md` | CRUD, manifests, MCP, package preflight, rerun contracts, runtime tools, runtime boundary coverage, and DB-bootstrap coverage |
@@ -78,11 +78,11 @@ backend/
 - Logfire setup and trace/span id formatting live in `app/core/telemetry.py`; run execution must keep working when no Logfire token is configured.
 - Services return read schemas via `*.model_validate(...)` and own `commit()/rollback()` around multi-step writes.
 - `ReportService` owns slug normalization, timestamped report-name generation for compiled reports, external JSON creation, filtered list retrieval, markdown-upload validation, and download-by-slug semantics.
-- Workflow package writes use YAML manifest parser/compiler/decompiler services; unsupported `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid. Package save/import is artifact-only; launch, preflight, and rerun evaluate live readiness later.
+- Workflow package writes use YAML manifest parser/compiler/export services; unsupported `spec.skills`, YAML aliases/anchors/merge keys, unsupported tags, non-finite values, duplicate refs, raw global ids, and old workflow roots stay invalid. Package save/import is artifact-only; launch, preflight, and rerun evaluate live readiness later.
 - Scheduled Tasks use `/api/schedules`, structured recurrence, IANA timezones, JSON input templates, idempotent manual fires, and ordinary queued runs. The scheduler worker materializes due fires; routes do not execute runs inline.
 - Removed orchestration, Studio, Tryout, runtime-v2 routes, and global authoring routes are not mounted live. Keep docs aligned with Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs.
 - `signaldeck.finance` owns preserved `/api/v1` finance routers, finance service dependencies, provider factories, finance runtime tools, and report lookup while enabled.
-- `signaldeck.digital_oracle` is default enabled and tool-only in this upgrade. It owns `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup` with canonical owner-qualified tool keys and mechanical OpenAI function names, and it adds no API router, provider bundle, lifecycle hook, route, or nav surface.
+- `signaldeck.digital_oracle` is default enabled and tool-only in this upgrade. It owns `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup` with canonical owner-qualified tool keys and mechanical OpenAI function names, and it adds no API router, provider bundle, route, or nav surface.
 - Tools are global read-only metadata at `/api/tools`; packages reference only canonical owner-qualified tool keys through package-local capability profiles. Live tool metadata is extension-owned Finance Workspace and Digital Oracle tooling.
 - LLM-provider calls must stay inside official SDK clients (`OpenAI`) rather than ad-hoc raw HTTP request code.
 

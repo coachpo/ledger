@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers `app/agents/` only.
 
 ## OVERVIEW
-`app/agents/` owns server-declared tool metadata, native runtime tool dispatch, and MCP execution boundaries. Extension registrars contribute extension-owned tool specs and executors, while `ExtensionService` decides which enabled extension keys reach `ToolCatalog`, `RuntimeToolRegistry`, execution providers, and run lifecycle hooks.
+`app/agents/` owns server-declared tool metadata, native runtime tool dispatch, and MCP execution boundaries. Extension registrars contribute extension-owned tool specs and executors, while `ExtensionService` decides which enabled extension keys reach `ToolCatalog`, `RuntimeToolRegistry`, and execution providers.
 
 Extension model: statically resident extension-contributed tools from Finance Workspace and Digital Oracle Runtime.
 

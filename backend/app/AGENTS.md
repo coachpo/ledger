@@ -58,7 +58,7 @@ app/
 
 ## ANTI-PATTERNS
 - Do not add auth, RBAC, tenant/account ownership, login/session, or account-management app plumbing unless product scope changes.
-- Do not bypass `ExtensionService`, registry loaders, or extension gates to expose routes, tools, providers, or lifecycle hooks.
+- Do not bypass `ExtensionService`, registry loaders, or extension gates to expose routes, tools, or providers.
 - Do not move Finance Workspace or Digital Oracle behavior into generic app services without an explicit shared-contract decision and coordinated tests/docs.
 - Do not resurrect global agents, workflows, capabilities, standalone MCP servers, output schemas, skills, Studio, Tryout, orchestration, runtime-v2, or simulations routes.
 - Do not treat Alembic scaffolds, docs, frontend output, or cache directories as backend app source of truth.
