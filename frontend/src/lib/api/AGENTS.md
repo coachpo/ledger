@@ -34,7 +34,6 @@ src/lib/api/
 ├── schedules.ts           # Scheduled Task CRUD, preview, fire history, and run-now requests
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing
-├── memory.ts              # workflow memory proposals, decisions, audit events, and quarantine review helpers
 └── runs.ts                # run list/detail reads with package provenance, progress, queue, rerun/fork contracts
 ```
 
@@ -43,7 +42,7 @@ src/lib/api/
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
 | Preserved product contracts | `portfolios.ts`, `balances.ts`, `positions.ts`, `trading-operations.ts`, `market-data.ts`, `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
-| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `memory.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, runtime-input registry/history, package secret bindings, Scheduled Tasks, read-only tool metadata, model bindings, workflow memory review, and run inspection |
+| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, runtime-input registry/history, package secret bindings, Scheduled Tasks, read-only tool metadata, model bindings, and run inspection |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 
@@ -54,7 +53,6 @@ src/lib/api/
 - Keep preserved `/api/v1` resource paths and current unversioned platform `/api/*` paths separate in the module layer.
 - `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
 - `workflow-packages.ts` owns package runtime-input registry/history and secret-binding helpers; do not hide those package-scoped APIs inside route components or generic run helpers.
-- `memory.ts` owns `/api/memory/proposals`, proposal approve/reject actions, `/api/memory/audit-events`, and `/api/memory/quarantine`. Do not add browser entry CRUD, global search/storage helpers, or model-execution memory helpers.
 - Match backend casing exactly; request/response types come from `../types/*` rather than inline object literals.
 
 ## ANTI-PATTERNS
@@ -67,5 +65,5 @@ src/lib/api/
 
 ## NOTES
 - The frontend does not ship v2, Studio, Tryout, or orchestration API helpers in this folder.
-- Platform resources, including extension state, Scheduled Tasks, workflow memory review calls, and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
+- Platform resources, including extension state, Scheduled Tasks, and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while portfolios, templates, and reports stay on `/api/v1`.
 - Keep this file aligned with `src/hooks/AGENTS.md`, `src/lib/types/AGENTS.md`, and the live files under `src/lib/api/`.

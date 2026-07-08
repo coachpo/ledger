@@ -4,7 +4,7 @@ This is the project-owned frontend UI standard for SignalDeck. It reflects the c
 
 ## Assumptions
 
-SignalDeck is a workflow and finance workspace app with dense data, long identifiers, markdown, JSON, run evidence, tables, and editor panes. The app ships a flat route tree under one layout shell. Workflow Packages, Scheduled Tasks, Model Connections, Memory, Runs, Extensions, and extension-gated finance routes are live surfaces. Removed route families are not active UI targets.
+SignalDeck is a workflow and finance workspace app with dense data, long identifiers, markdown, JSON, run evidence, tables, and editor panes. The app ships a flat route tree under one layout shell. Workflow Packages, Scheduled Tasks, Model Connections, Runs, Extensions, and extension-gated finance routes are live surfaces. Removed route families are not active UI targets.
 
 The frontend has no user migration burden yet, so new work should prefer the shared library and current route contracts over compatibility wrappers.
 

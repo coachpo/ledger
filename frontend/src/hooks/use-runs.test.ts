@@ -81,14 +81,6 @@ function runDetailWithStatus(status: RunStatus): RunRead {
     inheritedTokens: 0,
     input: {},
     lineageRootRunId: null,
-    workflowMemoryEvidence: {
-      auditEvents: [],
-      checkpoints: [],
-      decisions: [],
-      injections: [],
-      proposals: [],
-      quarantines: [],
-    },
     extensionDependencies: [],
     packageProvenance: null,
     progress: {

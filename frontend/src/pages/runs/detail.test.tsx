@@ -16,7 +16,6 @@ import type {
   RunRead,
   RunRerunDraftRead,
   RunStepRead,
-  RunWorkflowMemoryEvidenceRead,
 } from "@/lib/types/run";
 import type {
   ModelConnectionCapabilities,
@@ -85,7 +84,6 @@ const RUNTIME_DEFERRED_SECTION_SIZE_CLASS =
   "[contain-intrinsic-size:auto_960px]";
 const EXECUTION_DEFERRED_SECTION_SIZE_CLASS =
   "[contain-intrinsic-size:auto_960px]";
-const WORKFLOW_MEMORY_GROUP_SIZE_CLASS = "[contain-intrinsic-size:auto_720px]";
 
 function buildInvocation(
   overrides: Partial<RunAgentInvocationRead> = {},
@@ -148,132 +146,6 @@ function buildStep(overrides: Partial<RunStepRead> = {}): RunStepRead {
     updatedAt: "2026-04-20T10:00:03Z",
     ...overrides,
   };
-}
-
-function emptyWorkflowMemoryEvidence(): RunWorkflowMemoryEvidenceRead {
-  return {
-    auditEvents: [],
-    checkpoints: [],
-    decisions: [],
-    injections: [],
-    proposals: [],
-    quarantines: [],
-  };
-}
-
-function buildWorkflowMemoryEvidence(
-  overrides: Partial<RunWorkflowMemoryEvidenceRead> = {},
-): RunWorkflowMemoryEvidenceRead {
-  return {
-    ...emptyWorkflowMemoryEvidence(),
-    ...overrides,
-  };
-}
-
-function buildCompleteWorkflowMemoryEvidence(): RunWorkflowMemoryEvidenceRead {
-  return buildWorkflowMemoryEvidence({
-    auditEvents: [
-      {
-        agentKey: "portfolio_manager",
-        auditEventId: 5101,
-        createdAt: NOW,
-        event: { action: "proposal_decided", status: "committed" },
-        eventType: "proposal_decided",
-        invocationId: "invocation-decision",
-        packageKey: "market_review_package",
-        runId: 42,
-        stepId: "decision",
-        targetId: "proposal-safe",
-        targetType: "proposal",
-        workflowKey: "market_review",
-      },
-    ],
-    checkpoints: [
-      {
-        agentKey: "portfolio_manager",
-        checkpointId: "checkpoint-decision-1",
-        checkpointType: "agent_state",
-        createdAt: NOW,
-        invocationId: "invocation-decision",
-        metadata: { source: "middleware" },
-        packageKey: "market_review_package",
-        retention: "run",
-        runId: 42,
-        sequence: 1,
-        state: { summary: "Safe memory" },
-        stepId: "decision",
-        workflowKey: "market_review",
-      },
-    ],
-    decisions: [
-      {
-        createdAt: NOW,
-        decidedBy: "middleware",
-        decision: "commit",
-        decisionId: "decision-safe",
-        policySnapshot: { maxItems: 3 },
-        proposalId: "proposal-safe",
-        reason: "Passed workflow memory policy.",
-        reasonCode: "policy_passed",
-      },
-    ],
-    injections: [
-      {
-        agentKey: "portfolio_manager",
-        checkpointIds: ["checkpoint-decision-1"],
-        completion: { checkpointCount: 1, contextItemCount: 1 },
-        contextItemIds: ["memory-safe"],
-        invocationId: "invocation-decision",
-        policySnapshot: { maxContextItems: 4 },
-        runAgentInvocationId: 1001,
-        runStepId: 101,
-        scope: { namespace: "research" },
-        slot: "decision",
-        stepIndex: 1,
-      },
-    ],
-    proposals: [
-      {
-        activeMemoryIds: ["memory-safe"],
-        agentKey: "portfolio_manager",
-        createdAt: NOW,
-        detectors: { pii: false },
-        invocationId: "invocation-decision",
-        kind: "fact",
-        namespace: "research",
-        packageKey: "market_review_package",
-        proposalId: "proposal-safe",
-        reason: "Safe memory",
-        runId: 42,
-        sourceOutputPath: "outputs.decision.memory",
-        status: "committed",
-        stepId: "decision",
-        updatedAt: NOW,
-        workflowKey: "market_review",
-      },
-    ],
-    quarantines: [
-      {
-        agentKey: "portfolio_manager",
-        createdAt: NOW,
-        detectors: { promptInjection: true },
-        evidence: { excerpt: "unsafe instruction" },
-        invocationId: "invocation-decision",
-        kind: "fact",
-        memoryId: null,
-        namespace: "research",
-        packageKey: "market_review_package",
-        proposalId: "proposal-quarantined",
-        quarantineId: 6101,
-        reason: "Policy isolated unsafe memory evidence.",
-        reasonCode: "policy_quarantine",
-        resolvedAt: null,
-        runId: 42,
-        stepId: "decision",
-        workflowKey: "market_review",
-      },
-    ],
-  });
 }
 
 function buildPackageProvenance(
@@ -429,7 +301,6 @@ function buildRun(overrides: Partial<RunRead> = {}): RunRead {
     inheritedTokens: 0,
     input: { ticker: "AAPL" },
     lineageRootRunId: null,
-    workflowMemoryEvidence: emptyWorkflowMemoryEvidence(),
     extensionDependencies: [],
     packageProvenance: null,
     progress: {
@@ -615,7 +486,6 @@ describe("RunsDetailPage", () => {
       ["input", "Input"],
       ["runtime", "Runtime"],
       ["usage", "Usage"],
-      ["memory", "Memory"],
       ["lineage", "Lineage"],
     ];
     const tabList = within(tabs).getByRole("tablist", {
@@ -679,12 +549,6 @@ describe("RunsDetailPage", () => {
       "runs-detail-section-evidence-availability",
     );
     expect(evidenceAvailability).toHaveTextContent(/1 provider\/model row/i);
-    expect(evidenceAvailability).toHaveTextContent(
-      /0 middleware evidence events/i,
-    );
-    expect(evidenceAvailability).toHaveTextContent(
-      /0 checkpoints; 0 audit events/i,
-    );
     expect(evidenceAvailability).toHaveTextContent(/2,302 executed tokens/i);
     overviewRender.unmount();
 
@@ -743,7 +607,6 @@ describe("RunsDetailPage", () => {
     ["input", "Input"],
     ["runtime", "Runtime"],
     ["usage", "Usage"],
-    ["memory", "Memory"],
     ["lineage", "Lineage"],
   ] satisfies Array<[RunDetailTabKey, string]>)(
     "renders the %s tab as one titled section block",
@@ -917,7 +780,6 @@ describe("RunsDetailPage", () => {
         resolvedModelConnections: [buildResolvedModelConnection({})],
       }),
       sourceRunId: 41,
-      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
     });
     const renderTab = (tab: RunDetailTabKey) => {
       searchParamsMock = new URLSearchParams(`tab=${tab}`);
@@ -959,30 +821,11 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     usageRender.unmount();
 
-    const memoryRender = renderTab("memory");
-    const memoryPanel = screen.getByTestId("runs-detail-tab-panel-memory");
-    expect(
-      within(memoryPanel).getByTestId("runs-memory-workspace"),
-    ).toBeVisible();
-    expect(
-      within(memoryPanel).getByTestId("runs-workflow-memory-group-proposals"),
-    ).toHaveTextContent(/proposal-safe/i);
-    expect(
-      within(memoryPanel).getByTestId("runs-workflow-memory-group-checkpoints"),
-    ).toHaveTextContent(/checkpoint-decision-1/i);
-    expect(
-      within(memoryPanel).queryByRole("heading", { name: "Lineage" }),
-    ).not.toBeInTheDocument();
-    memoryRender.unmount();
-
     renderTab("lineage");
     const lineagePanel = screen.getByTestId("runs-detail-tab-panel-lineage");
     expect(
       within(lineagePanel).getByTestId("runs-lineage-workspace"),
     ).toBeVisible();
-    expect(
-      within(lineagePanel).queryByTestId("runs-workflow-memory-group-proposals"),
-    ).not.toBeInTheDocument();
   });
 
   it("keeps final output and run input content visible", () => {
@@ -1036,8 +879,6 @@ describe("RunsDetailPage", () => {
       "",
       "execution",
     ],
-    ["memory mode infers memory", "mode=memory", "", "memory"],
-    ["invalid tab infers memory from mode only", "tab=unknown&mode=memory", "", "memory"],
     ["metadata mode infers overview", "mode=metadata", "", "overview"],
     ["usage tab remains usage", "tab=usage", "", "usage"],
     ["step hash infers execution", "", "#step-2", "execution"],
@@ -1066,7 +907,7 @@ describe("RunsDetailPage", () => {
     expect(latestRunDetailSectionStackProps().selectedTab).toBe("output");
   });
 
-  it.each(["#run-context", "#memory-701"])(
+  it.each(["#run-context", "#artifact-701"])(
     "ignores unsupported hash %s for top-level tab inference",
     (hash) => {
       useRunMock.mockReturnValue(queryResult(buildRun()));
@@ -1186,21 +1027,6 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
     lineageRender.unmount();
 
-    searchParamsMock = new URLSearchParams("mode=memory");
-    const memoryRender = render(<RunsDetailPage />);
-    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
-    expect(memoryWorkspace).toBeVisible();
-    expect(
-      within(memoryWorkspace).getByTestId("runs-memory-empty"),
-    ).toHaveTextContent(/No workflow memory events/i);
-    expect(
-      screen.queryByTestId("runs-memory-inspector-empty"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("runs-memory-compact-artifacts"),
-    ).not.toBeInTheDocument();
-    memoryRender.unmount();
-
     searchParamsMock = new URLSearchParams("mode=runtime");
     const runtimeRender = render(<RunsDetailPage />);
     const runtimePanel = screen.getByTestId("runs-detail-tab-panel-runtime");
@@ -1236,7 +1062,7 @@ describe("RunsDetailPage", () => {
     );
   });
 
-  it("renders secondary lineage, memory, and token accounting evidence", () => {
+  it("renders secondary lineage and token accounting evidence", () => {
     const copiedInvocation = buildInvocation({
       outputOrigin: "copied",
       resolvedInputOrigin: "copied",
@@ -1278,7 +1104,6 @@ describe("RunsDetailPage", () => {
         }),
       ],
       totalTokens: 51,
-      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
     });
 
     useRunMock.mockReturnValue(queryResult(run));
@@ -1292,21 +1117,6 @@ describe("RunsDetailPage", () => {
       within(lineageWorkspace).getByTestId("runs-lineage-summary"),
     ).toBeVisible();
     lineageRender.unmount();
-
-    searchParamsMock = new URLSearchParams("mode=memory");
-    const memoryRender = render(<RunsDetailPage />);
-    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
-    expect(memoryWorkspace).toHaveTextContent(/Workflow memory middleware evidence/i);
-    expect(memoryWorkspace).toHaveTextContent(/Injections/i);
-    expect(memoryWorkspace).toHaveTextContent(/Proposals/i);
-    expect(memoryWorkspace).toHaveTextContent(/Decisions/i);
-    expect(memoryWorkspace).toHaveTextContent(/Quarantines/i);
-    expect(memoryWorkspace).toHaveTextContent(/Checkpoints/i);
-    expect(memoryWorkspace).toHaveTextContent(/Audit events/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-proposal-proposal-safe"),
-    ).toHaveTextContent(/Safe memory/i);
-    memoryRender.unmount();
 
     searchParamsMock = new URLSearchParams("mode=runtime");
     const runtimeRender = render(<RunsDetailPage />);
@@ -1433,9 +1243,7 @@ describe("RunsDetailPage", () => {
   });
 
   it("renders selected execution evidence inline without an inspector pane", () => {
-    const run = buildRun({
-      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
-    });
+    const run = buildRun();
     useRunMock.mockReturnValue(queryResult(run));
 
     searchParamsMock = new URLSearchParams("mode=execution");
@@ -1488,40 +1296,6 @@ describe("RunsDetailPage", () => {
     expect(searchParamsMock.has("pane")).toBe(false);
     selectedInvocationRender.unmount();
 
-    searchParamsMock = new URLSearchParams(
-      "mode=metadata&tab=memory&inspect=run&pane=input",
-    );
-    render(<RunsDetailPage />);
-
-    expect(
-      screen.queryByTestId("runs-detail-section-metadata"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Metadata" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-detail-tab-panel-memory")).toBeVisible();
-    expect(
-      screen.queryByTestId("runs-detail-final-output"),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-detail-input")).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("runs-step-1-trace-summary"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("runs-workflow-memory-proposal-proposal-safe"),
-    ).toHaveTextContent(/Safe memory/i);
-    [
-      "runs-audit-table",
-      "runs-audit-row-payload-input",
-      "runs-audit-row-payload-output",
-      "runs-audit-row-memory-groups",
-      "runs-audit-row-trace-agent-1001",
-      "runs-audit-row-payload-input-inline-evidence",
-      "runs-audit-row-payload-output-inline-evidence",
-      "runs-audit-row-trace-agent-1001-inline-evidence",
-    ].forEach((testId) => {
-      expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
-    });
   });
 
   it("updates inspection URL state without clearing modal state", () => {
@@ -2028,7 +1802,6 @@ describe("RunsDetailPage", () => {
       "runs-audit-row-trace-root",
       "runs-audit-row-payload-output",
       "runs-audit-row-payload-input",
-      "runs-audit-row-memory-groups",
       "runs-audit-row-trace-agent-1002",
     ].forEach((testId) => {
       expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
@@ -2344,7 +2117,7 @@ describe("RunsDetailPage", () => {
     ).toHaveTextContent(/Usage not recorded/i);
   });
 
-  it("defers only the long runtime, usage, and memory evidence sections", () => {
+  it("defers only the long runtime and usage sections", () => {
     const run = buildRun({
       packageProvenance: buildPackageProvenance({
         resolvedModelConnections: [buildResolvedModelConnection({})],
@@ -2374,7 +2147,6 @@ describe("RunsDetailPage", () => {
           ],
         }),
       ],
-      workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
     });
     useRunMock.mockReturnValue(queryResult(run));
 
@@ -2418,36 +2190,6 @@ describe("RunsDetailPage", () => {
     );
 
     usageRender.unmount();
-    searchParamsMock = new URLSearchParams("tab=memory");
-    render(<RunsDetailPage />);
-
-    expect(screen.getByTestId("runs-memory-evidence")).not.toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
-    );
-    expect(
-      screen.getByTestId("runs-workflow-memory-group-injections"),
-    ).toHaveClass(CONTENT_VISIBILITY_AUTO_CLASS, WORKFLOW_MEMORY_GROUP_SIZE_CLASS);
-    expect(screen.getByTestId("runs-workflow-memory-group-proposals")).toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
-    );
-    expect(screen.getByTestId("runs-workflow-memory-group-decisions")).toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
-    );
-    expect(screen.getByTestId("runs-workflow-memory-group-quarantines")).toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
-    );
-    expect(screen.getByTestId("runs-workflow-memory-group-checkpoints")).toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
-    );
-    expect(screen.getByTestId("runs-workflow-memory-group-auditEvents")).toHaveClass(
-      CONTENT_VISIBILITY_AUTO_CLASS,
-      WORKFLOW_MEMORY_GROUP_SIZE_CLASS,
-    );
   });
 
   it("keeps raw payloads scrollable on mobile without a sheet inspector", () => {
@@ -2499,7 +2241,7 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("groups graph metadata in execution and memory tabs", () => {
+  it("groups graph metadata in the execution tab", () => {
     useRunMock.mockReturnValue(
       queryResult(
         buildRun({
@@ -2569,114 +2311,6 @@ describe("RunsDetailPage", () => {
     ).not.toBeInTheDocument();
 
     defaultRender.unmount();
-    searchParamsMock = new URLSearchParams("mode=metadata&tab=memory");
-    render(<RunsDetailPage />);
-    expect(
-      screen.queryByTestId("runs-detail-section-metadata"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Metadata" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("runs-memory-empty")).toHaveTextContent(
-      /No workflow memory events/i,
-    );
-    expect(
-      screen.queryByTestId("runs-memory-artifacts"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("renders workflow memory middleware evidence groups", () => {
-    useRunMock.mockReturnValue(
-      queryResult(
-        buildRun({
-          workflowMemoryEvidence: buildCompleteWorkflowMemoryEvidence(),
-        }),
-      ),
-    );
-
-    searchParamsMock = new URLSearchParams("inspect=run&pane=memory");
-    render(<RunsDetailPage />);
-
-    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
-    expect(screen.getByTestId("runs-memory-evidence")).toBeVisible();
-    expect(
-      within(memoryWorkspace).getByRole("heading", {
-        name: /workflow memory middleware evidence/i,
-      }),
-    ).toBeVisible();
-    expect(
-      within(screen.getByTestId("runs-detail-section-memory")).getByTestId(
-        "runs-detail-section-title-memory",
-      ),
-    ).toHaveTextContent("Memory");
-    expect(screen.getByRole("heading", { name: /injections/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /proposals/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /decisions/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /quarantines/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /checkpoints/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /audit events/i })).toBeVisible();
-    expect(
-      screen.getByTestId("runs-workflow-memory-group-injections"),
-    ).toHaveTextContent(/1 event/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-group-proposals"),
-    ).toHaveTextContent(/1 event/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-group-decisions"),
-    ).toHaveTextContent(/1 event/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-group-quarantines"),
-    ).toHaveTextContent(/1 event/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-group-checkpoints"),
-    ).toHaveTextContent(/1 event/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-group-auditEvents"),
-    ).toHaveTextContent(/1 event/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-injection-1001"),
-    ).toHaveTextContent(/memory-safe/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-proposal-proposal-safe"),
-    ).toHaveTextContent(/Safe memory/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-decision-decision-safe"),
-    ).toHaveTextContent(/Policy passed/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-quarantine-6101"),
-    ).toHaveTextContent(/Policy quarantine/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-checkpoint-checkpoint-decision-1"),
-    ).toHaveTextContent(/agent state/i);
-    expect(
-      screen.getByTestId("runs-workflow-memory-audit-event-5101"),
-    ).toHaveTextContent(/proposal decided/i);
-    expect(screen.queryByTestId("runs-memory-artifacts")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("runs-memory-compact-artifacts")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: /open report/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("renders one compact absent-memory state for the memory mode", () => {
-    useRunMock.mockReturnValue(queryResult(buildRun()));
-    searchParamsMock = new URLSearchParams("inspect=run&pane=memory");
-
-    render(<RunsDetailPage />);
-
-    const memoryWorkspace = screen.getByTestId("runs-memory-workspace");
-    expect(
-      within(memoryWorkspace).getByTestId("runs-memory-empty"),
-    ).toHaveTextContent(/No workflow memory events/i);
-    expect(
-      screen.queryByTestId("runs-memory-inspector-empty"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("runs-memory-artifacts-empty"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(/No memory artifacts were created by this run/i),
-    ).not.toBeInTheDocument();
   });
 
   it("renders a single-node step lineage diagram when no upstream source exists", () => {

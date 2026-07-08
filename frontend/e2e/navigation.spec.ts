@@ -38,7 +38,6 @@ const primaryShellNavTestIds = [
   "nav-reports",
   "nav-workflow-packages",
   "nav-model-connections",
-  "nav-memory",
   "nav-scheduled-tasks",
   "nav-runs",
   "nav-extensions",

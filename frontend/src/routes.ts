@@ -78,12 +78,6 @@ const platformRoutes: AppRouteDefinition[] = [
     }),
   },
   {
-    path: "memory",
-    lazy: async () => ({
-      Component: (await import("./pages/memory/list")).MemoryListPage,
-    }),
-  },
-  {
     path: "scheduled-tasks",
     lazy: async () => ({
       Component: (await import("./pages/scheduled-tasks/list"))

@@ -18,7 +18,6 @@ describe("run detail tab contract", () => {
       "input",
       "runtime",
       "usage",
-      "memory",
       "lineage",
     ]);
   });
@@ -31,7 +30,6 @@ describe("run detail tab contract", () => {
       input: "Input",
       runtime: "Runtime",
       usage: "Usage",
-      memory: "Memory",
       lineage: "Lineage",
     });
   });
@@ -43,7 +41,6 @@ describe("run detail tab contract", () => {
     expect(parseRunDetailTab("input")).toBe("input");
     expect(parseRunDetailTab("runtime")).toBe("runtime");
     expect(parseRunDetailTab("usage")).toBe("usage");
-    expect(parseRunDetailTab("memory")).toBe("memory");
     expect(parseRunDetailTab("lineage")).toBe("lineage");
     expect(parseRunDetailTab("summary")).toBeNull();
     expect(parseRunDetailTab("audit")).toBeNull();
@@ -57,13 +54,13 @@ describe("run detail tab contract", () => {
   it("prefers a valid raw tab over all other hints", () => {
     expect(
       resolveRunDetailTab({
-        rawTab: "memory",
+        rawTab: "lineage",
         rawMode: "summary",
         rawPane: "error",
         rawInspect: "step:1",
         rawHash: "#invocation-9",
       }),
-    ).toBe("memory");
+    ).toBe("lineage");
   });
 
   it("falls back from an invalid raw tab to hint inference", () => {
@@ -159,7 +156,7 @@ describe("run detail tab contract", () => {
       inferRunDetailTabFromUrlHints({
         rawMode: null,
         rawPane: "details",
-        rawInspect: "memory:abc",
+        rawInspect: "artifact:abc",
         rawHash: null,
       }),
     ).toBeNull();
@@ -180,7 +177,7 @@ describe("run detail tab contract", () => {
         rawMode: null,
         rawPane: null,
         rawInspect: null,
-        rawHash: "#memory-abc",
+        rawHash: "#artifact-abc",
       }),
     ).toBeNull();
 

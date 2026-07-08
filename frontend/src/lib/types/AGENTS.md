@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, Extensions, Workflow Packages, Scheduled Tasks, Tools, Model Connections, Memory, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
+`src/lib/types/` mirrors the backend wire contracts for portfolios, balances, positions, market data, templates, reports, CSV import, trading operations, Extensions, Workflow Packages, Scheduled Tasks, Tools, Model Connections, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
 
 Extension model: statically resident extension state.
 
@@ -33,8 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Workflow Package authoring contracts | `workflow-package.ts`, `../platform-authoring/schema/types.ts` | package manifest API payloads and local schema-builder IR |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
 | Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |
-| Platform memory contracts | `memory.ts` | proposal review, approve/reject, audit-event, and quarantine payloads |
-| Platform execution contracts | `run.ts` | run list/detail, monitor payloads, memory evidence, and package provenance |
+| Platform execution contracts | `run.ts` | run list/detail, monitor payloads, and package provenance |
 
 ## CONVENTIONS
 - Keep frontend field names aligned with backend camelCase aliases; do not reintroduce snake_case here.
@@ -46,8 +45,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Workflow Package authoring types are frontend mirrors for package artifacts; do not promote them back into global `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` route contracts.
 - Extension state types must stay slim. Do not add plugin-manifest fields, scaffold data, reason text, categories, version policy, or state counters to `extension.ts`.
 - Scheduled Task types use structured recurrence, IANA timezone strings, JSON object templates/vars, `scheduled` or `manual` fire reasons, and schedule-linked run metadata; do not introduce raw cron or finance-owned fields here.
-- Run memory evidence is exposed through `workflowMemoryEvidence` on `run.ts`, grouped into injections, proposals, decisions, quarantines, checkpoints, and audit events. Do not add alternate run-detail memory streams, compact artifact slices, or report-link derivation from opaque memory identifiers.
-- `memory.ts` covers workflow memory proposal, decision, audit-event, and quarantine shapes for the review route. It must not reintroduce browser entry CRUD, direct model-execution payloads, or all-package search/storage shapes.
 - There is no vector activation/search, embeddings browser, wildcard memory browser, namespace-grant authoring shape, bulk-delete selection shape, runtime delete shape, tombstone/recycle/undo/delete-reason shape, or report-history promotion shape.
 
 ## ANTI-PATTERNS
@@ -55,7 +52,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not declare ad-hoc wire types inside hooks or page components.
 - Do not collapse backend distinctions such as slug-based report lookup vs numeric portfolio ids or versioned platform references.
 - Do not convert decimal strings to numbers at the type layer.
-- Do not change template, report, extension, Scheduled Task, Memory, or agent-platform payload shapes without coordinating backend schemas, hooks, and tests.
+- Do not change template, report, extension, Scheduled Task, or agent-platform payload shapes without coordinating backend schemas, hooks, and tests.
 
 ## NOTES
 - These files cover the preserved product routes plus the current agent-platform routes; retired orchestration, Studio, Tryout, and runtime-v2 types do not ship here.

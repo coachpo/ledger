@@ -3,11 +3,6 @@ import type {
   GetMarketHistoryParams,
   GetMarketQuotesParams,
 } from "./types/market-data";
-import type {
-  WorkflowMemoryListParams,
-  WorkflowMemoryProposalListParams,
-  WorkflowMemoryQuarantineListParams,
-} from "./types/memory";
 import type { ModelConnectionListParams } from "./types/model-connection";
 import type { RunListParams } from "./types/run";
 import type {
@@ -45,33 +40,6 @@ function omitUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
   ) as Partial<T>;
-}
-
-function normalizeWorkflowMemoryListParams(
-  params: WorkflowMemoryListParams = {},
-) {
-  return omitUndefined({
-    limit: params.limit ?? 50,
-    offset: params.offset ?? 0,
-  });
-}
-
-function normalizeWorkflowMemoryProposalParams(
-  params: WorkflowMemoryProposalListParams = {},
-) {
-  return omitUndefined({
-    ...normalizeWorkflowMemoryListParams(params),
-    status: params.status ?? "review_pending",
-  });
-}
-
-function normalizeWorkflowMemoryQuarantineParams(
-  params: WorkflowMemoryQuarantineListParams = {},
-) {
-  return omitUndefined({
-    ...normalizeWorkflowMemoryListParams(params),
-    unresolvedOnly: params.unresolvedOnly ?? true,
-  });
 }
 
 function normalizeHistoryParams(params: GetMarketHistoryParams) {
@@ -306,36 +274,8 @@ const workflowPackagesQueryKeys = {
     ] as const,
   validation: () => [...workflowPackagesRoot, "validation"] as const,
 } as const;
-const memoryRoot = [...platformApiRoot, "memory"] as const;
-
-const memoryQueryKeys = {
-  all: memoryRoot,
-  auditEvents: (params: WorkflowMemoryListParams = {}) =>
-    [
-      ...memoryRoot,
-      "auditEvents",
-      normalizeWorkflowMemoryListParams(params),
-    ] as const,
-  auditEventsScope: () => [...memoryRoot, "auditEvents"] as const,
-  proposals: (params: WorkflowMemoryProposalListParams = {}) =>
-    [
-      ...memoryRoot,
-      "proposals",
-      normalizeWorkflowMemoryProposalParams(params),
-    ] as const,
-  proposalsScope: () => [...memoryRoot, "proposals"] as const,
-  quarantine: (params: WorkflowMemoryQuarantineListParams = {}) =>
-    [
-      ...memoryRoot,
-      "quarantine",
-      normalizeWorkflowMemoryQuarantineParams(params),
-    ] as const,
-  quarantineScope: () => [...memoryRoot, "quarantine"] as const,
-} as const;
-
 const platformQueryKeys = {
   all: [...platformApiRoot] as const,
-  memory: memoryQueryKeys,
   modelConnections: {
     all: [...platformApiRoot, "modelConnections"] as const,
     detail: (modelConnectionId: IdParam) =>

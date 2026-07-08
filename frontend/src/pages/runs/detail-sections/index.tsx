@@ -42,13 +42,6 @@ import type {
   RunRead,
   RunStepRead,
   RunStepStatus,
-  RunWorkflowMemoryAuditEventEvidenceRead,
-  RunWorkflowMemoryCheckpointEvidenceRead,
-  RunWorkflowMemoryDecisionEvidenceRead,
-  RunWorkflowMemoryEvidenceRead,
-  RunWorkflowMemoryInjectionRead,
-  RunWorkflowMemoryProposalEvidenceRead,
-  RunWorkflowMemoryQuarantineEvidenceRead,
 } from "@/lib/types/run";
 
 import { stringifyJson } from "../../platform-resource-helpers";
@@ -116,21 +109,6 @@ import {
   statusVariant,
 } from "./shared-helpers";
 
-type WorkflowMemoryEvidenceGroupKey =
-  | "injections"
-  | "proposals"
-  | "decisions"
-  | "quarantines"
-  | "checkpoints"
-  | "auditEvents";
-
-type WorkflowMemoryEvidenceGroupDefinition = {
-  description: string;
-  emptyCopy: string;
-  key: WorkflowMemoryEvidenceGroupKey;
-  title: string;
-};
-
 type LineageDiagramNodeData = {
   [key: string]: unknown;
   details: DetailItem[];
@@ -161,55 +139,13 @@ const LINEAGE_NODE_WIDTH = 192;
 const LINEAGE_NODE_GAP = 56;
 const LINEAGE_NODE_Y = 24;
 const LINEAGE_CANVAS_HEIGHT_CLASS = "h-80";
-const WORKFLOW_MEMORY_GROUP_DEFERRED_SECTION_CLASS_NAME =
-  "[content-visibility:auto] [contain-intrinsic-size:auto_720px]";
 const EXECUTION_DEFERRED_SECTION_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_960px]";
-
-const WORKFLOW_MEMORY_EVIDENCE_GROUPS: WorkflowMemoryEvidenceGroupDefinition[] = [
-  {
-    description: "Context and checkpoint references injected into model input.",
-    emptyCopy: "No workflow memory injections recorded.",
-    key: "injections",
-    title: "Injections",
-  },
-  {
-    description: "Agent-authored memory proposals staged by middleware.",
-    emptyCopy: "No workflow memory proposals recorded.",
-    key: "proposals",
-    title: "Proposals",
-  },
-  {
-    description: "Policy decisions made for staged proposals.",
-    emptyCopy: "No workflow memory decisions recorded.",
-    key: "decisions",
-    title: "Decisions",
-  },
-  {
-    description: "Policy-isolated proposal or item evidence.",
-    emptyCopy: "No workflow memory quarantines recorded.",
-    key: "quarantines",
-    title: "Quarantines",
-  },
-  {
-    description: "Run-local checkpoint state captured by middleware.",
-    emptyCopy: "No workflow memory checkpoints recorded.",
-    key: "checkpoints",
-    title: "Checkpoints",
-  },
-  {
-    description: "Immutable middleware audit events for this run.",
-    emptyCopy: "No workflow memory audit events recorded.",
-    key: "auditEvents",
-    title: "Audit events",
-  },
-];
 
 const RUN_DETAIL_TAB_ICONS: Record<RunDetailTabKey, LucideIcon> = {
   execution: Activity,
   input: FileText,
   lineage: GitBranch,
-  memory: FileText,
   output: Download,
   overview: Activity,
   runtime: Activity,
@@ -220,7 +156,6 @@ const RUN_DETAIL_TAB_DESCRIPTIONS: Record<RunDetailTabKey, string> = {
   execution: "Diagnostics and execution steps for this run.",
   input: "Launch input and provenance captured with the run snapshot.",
   lineage: "Fork, replay, copied-step, and historical lineage evidence.",
-  memory: "Workflow memory middleware evidence for this run.",
   output: "Final output and output provenance for this run.",
   overview: "Operational status and evidence availability for this run.",
   runtime: "Runtime profile, selected strategies, and capability matrix.",
@@ -498,39 +433,6 @@ function SourceOperationInvocationLink({
       Operation invocation #{invocation.sourceOperationInvocationId}
     </Link>
   );
-}
-
-function hasRecordEntries(value: Record<string, unknown>): boolean {
-  return Object.keys(value).length > 0;
-}
-
-function formatEvidenceLabel(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^./, (first) => first.toUpperCase());
-}
-
-function workflowMemoryEvidenceCount(
-  evidence: RunWorkflowMemoryEvidenceRead,
-): number {
-  return (
-    evidence.injections.length +
-    evidence.proposals.length +
-    evidence.decisions.length +
-    evidence.quarantines.length +
-    evidence.checkpoints.length +
-    evidence.auditEvents.length
-  );
-}
-
-function workflowMemoryGroupItems(
-  evidence: RunWorkflowMemoryEvidenceRead,
-  groupKey: WorkflowMemoryEvidenceGroupKey,
-) {
-  return evidence[groupKey];
 }
 
 function isInspectionTargetEqual(
@@ -1042,44 +944,6 @@ export function RunDiagnosticsWorkspace({
             </Table>
           </RunDetailTableFrame>
         </div>
-      </RunDetailContentSection>
-    </section>
-  );
-}
-
-export function RunMemoryWorkspace({ run }: { run: RunRead }) {
-  const evidence = run.workflowMemoryEvidence;
-  const totalEvidenceCount = workflowMemoryEvidenceCount(evidence);
-
-  if (totalEvidenceCount === 0) {
-    return (
-      <section
-        className="grid min-w-0 gap-3"
-        data-testid="runs-memory-workspace"
-      >
-        <RunDetailContentSection
-          description="Workflow memory middleware evidence appears here when recorded."
-          sectionId="memory-evidence"
-          testId="runs-detail-section-memory-evidence"
-          title="Workflow memory evidence"
-        >
-          <CompactModeEmptyState testId="runs-memory-empty">
-            No workflow memory events were recorded for this run.
-          </CompactModeEmptyState>
-        </RunDetailContentSection>
-      </section>
-    );
-  }
-
-  return (
-    <section className="grid min-w-0 gap-3" data-testid="runs-memory-workspace">
-      <RunDetailContentSection
-        description="Workflow memory middleware evidence appears here when recorded."
-        sectionId="memory-evidence"
-        testId="runs-detail-section-memory-evidence"
-        title="Workflow memory evidence"
-      >
-        <RunMemoryEvidence evidence={evidence} />
       </RunDetailContentSection>
     </section>
   );
@@ -1648,447 +1512,6 @@ function RunLineageEvidence({
   );
 }
 
-function EvidenceIdList({ ids, label }: { ids: string[]; label: string }) {
-  return ids.length > 0 ? (
-    <div className="flex min-w-0 flex-col gap-1 text-sm">
-      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <div className="flex min-w-0 flex-wrap gap-1.5">
-        {ids.map((id) => (
-          <Badge className="break-all" key={id} variant="outline">
-            {id}
-          </Badge>
-        ))}
-      </div>
-    </div>
-  ) : null;
-}
-
-function WorkflowMemoryInjectionCard({
-  injection,
-}: {
-  injection: RunWorkflowMemoryInjectionRead;
-}) {
-  return (
-    <Card
-      className="gap-3"
-      data-testid={`runs-workflow-memory-injection-${injection.runAgentInvocationId}`}
-    >
-      <CardHeader className="px-4 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">Injection</Badge>
-          <Badge variant="outline">{injection.agentKey}</Badge>
-          <Badge variant="outline">step {injection.stepIndex}</Badge>
-        </div>
-        <CardDescription>
-          {injection.contextItemIds.length} context item
-          {injection.contextItemIds.length === 1 ? "" : "s"} ·{" "}
-          {injection.checkpointIds.length} checkpoint
-          {injection.checkpointIds.length === 1 ? "" : "s"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4 pb-4">
-        <DetailGrid
-          items={[
-            { label: "Run step", value: `#${injection.runStepId}` },
-            {
-              label: "Agent invocation",
-              value: `#${injection.runAgentInvocationId}`,
-            },
-            { label: "Slot", value: injection.slot },
-            { label: "Invocation id", value: injection.invocationId },
-          ]}
-        />
-        <EvidenceIdList ids={injection.contextItemIds} label="Context item ids" />
-        <EvidenceIdList ids={injection.checkpointIds} label="Checkpoint ids" />
-        {hasRecordEntries(injection.scope) ? (
-          <JsonBlock
-            label="Scope"
-            testId={`runs-workflow-memory-injection-${injection.runAgentInvocationId}-scope`}
-            value={injection.scope}
-          />
-        ) : null}
-        {hasRecordEntries(injection.policySnapshot) ? (
-          <JsonBlock
-            label="Policy snapshot"
-            testId={`runs-workflow-memory-injection-${injection.runAgentInvocationId}-policy`}
-            value={injection.policySnapshot}
-          />
-        ) : null}
-        {injection.completion ? (
-          <JsonBlock
-            label="Completion"
-            testId={`runs-workflow-memory-injection-${injection.runAgentInvocationId}-completion`}
-            value={injection.completion}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkflowMemoryProposalCard({
-  proposal,
-}: {
-  proposal: RunWorkflowMemoryProposalEvidenceRead;
-}) {
-  return (
-    <Card
-      className="gap-3"
-      data-testid={`runs-workflow-memory-proposal-${proposal.proposalId}`}
-    >
-      <CardHeader className="px-4 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{formatEvidenceLabel(proposal.status)}</Badge>
-          <Badge variant="outline">{proposal.kind}</Badge>
-          <Badge variant="outline">{proposal.namespace}</Badge>
-        </div>
-        <CardDescription>{proposal.proposalId}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4 pb-4">
-        <DetailGrid
-          items={[
-            { label: "Package", value: proposal.packageKey },
-            { label: "Workflow", value: proposal.workflowKey },
-            { label: "Agent", value: proposal.agentKey },
-            { label: "Step", value: proposal.stepId },
-            { label: "Invocation", value: proposal.invocationId },
-            { label: "Source path", value: proposal.sourceOutputPath },
-            { label: "Created", value: formatDateTime(proposal.createdAt) },
-            { label: "Updated", value: formatDateTime(proposal.updatedAt) },
-          ]}
-        />
-        {proposal.reason ? (
-          <RunDetailEmptyState testId={`runs-workflow-memory-proposal-${proposal.proposalId}-reason`}>
-            {proposal.reason}
-          </RunDetailEmptyState>
-        ) : null}
-        <EvidenceIdList ids={proposal.activeMemoryIds} label="Active memory ids" />
-        {hasRecordEntries(proposal.detectors) ? (
-          <JsonBlock
-            label="Detectors"
-            testId={`runs-workflow-memory-proposal-${proposal.proposalId}-detectors`}
-            value={proposal.detectors}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkflowMemoryDecisionCard({
-  decision,
-}: {
-  decision: RunWorkflowMemoryDecisionEvidenceRead;
-}) {
-  return (
-    <Card
-      className="gap-3"
-      data-testid={`runs-workflow-memory-decision-${decision.decisionId}`}
-    >
-      <CardHeader className="px-4 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{formatEvidenceLabel(decision.decision)}</Badge>
-          <Badge variant="outline">{formatEvidenceLabel(decision.reasonCode)}</Badge>
-          <Badge variant="outline">{decision.decidedBy}</Badge>
-        </div>
-        <CardDescription>{decision.proposalId}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4 pb-4">
-        <DetailGrid
-          items={[
-            { label: "Decision id", value: decision.decisionId },
-            { label: "Proposal id", value: decision.proposalId },
-            { label: "Recorded", value: formatDateTime(decision.createdAt) },
-            { label: "Reason", value: decision.reason },
-          ]}
-        />
-        {hasRecordEntries(decision.policySnapshot) ? (
-          <JsonBlock
-            label="Policy snapshot"
-            testId={`runs-workflow-memory-decision-${decision.decisionId}-policy`}
-            value={decision.policySnapshot}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkflowMemoryQuarantineCard({
-  quarantine,
-}: {
-  quarantine: RunWorkflowMemoryQuarantineEvidenceRead;
-}) {
-  return (
-    <Card
-      className="gap-3"
-      data-testid={`runs-workflow-memory-quarantine-${quarantine.quarantineId}`}
-    >
-      <CardHeader className="px-4 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="destructive">{formatEvidenceLabel(quarantine.reasonCode)}</Badge>
-          {quarantine.kind ? <Badge variant="outline">{quarantine.kind}</Badge> : null}
-          {quarantine.namespace ? (
-            <Badge variant="outline">{quarantine.namespace}</Badge>
-          ) : null}
-        </div>
-        <CardDescription>
-          {quarantine.reason ?? "Quarantined by workflow memory policy."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4 pb-4">
-        <DetailGrid
-          items={[
-            { label: "Quarantine", value: `#${quarantine.quarantineId}` },
-            { label: "Proposal id", value: quarantine.proposalId },
-            { label: "Memory id", value: quarantine.memoryId },
-            { label: "Agent", value: quarantine.agentKey },
-            { label: "Step", value: quarantine.stepId },
-            { label: "Invocation", value: quarantine.invocationId },
-            { label: "Resolved", value: formatTimestamp(quarantine.resolvedAt ?? null) },
-            { label: "Created", value: formatDateTime(quarantine.createdAt) },
-          ]}
-        />
-        {hasRecordEntries(quarantine.detectors) ? (
-          <JsonBlock
-            label="Detectors"
-            testId={`runs-workflow-memory-quarantine-${quarantine.quarantineId}-detectors`}
-            value={quarantine.detectors}
-          />
-        ) : null}
-        {hasRecordEntries(quarantine.evidence) ? (
-          <JsonBlock
-            label="Quarantine evidence"
-            testId={`runs-workflow-memory-quarantine-${quarantine.quarantineId}-evidence`}
-            value={quarantine.evidence}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkflowMemoryCheckpointCard({
-  checkpoint,
-}: {
-  checkpoint: RunWorkflowMemoryCheckpointEvidenceRead;
-}) {
-  return (
-    <Card
-      className="gap-3"
-      data-testid={`runs-workflow-memory-checkpoint-${checkpoint.checkpointId}`}
-    >
-      <CardHeader className="px-4 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{formatEvidenceLabel(checkpoint.checkpointType)}</Badge>
-          <Badge variant="outline">sequence {checkpoint.sequence}</Badge>
-          <Badge variant="outline">{checkpoint.retention}</Badge>
-        </div>
-        <CardDescription>{checkpoint.checkpointId}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4 pb-4">
-        <DetailGrid
-          items={[
-            { label: "Package", value: checkpoint.packageKey },
-            { label: "Workflow", value: checkpoint.workflowKey },
-            { label: "Agent", value: checkpoint.agentKey },
-            { label: "Step", value: checkpoint.stepId },
-            { label: "Invocation", value: checkpoint.invocationId },
-            { label: "Created", value: formatDateTime(checkpoint.createdAt) },
-          ]}
-        />
-        {hasRecordEntries(checkpoint.state) ? (
-          <JsonBlock
-            label="Checkpoint state"
-            testId={`runs-workflow-memory-checkpoint-${checkpoint.checkpointId}-state`}
-            value={checkpoint.state}
-          />
-        ) : null}
-        {hasRecordEntries(checkpoint.metadata) ? (
-          <JsonBlock
-            label="Checkpoint metadata"
-            testId={`runs-workflow-memory-checkpoint-${checkpoint.checkpointId}-metadata`}
-            value={checkpoint.metadata}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkflowMemoryAuditEventCard({
-  event,
-}: {
-  event: RunWorkflowMemoryAuditEventEvidenceRead;
-}) {
-  return (
-    <Card
-      className="gap-3"
-      data-testid={`runs-workflow-memory-audit-event-${event.auditEventId}`}
-    >
-      <CardHeader className="px-4 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{formatEvidenceLabel(event.eventType)}</Badge>
-          <Badge variant="outline">{event.targetType}</Badge>
-          <Badge variant="outline">{event.targetId}</Badge>
-        </div>
-        <CardDescription>{formatDateTime(event.createdAt)}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4 pb-4">
-        <DetailGrid
-          items={[
-            { label: "Audit event", value: `#${event.auditEventId}` },
-            { label: "Package", value: event.packageKey },
-            { label: "Workflow", value: event.workflowKey },
-            { label: "Agent", value: event.agentKey },
-            { label: "Step", value: event.stepId },
-            { label: "Invocation", value: event.invocationId },
-          ]}
-        />
-        {hasRecordEntries(event.event) ? (
-          <JsonBlock
-            label="Audit event payload"
-            testId={`runs-workflow-memory-audit-event-${event.auditEventId}-payload`}
-            value={event.event}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WorkflowMemoryEvidenceCard({
-  groupKey,
-  item,
-}: {
-  groupKey: WorkflowMemoryEvidenceGroupKey;
-  item:
-    | RunWorkflowMemoryInjectionRead
-    | RunWorkflowMemoryProposalEvidenceRead
-    | RunWorkflowMemoryDecisionEvidenceRead
-    | RunWorkflowMemoryQuarantineEvidenceRead
-    | RunWorkflowMemoryCheckpointEvidenceRead
-    | RunWorkflowMemoryAuditEventEvidenceRead;
-}) {
-  if (groupKey === "injections") {
-    return <WorkflowMemoryInjectionCard injection={item as RunWorkflowMemoryInjectionRead} />;
-  }
-  if (groupKey === "proposals") {
-    return <WorkflowMemoryProposalCard proposal={item as RunWorkflowMemoryProposalEvidenceRead} />;
-  }
-  if (groupKey === "decisions") {
-    return <WorkflowMemoryDecisionCard decision={item as RunWorkflowMemoryDecisionEvidenceRead} />;
-  }
-  if (groupKey === "quarantines") {
-    return <WorkflowMemoryQuarantineCard quarantine={item as RunWorkflowMemoryQuarantineEvidenceRead} />;
-  }
-  if (groupKey === "checkpoints") {
-    return <WorkflowMemoryCheckpointCard checkpoint={item as RunWorkflowMemoryCheckpointEvidenceRead} />;
-  }
-  return <WorkflowMemoryAuditEventCard event={item as RunWorkflowMemoryAuditEventEvidenceRead} />;
-}
-
-function workflowMemoryItemKey(
-  groupKey: WorkflowMemoryEvidenceGroupKey,
-  item:
-    | RunWorkflowMemoryInjectionRead
-    | RunWorkflowMemoryProposalEvidenceRead
-    | RunWorkflowMemoryDecisionEvidenceRead
-    | RunWorkflowMemoryQuarantineEvidenceRead
-    | RunWorkflowMemoryCheckpointEvidenceRead
-    | RunWorkflowMemoryAuditEventEvidenceRead,
-): string {
-  if (groupKey === "injections") {
-    return `injection-${(item as RunWorkflowMemoryInjectionRead).runAgentInvocationId}`;
-  }
-  if (groupKey === "proposals") {
-    return `proposal-${(item as RunWorkflowMemoryProposalEvidenceRead).proposalId}`;
-  }
-  if (groupKey === "decisions") {
-    return `decision-${(item as RunWorkflowMemoryDecisionEvidenceRead).decisionId}`;
-  }
-  if (groupKey === "quarantines") {
-    return `quarantine-${(item as RunWorkflowMemoryQuarantineEvidenceRead).quarantineId}`;
-  }
-  if (groupKey === "checkpoints") {
-    return `checkpoint-${(item as RunWorkflowMemoryCheckpointEvidenceRead).checkpointId}`;
-  }
-  return `audit-${(item as RunWorkflowMemoryAuditEventEvidenceRead).auditEventId}`;
-}
-
-function WorkflowMemoryGroupSection({
-  definition,
-  evidence,
-}: {
-  definition: WorkflowMemoryEvidenceGroupDefinition;
-  evidence: RunWorkflowMemoryEvidenceRead;
-}) {
-  const items = workflowMemoryGroupItems(evidence, definition.key);
-  return (
-    <RunDetailContentSection
-      className={WORKFLOW_MEMORY_GROUP_DEFERRED_SECTION_CLASS_NAME}
-      description={
-        <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
-          <span>{definition.description}</span>
-          <Badge variant="outline">
-            {items.length} event{items.length === 1 ? "" : "s"}
-          </Badge>
-        </span>
-      }
-      sectionId={`workflow-memory-group-${definition.key}`}
-      testId={`runs-workflow-memory-group-${definition.key}`}
-      title={definition.title}
-    >
-      {items.length > 0 ? (
-        <div className="grid gap-3">
-          {items.map((item) => (
-            <WorkflowMemoryEvidenceCard
-              groupKey={definition.key}
-              item={item}
-              key={workflowMemoryItemKey(definition.key, item)}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{definition.emptyCopy}</p>
-      )}
-    </RunDetailContentSection>
-  );
-}
-
-function RunMemoryEvidence({
-  evidence,
-}: {
-  evidence: RunWorkflowMemoryEvidenceRead;
-}) {
-  const totalEvidenceCount = workflowMemoryEvidenceCount(evidence);
-
-  return (
-    <RunDetailContentSection
-      description="Structured evidence emitted by workflow memory middleware."
-      sectionId="run-memory-evidence"
-      testId="runs-memory-evidence"
-      title="Workflow memory middleware evidence"
-    >
-      {totalEvidenceCount === 0 ? (
-        <CompactModeEmptyState testId="runs-memory-evidence-empty">
-          No workflow memory events were recorded for this run.
-        </CompactModeEmptyState>
-      ) : null}
-
-      {WORKFLOW_MEMORY_EVIDENCE_GROUPS.map((definition) => (
-        <WorkflowMemoryGroupSection
-          definition={definition}
-          evidence={evidence}
-          key={definition.key}
-        />
-      ))}
-    </RunDetailContentSection>
-  );
-}
-
 function StepSummaryEvidence({ step }: { step: RunStepRead }) {
   const metadataItems: DetailItem[] = [
     { label: "Step row", value: `#${step.id}` },
@@ -2533,12 +1956,6 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
 
   const usageContent = <RunTokensWorkspace run={run} />;
 
-  const memoryContent = (
-    <div className="grid min-w-0 gap-3" data-testid="runs-memory-tab-workspace">
-      <RunMemoryWorkspace run={run} />
-    </div>
-  );
-
   const lineageContent = (
     <RunLineageWorkspace
       copiedInvocations={copiedInvocations}
@@ -2554,7 +1971,6 @@ export function RunDetailSectionStack(props: RunDetailSectionStackProps) {
     execution: executionContent,
     input: inputContent,
     lineage: lineageContent,
-    memory: memoryContent,
     output: outputContent,
     overview: overviewContent,
     runtime: runtimeContent,
@@ -2721,16 +2137,6 @@ function RunInlineEvidence({
           plannedSteps={plannedSteps}
           run={run}
         />
-      );
-  } else if (activeInspection.pane === "memory") {
-    content =
-      activeInspection.mode === "memory" ? (
-        <CompactModeEmptyState testId="runs-memory-inspector-empty">
-          Select workflow memory evidence from the memory tab to inspect raw
-          detail.
-        </CompactModeEmptyState>
-      ) : (
-        <RunMemoryEvidence evidence={run.workflowMemoryEvidence} />
       );
   } else {
     content =

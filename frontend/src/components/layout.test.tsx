@@ -194,14 +194,6 @@ describe("Layout", () => {
                   }
                 />
                 <Route
-                  path="memory"
-                  element={
-                    <div data-testid="memory-workspace-content">
-                      Memory inspection workspace
-                    </div>
-                  }
-                />
-                <Route
                   path="scheduled-tasks"
                   element={
                     <div data-testid="scheduled-tasks-list-content">

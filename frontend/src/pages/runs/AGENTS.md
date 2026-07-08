@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail route has grown into the execution evidence surface: progress, usage, lineage diagrams, root-parameter rerun, invocation-specific fork actions, trace linkage, inspection panes, workflow memory evidence groups, and per-agent/per-operation drilldowns.
+`src/pages/runs/` contains the routed run inventory and run detail views. The list page acts as a polling monitor, and the detail route has grown into the execution evidence surface: progress, usage, lineage diagrams, root-parameter rerun, invocation-specific fork actions, trace linkage, inspection panes, and per-agent/per-operation drilldowns.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -23,7 +23,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Task               | Location                                                              | Notes                                                                                                                                                                     |
 | ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Run inventory      | `list.tsx`                                                            | filters, polling monitor, progress, token usage, and timing summary                                                                                                       |
-| Run detail         | `detail.tsx`, `detail-sections/AGENTS.md`                             | progress cards, lineage diagrams, inspection panes, rerun dialog, invocation-specific fork dialog, trace linkage, final output, memory evidence, and per-agent accordions |
+| Run detail         | `detail.tsx`, `detail-sections/AGENTS.md`                             | progress cards, lineage diagrams, inspection panes, rerun dialog, invocation-specific fork dialog, trace linkage, final output, and per-agent accordions |
 | Fork/rerun helpers | `rerun-dialog.tsx`, `inspection-state.ts`, `detail-tabs.ts`            | root-parameter rerun modal plus URL-backed inspection-pane and tab state                                                                                                  |
 | Run hooks          | `../../hooks/use-runs.ts`                                             | list/detail queries, rerun draft/create hooks, fork draft/create hooks, and refetch intervals                                                                             |
 | Shared formatting  | `../../lib/format.ts`                                                 | timestamps and JSON helpers                                                                                                                                               |
@@ -37,7 +37,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - `list.tsx` keeps target-kind, target-key, and status filters local to the page and refetches on a timer while any run is queued or running.
 - Run list and detail render backend `run.progress` and nullable `run.queue`; do not recreate status-to-percent or queued-reason heuristics in the page layer. Keep trace linkage visible even when the top-level trace id is missing.
-- Run detail renders backend `workflowMemoryEvidence` as the canonical run-scoped memory evidence surface. Keep injections, proposals, decisions, quarantines, checkpoints, and audit events grouped in route-owned panes instead of flattening everything into one raw event list.
 - Per-agent and per-operation details stay inside accordions/inspection panes so the page can expose the full run without flattening the layout.
 - Run detail expects ref-based invocation payloads such as `agentRef` and `outputSchemaRef`, not scalar internal ids.
 - Rerun is the only root-parameter editor. It opens from `rerun=1` and uses rerun draft/create hooks.
@@ -56,7 +55,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not hide trace linkage behind a single summary string when span references exist.
 - Do not bypass the hook layer for run reads, reruns, or forks.
 - Do not collapse per-agent detail or evidence panes into one monolithic block.
-- Do not derive report links or editable fork targets from opaque `memoryId` or `resumeStepIndex` values alone.
+- Do not derive editable fork targets from `resumeStepIndex` alone.
 
 ## VALIDATION
 

@@ -29,7 +29,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Summary metrics | `metric-card.tsx` | consistent KPI card layout |
 | Shared field logic | `form-schemas.ts` | reusable Zod validation snippets for portfolio, balance, position, and trading forms |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
-| Row-card inventory UI | `resource-row-card.tsx` | compact resource cards used by platform and memory inventories when a card surface is still warranted |
+| Row-card inventory UI | `resource-row-card.tsx` | compact resource cards used by platform inventories when a card surface is still warranted |
 | Design-system source | `../../../DESIGN.md` | source of truth for page layout, shared shells, tokens, and management UI patterns |
 | UI/UX standards and examples | `docs/README.md` | shared UI standards, component specs, page blueprints, and migration guide |
 

@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, Extensions, Workflow Packages, Scheduled Tasks, extension-filtered read-only Tools metadata for package authoring, Model Connections, Memory, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
+`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for portfolios, balances, positions, trading operations, market data, templates, reports, Extensions, Workflow Packages, Scheduled Tasks, extension-filtered read-only Tools metadata for package authoring, Model Connections, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
 
 Extension model: statically resident extension state flows.
 
@@ -33,7 +33,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Workflow Package flows | `use-workflow-packages.ts` | package list/detail, manifest CRUD, import, export, secret bindings, runtime-input registry, validation, preflight, launch, and extension-filtered tool reads |
 | Scheduled Task flows | `use-scheduled-tasks.ts` | schedule list/detail/fire queries plus create/update/delete/preview/run-now mutations and linked-run invalidation |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
-| Memory flows | `use-memory.ts` | workflow memory proposal list, approve/reject, audit-event list, and quarantine list hooks |
 | Run flows | `use-runs.ts` | run list/detail reads with package provenance, backend progress/queue payloads, active queued/running polling, plus rerun/fork drafts and create mutations |
 | Resource filter state | `use-resource-filter-state.ts` | labeled search/filter text and derived filter helpers for shared inventory shells |
 | Resource selection state | `use-resource-selection-state.ts` | table-only selection, select-all, clear, and scoped bulk-action state |
@@ -48,7 +47,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `useTools()` composes `/api/tools` with `useExtensions()` and returns extension-filtered read-only tool metadata for package capability-profile pickers.
 - Package-first platform hooks invalidate `queryKeys.platform.*` namespaces. Package mutations also refresh launch, preflight, manifest/detail, and runtime-input-registry scopes so saved-input and run-creation surfaces converge after edits/imports/deletes.
 - Scheduled Task hooks use `queryKeys.platform.schedules.*`; create/update/delete/run-now mutations refresh schedule lists/details/fire history and linked run keys so fire history and run detail converge after materialization or deletion.
-- Memory hooks read through `queryKeys.platform.memory.*` for proposal review, proposal decisions, audit events, and quarantine evidence. Do not add browser memory CRUD, global search, model-execution helpers, or bulk delete hooks.
 - Model-connection connection tests invalidate persisted last-test metadata after save/test flows.
 - `useToggleExtension()` invalidates extension state plus finance workspace caches so routes, nav, and package tool filters converge after enable/disable changes.
 - UI state hooks such as `useResourceFilterState()`, `useResourceSelectionState()`, and `useSplitInspectorState()` stay presentational and page-local; they coordinate shared shells but never fetch or invalidate server data.
@@ -81,5 +79,5 @@ pnpm test:run
 - Template and report hooks keep cache policy intentionally simple: list/detail invalidation in hooks, navigation and toasts in callers.
 - `invalidateWorkflowPackageScope()` and `invalidateWorkflowPackageRuntimeInputRegistryScope()` are the central package-side invalidation helpers; keep route surfaces aligned with them instead of inventing page-local refresh rules.
 - `use-scheduled-tasks.ts` owns schedule list/detail/fire invalidation plus linked run refresh after run-now; pages own recurrence/input-template draft UI, navigation, and toasts.
-- Package-first platform hooks follow the same split: cache policy, extension-state filtering, workflow memory review API wiring, and invalidation live here, while routed pages own review UI, navigation, and feedback.
+- Package-first platform hooks follow the same split: cache policy, extension-state filtering, and invalidation live here, while routed pages own UI, navigation, and feedback.
 - The route-shell state hooks are reusable across finance inventories and platform workspace/console pages; current cross-route usage varies by hook, so keep filter/selection/inspector behavior aligned here instead of cloning page-local implementations.

@@ -3,7 +3,7 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live in `src/components/shared/docs/`, `e2e/`, and throughout the high-signal `src/**/AGENTS.md` boundaries.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat, metadata-driven route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Scheduled Tasks, Model Connections, Memory, and Runs, plus shared inventory/workspace UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface; Scheduled Tasks are the package-first automation surface for recurring runs.
+React 19 + Vite frontend with a flat, metadata-driven route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus shared inventory/workspace UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface; Scheduled Tasks are the package-first automation surface for recurring runs.
 
 Extension model: SignalDeck Core ships statically resident extensions in code, while frontend state and gates decide which routes, nav items, and tool pickers are exposed.
 
@@ -34,7 +34,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
 - `src/pages/extensions/AGENTS.md` — `/extensions` system state route, slim statically resident extension contract, and toggle behavior
 - `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
-- `src/pages/memory/AGENTS.md` — `/memory` Workflow Memory Review proposal, audit, and quarantine route
 - `src/pages/portfolios/AGENTS.md` — portfolio list/detail workspace, metrics, balances, positions, and trades
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
 - `src/pages/templates/AGENTS.md` — stored-template inventory/editor, inline compile preview, runtime inputs, and saved-template report generation
@@ -58,7 +57,7 @@ frontend/
 ├── src/extensions/     # frontend extension registry, route/nav assembly, and tool filtering
 ├── src/lib/            # API contract, query keys, formatting, analytics, grouping, types, platform-authoring helpers
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
-├── src/pages/          # dashboard, extensions, finance workspace, Memory, Scheduled Tasks, and agent-platform routes
+├── src/pages/          # dashboard, extensions, finance workspace, Scheduled Tasks, and agent-platform routes
 ├── src/components/     # layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, templates, portfolio UI, shadcn primitives
 ├── src/styles/         # fonts, theme tokens, and global CSS entrypoints; covered here
 ├── src/test/           # Vitest jsdom setup; covered here
@@ -76,7 +75,7 @@ frontend/
 | Portfolio routes | `src/pages/portfolios/AGENTS.md`, `src/components/portfolios/AGENTS.md` | list/detail workspace, balances, positions, trades |
 | Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
 | Report routes | `src/pages/reports/AGENTS.md`, `src/hooks/use-reports.ts`, `src/lib/api/reports.ts`, `src/lib/report-grouping.ts` | generate from template, upload markdown, group/search, edit/download/delete |
-| Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/scheduled-tasks/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/memory/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Scheduled Tasks, Model Connections, Workflow Memory Review, and Runs, including schedule fire history, proposal list, approve/reject, audit-event list, quarantine list, backend-owned run progress/queue payloads, and current rerun/fork readiness |
+| Agent-platform routes | `src/pages/workflow-packages/AGENTS.md`, `src/pages/scheduled-tasks/AGENTS.md`, `src/pages/model-connections/AGENTS.md`, `src/pages/runs/AGENTS.md` | Workflow Packages, Scheduled Tasks, Model Connections, and Runs, including schedule fire history, backend-owned run progress/queue payloads, and current rerun/fork readiness |
 | Shared components | `src/components/AGENTS.md`, `src/components/platform-authoring/AGENTS.md`, `src/components/forms/*.tsx` | layout shell, theme, shared UI, cross-route dialogs, platform-authoring widgets, portfolio feature folders |
 | UI primitives | `src/components/ui/AGENTS.md` | shadcn/ui wrappers, sidebar primitives, variant helpers |
 | Unit test setup | `vite.config.ts`, `src/test/setup.ts` | jsdom config plus browser API mocks |
@@ -98,7 +97,7 @@ frontend/
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
 - Workflow package editors are authoring-only YAML-manifest editors with local package-resource editing, backend validation, package secret bindings, import, and export. Launch, preflight gating, runtime parameters, saved inputs, and create-run state belong to the dedicated `/workflow-packages/:packageId/run` page labeled `Launch Workflow Package`.
-- Agent-platform pages use dedicated hooks and route params to keep package CRUD, Scheduled Task automation, extension-filtered global Tools reads for package authoring, global Model Connections, Workflow Memory Review proposal/audit/quarantine flows, backend-provided run progress/queue/readiness payloads, and Run inspection inside the routed page layer.
+- Agent-platform pages use dedicated hooks and route params to keep package CRUD, Scheduled Task automation, extension-filtered global Tools reads for package authoring, global Model Connections, backend-provided run progress/queue/readiness payloads, and Run inspection inside the routed page layer.
 - Scheduled Task screens are platform-owned. Keep structured recurrence, scheduled input preview, fire history, delete confirmation and redirect behavior, and run-now links aligned with `use-scheduled-tasks.ts` and `queryKeys.platform.schedules`.
 - `useExtensions()` drives Finance Workspace route/nav visibility, `/extensions` state UI, and extension-owned tool filtering for package capability profiles. Digital Oracle contributes tool filtering only and has no route or nav surface in this upgrade.
 - The `/extensions` page is a system state surface only; render only the backend contract (`key`, `label`, `enabled`) and keep marketplace/install/remove behavior out of phase 1.
@@ -108,7 +107,7 @@ frontend/
 - `src/test/setup.ts` owns global jsdom/browser shims only; route-specific mocks, network mocks, and feature data factories stay with the owning tests.
 - For ordinary removal-only validation, prefer manual confirmation over adding dedicated “proves not” UI tests; keep absence assertions only when the missing surface is itself a shipped contract or guardrail.
 - Theme state lives in `src/components/theme-provider.tsx`; components should consume the existing context instead of inventing new color-mode state.
-- Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, Memory, and agent-platform caches under dedicated namespaces.
+- Query keys normalize ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and portfolio, template, report, and agent-platform caches under dedicated namespaces.
 
 ## ANTI-PATTERNS
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
@@ -145,4 +144,4 @@ pnpm test:e2e
 - Playwright only runs Chromium here and starts both backend/frontend web servers automatically via `scripts/start-playwright-*.mjs`, with backend `8001`, fake provider `18081`, and frontend `4173`; the frontend helper builds before preview.
 - Current Vitest coverage spans `src/lib/` helpers plus targeted agent-platform, shared route-shell, resource filter/selection state, template-editor, and layout pages.
 - Font and theme tokens live in `src/styles/theme.css`; Tailwind import/source control lives in `src/styles/tailwind.css`.
-- The live router exposes dashboard, extension-gated portfolio/template/report routes, `/extensions`, Workflow Packages, Scheduled Tasks, Model Connections, `/memory`, and Runs; the product-owned catch-all is covered in `src/routes.test.tsx`.
+- The live router exposes dashboard, extension-gated portfolio/template/report routes, `/extensions`, Workflow Packages, Scheduled Tasks, Model Connections, and Runs; the product-owned catch-all is covered in `src/routes.test.tsx`.

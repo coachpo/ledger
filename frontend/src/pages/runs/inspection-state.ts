@@ -12,7 +12,6 @@ export type RunInspectionPane =
   | "finalOutput"
   | "input"
   | "lineage"
-  | "memory"
   | "output"
   | "provenance"
   | "request"
@@ -26,7 +25,6 @@ export type RunInspectionMode =
   | "inputs"
   | "outputs"
   | "runtime"
-  | "memory"
   | "lineage"
   | "metadata";
 
@@ -50,7 +48,6 @@ export const RUN_INSPECTION_MODES = [
   "inputs",
   "outputs",
   "runtime",
-  "memory",
   "lineage",
   "metadata",
 ] as const satisfies readonly RunInspectionMode[];
@@ -61,7 +58,6 @@ const RUN_INSPECTION_MODE_ALIASES: Record<string, RunInspectionMode> = {
   input: "inputs",
   inputs: "inputs",
   lineage: "lineage",
-  memory: "memory",
   metadata: "metadata",
   output: "outputs",
   outputs: "outputs",
@@ -74,7 +70,6 @@ const RUN_PANES: RunInspectionPane[] = [
   "finalOutput",
   "input",
   "lineage",
-  "memory",
   "error",
 ];
 const STEP_PANES: RunInspectionPane[] = ["details", "lineage", "error"];
@@ -154,9 +149,6 @@ function modeForPane(
   if (pane === "lineage") {
     return "lineage";
   }
-  if (pane === "memory") {
-    return "memory";
-  }
   if (pane === "error") {
     return "diagnostics";
   }
@@ -175,9 +167,6 @@ function defaultPaneForMode(
   }
   if (mode === "lineage") {
     return "lineage";
-  }
-  if (mode === "memory") {
-    return "memory";
   }
   if (mode === "diagnostics") {
     return "error";
@@ -465,7 +454,6 @@ export function inspectionPaneLabel(pane: RunInspectionPane): string {
     finalOutput: "Final output",
     input: "Run input",
     lineage: "Lineage",
-    memory: "Memory",
     output: "Output",
     provenance: "Provenance",
     request: "Request",

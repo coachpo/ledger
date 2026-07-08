@@ -5,7 +5,6 @@ export type RunDetailTabKey =
   | "input"
   | "runtime"
   | "usage"
-  | "memory"
   | "lineage";
 
 export const RUN_DETAIL_TAB_ORDER = [
@@ -15,7 +14,6 @@ export const RUN_DETAIL_TAB_ORDER = [
   "input",
   "runtime",
   "usage",
-  "memory",
   "lineage",
 ] as const satisfies readonly RunDetailTabKey[];
 
@@ -26,7 +24,6 @@ export const RUN_DETAIL_TAB_LABELS: Record<RunDetailTabKey, string> = {
   input: "Input",
   runtime: "Runtime",
   usage: "Usage",
-  memory: "Memory",
   lineage: "Lineage",
 };
 
@@ -37,7 +34,6 @@ const RUN_DETAIL_TAB_KEYS: readonly RunDetailTabKey[] = [
   "input",
   "runtime",
   "usage",
-  "memory",
   "lineage",
 ];
 
@@ -46,7 +42,6 @@ const RUN_DETAIL_TAB_INFERENCE_ALIASES: Record<string, RunDetailTabKey> = {
   input: "input",
   inputs: "input",
   lineage: "lineage",
-  memory: "memory",
   metadata: "overview",
   output: "output",
   outputs: "output",
@@ -118,9 +113,6 @@ function parseRawPaneTab(
   }
   if (pane === "input") {
     return "input";
-  }
-  if (pane === "memory") {
-    return "memory";
   }
   if (pane === "lineage") {
     return "lineage";

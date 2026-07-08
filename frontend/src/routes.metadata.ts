@@ -307,24 +307,6 @@ const platformAndSystemRouteMetadata = [
   },
   {
     archetype: "inventory",
-    breadcrumb: { title: "Workflow Memory Review" },
-    nav: {
-      group: AGENT_PLATFORM_NAV_GROUP,
-      iconName: "Database",
-      label: "Memory Review",
-      path: "/memory",
-      sidebar: true,
-      testId: "nav-memory",
-    },
-    owner: { kind: "platform" },
-    pattern: "/memory",
-    shellMode: "scroll",
-    widthMode: "wide",
-    stateVariants: ["loading", "ready", "error", "empty", "saving"],
-    testId: "route-memory-list",
-  },
-  {
-    archetype: "inventory",
     breadcrumb: { title: "Scheduled Tasks" },
     nav: {
       group: AGENT_PLATFORM_NAV_GROUP,

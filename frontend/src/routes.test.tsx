@@ -51,7 +51,6 @@ const LIVE_BROWSER_ROUTE_PREFIXES = [
   "/workflow-packages",
   "/scheduled-tasks",
   "/model-connections",
-  "/memory",
   "/runs",
   "/extensions",
 ];
@@ -71,7 +70,6 @@ const LIVE_PLATFORM_NAV_ENTRIES = [
     testId: "nav-model-connections",
     to: "/model-connections",
   },
-  { label: "Memory Review", testId: "nav-memory", to: "/memory" },
   { label: "Extensions", testId: "nav-extensions", to: "/extensions" },
   { label: "Runs", testId: "nav-runs", to: "/runs" },
 ] as const;
@@ -101,63 +99,6 @@ function extensionList(
       },
     ],
   };
-}
-
-function emptyMemoryProposalResponse() {
-  return {
-    items: [],
-    limit: 50,
-    offset: 0,
-    status: "review_pending" as const,
-    total: 0,
-  };
-}
-
-function emptyMemoryAuditResponse() {
-  return { items: [], limit: 50, offset: 0, total: 0 };
-}
-
-function emptyMemoryQuarantineResponse() {
-  return {
-    items: [],
-    limit: 50,
-    offset: 0,
-    total: 0,
-    unresolvedOnly: true,
-  };
-}
-
-function renderMemoryRoute(initialEntry: string) {
-  const testRouter = createMemoryRouter(router.routes, {
-    initialEntries: [initialEntry],
-  });
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  });
-  queryClient.setQueryData(
-    queryKeys.platform.extensions.list(),
-    extensionList(true),
-  );
-  queryClient.setQueryData(
-    queryKeys.platform.memory.proposals({ status: "review_pending" }),
-    emptyMemoryProposalResponse(),
-  );
-  queryClient.setQueryData(
-    queryKeys.platform.memory.auditEvents(),
-    emptyMemoryAuditResponse(),
-  );
-  queryClient.setQueryData(
-    queryKeys.platform.memory.quarantine(),
-    emptyMemoryQuarantineResponse(),
-  );
-
-  return render(
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={testRouter} />
-      </QueryClientProvider>
-    </ThemeProvider>,
-  );
 }
 
 function expectCanonicalGateLayout(testId: string) {
@@ -327,23 +268,6 @@ describe("router", () => {
       stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
       testId: "route-model-connections-list",
     });
-    expect(getRouteMetadataByPattern("/memory")).toMatchObject({
-      archetype: "inventory",
-      breadcrumb: { title: "Workflow Memory Review" },
-      nav: {
-        group: "Agent Platform",
-        label: "Memory Review",
-        path: "/memory",
-        sidebar: true,
-        testId: "nav-memory",
-      },
-      owner: { kind: "platform" },
-      shellMode: "scroll",
-      widthMode: "wide",
-      stateVariants: ["loading", "ready", "error", "empty", "saving"],
-      testId: "route-memory-list",
-    });
-    expect(getRouteMetadataByPattern("/memory/:memoryId")).toBeUndefined();
     expect(getRouteMetadataByPattern("/scheduled-tasks")).toMatchObject({
       archetype: "inventory",
       breadcrumb: { title: "Scheduled Tasks" },
@@ -616,16 +540,12 @@ describe("router", () => {
     }
   });
 
-  it("keeps global model connection, canonical memory, scheduled tasks, and run routes", () => {
+  it("keeps global model connection, scheduled tasks, and run routes", () => {
     expect(matchRoutes(router.routes, "/model-connections")).not.toBeNull();
     expect(matchRoutes(router.routes, "/model-connections/new")).not.toBeNull();
     expect(
       matchRoutes(router.routes, "/model-connections/123/edit"),
     ).not.toBeNull();
-    expect(matchRoutes(router.routes, "/memory")).not.toBeNull();
-    expect(getRouteMetadataForPathname("/memory")?.testId).toBe(
-      "route-memory-list",
-    );
     expect(matchRoutes(router.routes, "/scheduled-tasks")).not.toBeNull();
     expect(matchRoutes(router.routes, "/scheduled-tasks/new")).not.toBeNull();
     expect(matchRoutes(router.routes, "/scheduled-tasks/123")).not.toBeNull();
@@ -637,30 +557,6 @@ describe("router", () => {
     );
     expect(matchRoutes(router.routes, "/runs")).not.toBeNull();
     expect(matchRoutes(router.routes, "/runs/123")).not.toBeNull();
-  });
-
-  it("renders workflow memory review empty state for /memory", async () => {
-    renderMemoryRoute("/memory");
-
-    expect(await screen.findByTestId("route-memory-list")).toHaveAttribute(
-      "data-route-shell-mode",
-      "scroll",
-    );
-    expect(screen.getByTestId("route-memory-list")).toHaveAttribute(
-      "data-route-width-mode",
-      "wide",
-    );
-    expect(screen.getByTestId("memory-list-page")).toBeVisible();
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Workflow Memory Review" }),
-    ).toBeVisible();
-    expect(screen.getByTestId("memory-list-page")).toHaveTextContent(
-      /Review workflow-generated memory proposals/,
-    );
-    expect(
-      screen.getByRole("combobox", { name: "Proposal status" }),
-    ).toBeVisible();
-    expect(screen.getByText("No proposals to review")).toBeVisible();
   });
 
   it("renders a product-owned catch-all 404 inside the app shell", async () => {

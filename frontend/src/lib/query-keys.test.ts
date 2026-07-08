@@ -126,53 +126,6 @@ describe("query keys", () => {
     ]);
   });
 
-  it("normalizes workflow memory review keys", () => {
-    expect(queryKeys.platform.memory.proposals()).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "proposals",
-      { limit: 50, offset: 0, status: "review_pending" },
-    ]);
-    expect(
-      queryKeys.platform.memory.proposals({ limit: 25, status: "all" }),
-    ).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "proposals",
-      { limit: 25, offset: 0, status: "all" },
-    ]);
-    expect(queryKeys.platform.memory.auditEvents({ offset: 10 })).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "auditEvents",
-      { limit: 50, offset: 10 },
-    ]);
-    expect(
-      queryKeys.platform.memory.quarantine({ unresolvedOnly: false }),
-    ).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "quarantine",
-      { limit: 50, offset: 0, unresolvedOnly: false },
-    ]);
-    expect(queryKeys.platform.memory.proposalsScope()).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "proposals",
-    ]);
-    expect(queryKeys.platform.memory.auditEventsScope()).toEqual([
-      "api",
-      "platform",
-      "memory",
-      "auditEvents",
-    ]);
-  });
-
   it("normalizes schedule list and fire-history filters", () => {
     expect(queryKeys.platform.schedules.detail("44")).toEqual(
       queryKeys.platform.schedules.detail(44),

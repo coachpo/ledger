@@ -213,10 +213,6 @@ async function expectInspectorContract(
   route: ShellRoute,
   width: number,
 ) {
-  if (route.routeTestId === "route-memory-list") {
-    return;
-  }
-
   if (route.routeTestId === "route-run-detail") {
     if (width < 768) {
       await expect(page.getByTestId("runs-inspection-workspace")).toHaveAttribute(
@@ -237,8 +233,6 @@ async function expectInspectorContract(
     return;
   }
 
-  await expect(page.getByTestId("memory-split-inspector")).toHaveCount(0);
-  await expect(page.getByTestId("memory-sheet-inspector")).toHaveCount(0);
   await expect(page.getByTestId("runs-inspection-split-layout")).toHaveCount(0);
   await expect(page.getByTestId("runs-inspection-sheet-layout")).toHaveCount(0);
 }
@@ -331,14 +325,6 @@ test.describe("Unified shell responsive regression matrix", () => {
         shellMode: "fullHeight",
         url: `/model-connections/${model.id}/edit`,
         widthMode: "full",
-      },
-      {
-        archetype: "inventory",
-        pageTestId: "memory-list-page",
-        routeTestId: "route-memory-list",
-        shellMode: "scroll",
-        url: "/memory",
-        widthMode: "wide",
       },
       {
         archetype: "inventory",

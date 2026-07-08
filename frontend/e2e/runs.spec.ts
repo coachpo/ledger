@@ -220,7 +220,6 @@ test.describe("Runs inventory monitor", () => {
       ["input", "Input"],
       ["runtime", "Runtime"],
       ["usage", "Usage"],
-      ["memory", "Memory"],
       ["lineage", "Lineage"],
     ] as const;
     const tabList = tabs.getByRole("tablist", { name: /run detail sections/i });

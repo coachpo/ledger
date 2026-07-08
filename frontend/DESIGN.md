@@ -2,7 +2,7 @@
 
 ## Purpose
 
-SignalDeck is a dense management UI for workflow packages, scheduled runs, model connections, memory, reports, templates, portfolios, and finance workspace surfaces. The design system keeps those screens consistent without changing product behavior. The current visual language is Apple-inspired management UI: neutral canvases, grouped surfaces, soft elevation, precise spacing, compact typography, and visible focus.
+SignalDeck is a dense management UI for workflow packages, scheduled runs, model connections, reports, templates, portfolios, and finance workspace surfaces. The design system keeps those screens consistent without changing product behavior. The current visual language is Apple-inspired management UI: neutral canvases, grouped surfaces, soft elevation, precise spacing, compact typography, and visible focus.
 
 ## System Layers
 
