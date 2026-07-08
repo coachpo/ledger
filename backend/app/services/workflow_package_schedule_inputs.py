@@ -2,23 +2,28 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Final
+from typing import Any, Final, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.errors import ApiError, business_rule_error
 from app.core.formatting import to_utc
 from app.services.output_schema_compiler import OutputSchemaCompiler
 from app.services.run_input_validation import validate_run_input_payload
-from app.services.workflow_package_runtime_inputs import validate_runtime_input_payload_safety
 
 SCHEDULE_TEMPLATE_INVALID_EXPRESSION: Final = "schedule_template_invalid_expression"
 SCHEDULE_TEMPLATE_MISSING_VALUE: Final = "schedule_template_missing_value"
 SCHEDULE_RENDER_VALIDATION_FAILED: Final = "schedule_render_validation_failed"
+RUNTIME_INPUT_PAYLOAD_MAX_BYTES: Final = 128 * 1024
+RUNTIME_INPUT_PAYLOAD_MAX_DEPTH: Final = 12
+RUNTIME_INPUT_PAYLOAD_MAX_NODES: Final = 4096
+RUNTIME_INPUT_PAYLOAD_MAX_OBJECT_KEYS: Final = 2048
+_RUNTIME_INPUT_PAYLOAD_VALIDATION_MESSAGE: Final = "Runtime input payload validation failed"
 
 _ALLOWED_NAMESPACES: Final = frozenset({"schedule", "fire", "window", "lastRun", "vars"})
 _ALLOWED_CONTEXT_PLACEHOLDERS: Final = frozenset(
@@ -50,6 +55,12 @@ _EXACT_PLACEHOLDER_RE: Final = re.compile(r"^\s*{{\s*([^{}]+?)\s*}}\s*$")
 _ESCAPED_LITERAL_RE: Final = re.compile(r"\\{{(.*?)}}")
 _ESCAPED_OPEN: Final = "\ufff0"
 _ESCAPED_CLOSE: Final = "\ufff1"
+
+
+@dataclass
+class _PayloadStats:
+    nodes: int = 0
+    object_keys: int = 0
 
 
 @dataclass(frozen=True)
@@ -379,10 +390,176 @@ def _validate_payload_safety(
     errors: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     try:
-        return deepcopy(validate_runtime_input_payload_safety(payload, field=field))
+        return deepcopy(_validate_runtime_input_payload_safety(payload, field=field))
     except ApiError as exc:
         errors.extend(_api_error_details(exc))
         return None
+
+
+def _validate_runtime_input_payload_safety(
+    payload: object,
+    *,
+    field: str,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        _raise_payload_validation(field, "Payload must be a JSON object")
+
+    payload_map = cast(dict[str, Any], payload)
+    stats = _PayloadStats()
+    _walk_payload(payload_map, depth=1, path=field, active=set(), stats=stats)
+    try:
+        serialized = json.dumps(
+            payload_map,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError, RecursionError):
+        _raise_payload_validation(field, "Payload must be JSON serializable")
+
+    actual_bytes = len(serialized.encode("utf-8"))
+    if actual_bytes > RUNTIME_INPUT_PAYLOAD_MAX_BYTES:
+        _raise_payload_validation(
+            field,
+            f"Payload must serialize to at most {RUNTIME_INPUT_PAYLOAD_MAX_BYTES} bytes",
+            limit=RUNTIME_INPUT_PAYLOAD_MAX_BYTES,
+            actual=actual_bytes,
+        )
+    return payload_map
+
+
+def _walk_payload(
+    value: object,
+    *,
+    depth: int,
+    path: str,
+    active: set[int],
+    stats: _PayloadStats,
+) -> None:
+    stats.nodes += 1
+    if stats.nodes > RUNTIME_INPUT_PAYLOAD_MAX_NODES:
+        _raise_payload_validation(
+            path,
+            f"Payload may contain at most {RUNTIME_INPUT_PAYLOAD_MAX_NODES} JSON nodes",
+            limit=RUNTIME_INPUT_PAYLOAD_MAX_NODES,
+            actual=stats.nodes,
+        )
+    if depth > RUNTIME_INPUT_PAYLOAD_MAX_DEPTH:
+        _raise_payload_validation(
+            path,
+            f"Payload nesting depth must be at most {RUNTIME_INPUT_PAYLOAD_MAX_DEPTH}",
+            limit=RUNTIME_INPUT_PAYLOAD_MAX_DEPTH,
+            actual=depth,
+        )
+
+    if isinstance(value, dict):
+        _walk_mapping(
+            cast(dict[object, object], value),
+            depth=depth,
+            path=path,
+            active=active,
+            stats=stats,
+        )
+        return
+    if isinstance(value, list):
+        _walk_sequence(
+            cast(list[object], value),
+            depth=depth,
+            path=path,
+            active=active,
+            stats=stats,
+        )
+        return
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return
+        _raise_payload_validation(path, "Payload numbers must be finite")
+    _raise_payload_validation(path, "Payload values must be JSON-compatible")
+
+
+def _walk_mapping(
+    value: dict[object, object],
+    *,
+    depth: int,
+    path: str,
+    active: set[int],
+    stats: _PayloadStats,
+) -> None:
+    container_id = id(value)
+    if container_id in active:
+        _raise_payload_validation(path, "Payload must not contain circular references")
+    active.add(container_id)
+    try:
+        stats.object_keys += len(value)
+        if stats.object_keys > RUNTIME_INPUT_PAYLOAD_MAX_OBJECT_KEYS:
+            _raise_payload_validation(
+                path,
+                (
+                    "Payload objects may contain at most "
+                    f"{RUNTIME_INPUT_PAYLOAD_MAX_OBJECT_KEYS} keys"
+                ),
+                limit=RUNTIME_INPUT_PAYLOAD_MAX_OBJECT_KEYS,
+                actual=stats.object_keys,
+            )
+        for raw_key, child in value.items():
+            if not isinstance(raw_key, str):
+                _raise_payload_validation(path, "Payload object keys must be strings")
+            _walk_payload(
+                child,
+                depth=depth + 1,
+                path=f"{path}.{raw_key}",
+                active=active,
+                stats=stats,
+            )
+    finally:
+        active.remove(container_id)
+
+
+def _walk_sequence(
+    value: list[object],
+    *,
+    depth: int,
+    path: str,
+    active: set[int],
+    stats: _PayloadStats,
+) -> None:
+    container_id = id(value)
+    if container_id in active:
+        _raise_payload_validation(path, "Payload must not contain circular references")
+    active.add(container_id)
+    try:
+        for index, child in enumerate(value):
+            _walk_payload(
+                child,
+                depth=depth + 1,
+                path=f"{path}[{index}]",
+                active=active,
+                stats=stats,
+            )
+    finally:
+        active.remove(container_id)
+
+
+def _raise_payload_validation(
+    field: str,
+    issue: str,
+    *,
+    limit: int | None = None,
+    actual: int | None = None,
+) -> None:
+    detail: dict[str, Any] = {"field": field, "issue": issue}
+    if limit is not None:
+        detail["limit"] = limit
+    if actual is not None:
+        detail["actual"] = actual
+    raise business_rule_error(
+        "validation_error",
+        _RUNTIME_INPUT_PAYLOAD_VALIDATION_MESSAGE,
+        details=[detail],
+    )
 
 
 def _api_error_details(exc: ApiError) -> list[dict[str, Any]]:

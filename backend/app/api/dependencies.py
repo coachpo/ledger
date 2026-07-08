@@ -15,9 +15,6 @@ from app.services.model_connection_probe_service import ModelConnectionProbeServ
 from app.services.model_connection_service import ModelConnectionService
 from app.services.run_service import RunService
 from app.services.workflow_package_preflight import WorkflowPackagePreflightService
-from app.services.workflow_package_runtime_input_registry import (
-    WorkflowPackageRuntimeInputRegistryService,
-)
 from app.services.workflow_package_schedule_service import WorkflowPackageScheduleService
 from app.services.workflow_package_service import WorkflowPackageService
 
@@ -122,16 +119,6 @@ def get_workflow_package_service(
     )
 
 
-def get_workflow_package_runtime_input_registry_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> WorkflowPackageRuntimeInputRegistryService:
-    from app.services.workflow_package_runtime_input_registry import (
-        WorkflowPackageRuntimeInputRegistryService,
-    )
-
-    return WorkflowPackageRuntimeInputRegistryService(session)
-
-
 def get_workflow_package_schedule_service(
     session: Annotated[Session, Depends(get_session)],
     provider_bundle: Annotated[ExecutionProviderBundle, Depends(get_execution_provider_bundle)],
@@ -156,7 +143,6 @@ __all__ = [
     "get_session",
     "get_tool_catalog",
     "get_workflow_package_preflight_service",
-    "get_workflow_package_runtime_input_registry_service",
     "get_workflow_package_schedule_service",
     "get_workflow_package_service",
     "require_extension_enabled",

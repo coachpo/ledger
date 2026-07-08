@@ -35,20 +35,16 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/lib/api/workflow-packages", () => ({
   createWorkflowPackage: vi.fn(),
   createWorkflowPackageLaunch: vi.fn(),
-  createWorkflowPackageRuntimeInputPresetEntry: vi.fn(),
   deleteWorkflowPackage: vi.fn(),
-  deleteWorkflowPackageRuntimeInputPresetEntry: vi.fn(),
   deleteWorkflowPackageSecretBinding: vi.fn(),
   getWorkflowPackage: vi.fn(),
   getWorkflowPackageLaunch: vi.fn(),
   getWorkflowPackageManifest: vi.fn(),
-  getWorkflowPackageRuntimeInputRegistry: vi.fn(),
   importWorkflowPackage: vi.fn(),
   listWorkflowPackageSecretBindings: vi.fn(),
   listWorkflowPackages: vi.fn(),
   preflightWorkflowPackage: vi.fn(),
   updateWorkflowPackage: vi.fn(),
-  updateWorkflowPackageRuntimeInputPresetEntry: vi.fn(),
   upsertWorkflowPackageSecretBinding: vi.fn(),
   validateWorkflowPackageManifest: vi.fn(),
 }));
@@ -66,28 +62,21 @@ import {
   FINANCE_WORKSPACE_EXTENSION_KEY,
 } from "@/extensions";
 import {
-  createWorkflowPackageRuntimeInputPresetEntry,
   deleteWorkflowPackage,
-  deleteWorkflowPackageRuntimeInputPresetEntry,
   preflightWorkflowPackage,
-  updateWorkflowPackageRuntimeInputPresetEntry,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
 import { queryKeys } from "@/lib/query-keys";
 import {
   useCreateWorkflowPackageLaunch,
-  useCreateWorkflowPackageRuntimeInputPresetEntry,
   useDeleteWorkflowPackage,
   useDeleteWorkflowPackages,
-  useDeleteWorkflowPackageRuntimeInputPresetEntry,
   usePreflightWorkflowPackage,
   useTools,
   useUpdateWorkflowPackage,
-  useUpdateWorkflowPackageRuntimeInputPresetEntry,
   useValidateWorkflowPackageManifest,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
-  useWorkflowPackageRuntimeInputRegistry,
   useWorkflowPackages,
 } from "./use-workflow-packages";
 
@@ -124,11 +113,8 @@ describe("useWorkflowPackages", () => {
       isError: false,
       isPending: false,
     });
-    vi.mocked(createWorkflowPackageRuntimeInputPresetEntry).mockReset();
     vi.mocked(deleteWorkflowPackage).mockReset();
-    vi.mocked(deleteWorkflowPackageRuntimeInputPresetEntry).mockReset();
     vi.mocked(preflightWorkflowPackage).mockReset();
-    vi.mocked(updateWorkflowPackageRuntimeInputPresetEntry).mockReset();
     vi.mocked(validateWorkflowPackageManifest).mockReset();
   });
 
@@ -291,29 +277,6 @@ describe("useWorkflowPackages", () => {
     );
   });
 
-  it("uses workflow-scoped runtime input registry keys", () => {
-    useWorkflowPackageRuntimeInputRegistry(undefined, "runtime_workflow");
-    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        enabled: false,
-        queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(
-          "",
-          "runtime_workflow",
-        ),
-      }),
-    );
-
-    useWorkflowPackageRuntimeInputRegistry(15, " summarize ");
-    expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        enabled: true,
-        queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
-      }),
-    );
-  });
-
   it("gates workflow launch metadata queries until a workflow key is selected", () => {
     useWorkflowPackageLaunch(15, "   ");
     expect(reactQueryState.useQueryMock).toHaveBeenNthCalledWith(
@@ -393,12 +356,9 @@ describe("useWorkflowPackages", () => {
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.launch(15, "summarize"),
     });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
-    });
   });
 
-  it("invalidates package update scopes including runtime input registries", async () => {
+  it("invalidates package update scopes", async () => {
     useUpdateWorkflowPackage();
 
     const mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
@@ -408,58 +368,7 @@ describe("useWorkflowPackages", () => {
     );
 
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
-    });
-  });
-
-  it("invalidates workflow-scoped registry entries after preset mutations", async () => {
-    useCreateWorkflowPackageRuntimeInputPresetEntry();
-    let mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    await mutationOptions.mutationFn?.({
-      packageId: 15,
-      workflowKey: "summarize",
-      payload: { name: "Morning preset", payload: { ticker: "AVGO" } },
-    });
-    expect(createWorkflowPackageRuntimeInputPresetEntry).toHaveBeenCalledWith(
-      15,
-      { name: "Morning preset", payload: { ticker: "AVGO" } },
-      { workflowKey: "summarize" },
-    );
-    await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
-    });
-
-    reactQueryState.invalidateQueriesMock.mockClear();
-    useUpdateWorkflowPackageRuntimeInputPresetEntry();
-    mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    await mutationOptions.mutationFn?.({
-      entryId: 44,
-      packageId: 15,
-      workflowKey: "summarize",
-      payload: { payload: { ticker: "MSFT" } },
-    });
-    expect(updateWorkflowPackageRuntimeInputPresetEntry).toHaveBeenCalledWith(
-      15,
-      44,
-      { payload: { ticker: "MSFT" } },
-      { workflowKey: "summarize" },
-    );
-    await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
-    });
-
-    reactQueryState.invalidateQueriesMock.mockClear();
-    useDeleteWorkflowPackageRuntimeInputPresetEntry();
-    mutationOptions = reactQueryState.capturedMutationOptions as CapturedMutationOptions;
-    await mutationOptions.mutationFn?.({ entryId: 44, packageId: 15, workflowKey: "summarize" });
-    expect(deleteWorkflowPackageRuntimeInputPresetEntry).toHaveBeenCalledWith(15, 44, {
-      workflowKey: "summarize",
-    });
-    await mutationOptions.onSuccess?.({}, { packageId: 15, workflowKey: "summarize" });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(15, "summarize"),
+      queryKey: queryKeys.platform.workflowPackages.detail(15),
     });
   });
 
@@ -473,9 +382,6 @@ describe("useWorkflowPackages", () => {
     await mutationOptions.onSuccess?.(undefined, 15);
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.detail(15),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
     });
     expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.runs.lists(),
@@ -502,13 +408,7 @@ describe("useWorkflowPackages", () => {
       queryKey: queryKeys.platform.workflowPackages.detail(15),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.detail(16),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(16),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.all,
@@ -547,13 +447,7 @@ describe("useWorkflowPackages", () => {
       queryKey: queryKeys.platform.workflowPackages.detail(15),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(15),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.detail(16),
-    });
-    expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(16),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.platform.workflowPackages.all,

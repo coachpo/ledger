@@ -29,7 +29,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
 | Shared helpers | `common.ts`, `csv.ts` | common ids, timestamps, and CSV preview shapes |
 | Extension state contract | `extension.ts` | statically resident extension `key`, `label`, `enabled`, and toggle payloads |
-| Workflow Package contracts | `workflow-package.ts` | package manifests, runtime-input registry/stale state, secret bindings, versions, diagnostics, preflight, launch, import, and export payloads |
+| Workflow Package contracts | `workflow-package.ts` | package manifests, secret bindings, versions, diagnostics, preflight, launch, import, and export payloads |
 | Workflow Package authoring contracts | `workflow-package.ts`, `../platform-authoring/schema/types.ts` | package manifest API payloads and local schema-builder IR |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
 | Platform catalog and binding contracts | `tool.ts`, `model-connection.ts` | read-only tool metadata and saved model connection payloads |

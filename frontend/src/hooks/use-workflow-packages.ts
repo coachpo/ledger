@@ -8,20 +8,16 @@ import {
 import {
   createWorkflowPackage,
   createWorkflowPackageLaunch,
-  createWorkflowPackageRuntimeInputPresetEntry,
   deleteWorkflowPackage,
-  deleteWorkflowPackageRuntimeInputPresetEntry,
   deleteWorkflowPackageSecretBinding,
   getWorkflowPackage,
   getWorkflowPackageLaunch,
   getWorkflowPackageManifest,
-  getWorkflowPackageRuntimeInputRegistry,
   importWorkflowPackage,
   listWorkflowPackageSecretBindings,
   listWorkflowPackages,
   preflightWorkflowPackage,
   updateWorkflowPackage,
-  updateWorkflowPackageRuntimeInputPresetEntry,
   upsertWorkflowPackageSecretBinding,
   validateWorkflowPackageManifest,
 } from "@/lib/api/workflow-packages";
@@ -38,9 +34,6 @@ import type {
   WorkflowPackageManifestRead,
   WorkflowPackageManifestRequest,
   WorkflowPackageRead,
-  WorkflowPackageRuntimeInputPresetEntryCreateRequest,
-  WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
-  WorkflowPackageRuntimeInputRegistryRead,
   WorkflowPackageSecretBindingListRead,
   WorkflowPackageSecretBindingUpdateRequest,
   WorkflowPackageUpdateRequest,
@@ -55,27 +48,6 @@ type WorkflowPackageLaunchVariables = {
   packageId: IdParam;
   payload: WorkflowPackageLaunchCreateRequest;
 };
-
-type WorkflowPackageRuntimeInputRegistryVariables = {
-  packageId: IdParam;
-  workflowKey: string;
-};
-
-type WorkflowPackageRuntimeInputPresetEntryCreateVariables =
-  WorkflowPackageRuntimeInputRegistryVariables & {
-    payload: WorkflowPackageRuntimeInputPresetEntryCreateRequest;
-  };
-
-type WorkflowPackageRuntimeInputPresetEntryUpdateVariables =
-  WorkflowPackageRuntimeInputRegistryVariables & {
-    entryId: IdParam;
-    payload: WorkflowPackageRuntimeInputPresetEntryUpdateRequest;
-  };
-
-type WorkflowPackageRuntimeInputPresetEntryDeleteVariables =
-  WorkflowPackageRuntimeInputRegistryVariables & {
-    entryId: IdParam;
-  };
 
 type WorkflowPackageSecretBindingVariables = {
   key: IdParam;
@@ -96,26 +68,6 @@ function normalizeWorkflowKeyInput(workflowKey: string | null | undefined): stri
   return workflowKey?.trim() ?? "";
 }
 
-function invalidateWorkflowPackageRuntimeInputRegistryScope(
-  queryClient: QueryClient,
-  packageId: IdParam,
-  workflowKey?: string | null,
-) {
-  const normalizedWorkflowKey = normalizeWorkflowKeyInput(workflowKey);
-  if (normalizedWorkflowKey) {
-    return queryClient.invalidateQueries({
-      queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(
-        packageId,
-        normalizedWorkflowKey,
-      ),
-    });
-  }
-
-  return queryClient.invalidateQueries({
-    queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistryScope(packageId),
-  });
-}
-
 function invalidateWorkflowPackageScope(
   queryClient: QueryClient,
   packageRead: WorkflowPackageReadLike,
@@ -126,7 +78,6 @@ function invalidateWorkflowPackageScope(
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.manifest(packageRead.id) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.launch(packageRead.id) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.preflight(packageRead.id) }),
-    invalidateWorkflowPackageRuntimeInputRegistryScope(queryClient, packageRead.id),
   ]);
 }
 
@@ -224,7 +175,6 @@ async function invalidateDeletedWorkflowPackageScope(
     queryClient.invalidateQueries({
       queryKey: queryKeys.platform.workflowPackages.detail(packageId),
     }),
-    invalidateWorkflowPackageRuntimeInputRegistryScope(queryClient, packageId),
   ]);
 }
 
@@ -298,28 +248,6 @@ export function useWorkflowPackageSecretBindings(
   });
 }
 
-export function useWorkflowPackageRuntimeInputRegistry(
-  packageId: IdParam | undefined,
-  workflowKey: string | null | undefined,
-): UseQueryResult<WorkflowPackageRuntimeInputRegistryRead, Error> {
-  const hasPackageId = hasWorkflowPackageId(packageId);
-  const resolvedPackageId = hasPackageId ? packageId : "";
-  const resolvedWorkflowKey = normalizeWorkflowKeyInput(workflowKey);
-
-  return useQuery({
-    queryKey: queryKeys.platform.workflowPackages.runtimeInputRegistry(
-      resolvedPackageId,
-      resolvedWorkflowKey,
-    ),
-    queryFn: ({ signal }) =>
-      getWorkflowPackageRuntimeInputRegistry(resolvedPackageId, {
-        signal,
-        workflowKey: resolvedWorkflowKey,
-      }),
-    enabled: hasPackageId && Boolean(resolvedWorkflowKey),
-  });
-}
-
 function invalidateWorkflowPackageSecretBindingScope(queryClient: QueryClient, packageId: IdParam) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.platform.workflowPackages.secretBindings(packageId) }),
@@ -348,54 +276,6 @@ export function useDeleteWorkflowPackageSecretBinding() {
       deleteWorkflowPackageSecretBinding(packageId, key),
     onSuccess: async (_result, variables) => {
       await invalidateWorkflowPackageSecretBindingScope(queryClient, variables.packageId);
-    },
-  });
-}
-
-export function useCreateWorkflowPackageRuntimeInputPresetEntry() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ packageId, payload, workflowKey }: WorkflowPackageRuntimeInputPresetEntryCreateVariables) =>
-      createWorkflowPackageRuntimeInputPresetEntry(packageId, payload, { workflowKey }),
-    onSuccess: async (_entry, variables) => {
-      await invalidateWorkflowPackageRuntimeInputRegistryScope(
-        queryClient,
-        variables.packageId,
-        variables.workflowKey,
-      );
-    },
-  });
-}
-
-export function useUpdateWorkflowPackageRuntimeInputPresetEntry() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ entryId, packageId, payload, workflowKey }: WorkflowPackageRuntimeInputPresetEntryUpdateVariables) =>
-      updateWorkflowPackageRuntimeInputPresetEntry(packageId, entryId, payload, { workflowKey }),
-    onSuccess: async (_entry, variables) => {
-      await invalidateWorkflowPackageRuntimeInputRegistryScope(
-        queryClient,
-        variables.packageId,
-        variables.workflowKey,
-      );
-    },
-  });
-}
-
-export function useDeleteWorkflowPackageRuntimeInputPresetEntry() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ entryId, packageId, workflowKey }: WorkflowPackageRuntimeInputPresetEntryDeleteVariables) =>
-      deleteWorkflowPackageRuntimeInputPresetEntry(packageId, entryId, { workflowKey }),
-    onSuccess: async (_result, variables) => {
-      await invalidateWorkflowPackageRuntimeInputRegistryScope(
-        queryClient,
-        variables.packageId,
-        variables.workflowKey,
-      );
     },
   });
 }
@@ -459,11 +339,6 @@ export function useCreateWorkflowPackageLaunch() {
             workflowKey ?? undefined,
           ),
         }),
-        invalidateWorkflowPackageRuntimeInputRegistryScope(
-          queryClient,
-          variables.packageId,
-          workflowKey,
-        ),
       ]);
     },
   });

@@ -4,7 +4,7 @@
 
 ## OVERVIEW
 
-`src/pages/workflow-packages/` owns the package-first route family: package inventory, a full-height authoring-only YAML/resource editor, a dedicated import workspace for pasted manifest YAML, and the saved-package launch console at `/workflow-packages/:packageId/run`. This folder is where package-local agents, output schemas, capability profiles, private MCP configs, validation, secret bindings, import/export, preflight, saved inputs, and run creation meet the route layer.
+`src/pages/workflow-packages/` owns the package-first route family: package inventory, a full-height authoring-only YAML/resource editor, a dedicated import workspace for pasted manifest YAML, and the saved-package launch console at `/workflow-packages/:packageId/run`. This folder is where package-local agents, output schemas, capability profiles, private MCP configs, validation, secret bindings, import/export, preflight, runtime inputs, and run creation meet the route layer.
 
 Extension model: statically resident extension state filtering.
 
@@ -28,7 +28,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Package editor shell              | `editor.tsx`                                                                                                      | authoring-only overview, agents, output schemas, capability profiles, private MCP, secret bindings, validation, and export tabs |
 | Editor section helpers            | `editor-sections.tsx`                                                                                             | large tab/section helper surface for package-local resources, validation detail rendering, and repeated editor chrome            |
 | Import workspace                  | `import-page.tsx`                                                                                                 | pasted YAML import, before-unload and route-leave confirmation, and backend validation-detail rendering                         |
-| Package launch page               | `launch.tsx`                                                                                                      | dedicated `/workflow-packages/:packageId/run` console for preflight, runtime parameters, saved inputs, and run creation         |
+| Package launch page               | `launch.tsx`                                                                                                      | dedicated `/workflow-packages/:packageId/run` console for preflight, runtime parameters, and run creation                       |
 | Editor and resource coverage      | `editor-shell.test.tsx`, `resource-editors.test.tsx`, `secret-bindings.test.tsx`, `http-node-validation.test.tsx` | full-height editor shell, resource editing, secret bindings, and private MCP HTTP/SSE validation                                |
 | Import / launch / export coverage | `import-page.test.tsx`, `launch.test.tsx`, `preflight-launch-export.test.tsx`, `list.test.tsx`                    | import workspace behavior, launch console, preflight/export flows, and inventory behavior                                       |
 
@@ -45,7 +45,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Backend validation diagnostics should deep-link to package-local editor fields when possible.
 - Import belongs to `import-page.tsx`, not the editor. The import workspace owns pasted manifest YAML, unsaved/active-import navigation blocking, and detailed backend rejection messages.
 - Launch belongs to `launch.tsx`, not the editor. Phase 1 keeps `/workflow-packages/:packageId/run` as the live browser route and uses `Launch Workflow Package` as the route label; a `/launch` browser rename is deferred follow-up only.
-- The launch page owns preflight gating, workflow selection, runtime parameter JSON, saved-input registry helpers, and create-run navigation.
+- The launch page owns preflight gating, workflow selection, runtime parameter JSON, and create-run navigation.
 - Browser-visible manifest reads and exports must omit private MCP `env`, `headers`, and `query` values while still omitting database ids and run history; imports may accept those fields as secret-bearing package-private authoring/runtime config.
 - Route metadata owns shell mode for this family: list is `inventory` and scroll, import/new/detail are `editor` and full height, and `/workflow-packages/:packageId/run` is `console` and full height.
 - Inventory cards and tables use explicit package open, launch, delete, selection, and bulk-action controls. Do not make the whole row or card a pointer-only target.
@@ -57,7 +57,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not add standalone `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` pages.
 - Do not fetch platform data directly from this route family; use `use-workflow-packages.ts` and related hooks.
 - Do not fork manifest parsing, schema/value codecs, or workflow validation out of `src/lib/platform-authoring/**`.
-- Do not move import-page leave guards, preflight state, runtime-input registry state, or generated launch controls back into `editor.tsx`.
+- Do not move import-page leave guards, preflight state, runtime input state, or generated launch controls back into `editor.tsx`.
 - Do not collapse backend validation details into generic toasts when the route already has a dedicated error surface.
 
 ## VALIDATION

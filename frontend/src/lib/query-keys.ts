@@ -181,18 +181,6 @@ const reportsQueryKeys = {
 } as const;
 const workflowPackagesRoot = [...platformApiRoot, "workflowPackages"] as const;
 
-function workflowPackageRuntimeInputRegistryRoot(packageId: IdParam) {
-  return [
-    ...workflowPackagesRoot,
-    "runtimeInputRegistry",
-    normalizeId(packageId),
-  ] as const;
-}
-
-function normalizeWorkflowKey(workflowKey: string | null | undefined) {
-  return workflowKey?.trim() ?? "";
-}
-
 const schedulesRoot = [...platformApiRoot, "schedules"] as const;
 
 const schedulesQueryKeys = {
@@ -256,16 +244,6 @@ const workflowPackagesQueryKeys = {
     ] as const;
   },
   preflights: () => [...workflowPackagesRoot, "preflight"] as const,
-  runtimeInputRegistry: (
-    packageId: IdParam,
-    workflowKey: string | null | undefined,
-  ) =>
-    [
-      ...workflowPackageRuntimeInputRegistryRoot(packageId),
-      { workflowKey: normalizeWorkflowKey(workflowKey) },
-    ] as const,
-  runtimeInputRegistryScope: (packageId: IdParam) =>
-    workflowPackageRuntimeInputRegistryRoot(packageId),
   secretBindings: (packageId: IdParam) =>
     [
       ...workflowPackagesRoot,

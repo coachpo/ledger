@@ -25,7 +25,6 @@ UTC_TZ = timezone.utc  # noqa: UP017
 
 AGENT_PLATFORM_PACKAGE_TABLE_NAMES = {
     "workflow_packages",
-    "workflow_package_runtime_input_entries",
     "workflow_package_secret_bindings",
 }
 AGENT_PLATFORM_EXECUTION_TABLE_NAMES = {

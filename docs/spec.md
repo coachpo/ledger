@@ -147,11 +147,11 @@ Materialization honors `overlapPolicy` values of `skip` and `queue`. Skip record
 
 Scheduled inputs are JSON object templates, not scripts. The allowed placeholder namespaces are `schedule`, `fire`, `window`, `lastRun`, and `vars`. Supported fire fields include `scheduledFor`, `scheduledLocalDate`, `scheduledLocalTime`, and `scheduledLocalDateTime`. Exact placeholder strings preserve the resolved JSON value type; embedded placeholders render as strings. Missing values, unsupported expressions, array indexing, functions, filters, arithmetic, secrets, and environment access fail preview or materialization. Rendered parameters are validated against the workflow input schema before a run is queued. Fire rows persist rendered parameters for audit.
 
-`POST /api/schedules/preview` renders an unsaved draft for a required `scheduledFor` instant without persisting fires or runs. `POST /api/schedules/{scheduleId}/preview` renders the stored schedule for the supplied `scheduledFor`, or for `nextFireAt` when omitted; a stored schedule with no next fire returns a not-ready preview. Detail reads intentionally omit `inputTemplate` and `templateVars`, so the current UI seeds the Inputs tab from the workflow schema and only saves an explicit overwrite after a ready preview.
+`POST /api/schedules/preview` renders an unsaved draft for a required `scheduledFor` instant without persisting fires or runs. `POST /api/schedules/{scheduleId}/preview` renders the stored schedule for the supplied `scheduledFor`, or for `nextFireAt` when omitted; a stored schedule with no next fire returns a not-ready preview. Detail reads intentionally omit `inputTemplate` and `templateVars`, so the current UI seeds the Inputs tab from the workflow schema and saves an explicit template update only after a ready preview.
 
 `POST /api/schedules/{scheduleId}/run-now` requires `idempotencyKey` and `scheduledFor`, creates a manual fire through the same scheduled-run materialization path, and returns the compact queued run summary. Repeating the same schedule, scheduled time, and key returns the same fire and run. Paused schedules may run now and remain paused. The UI navigates to `/runs/:runId` for queue and execution evidence after run-now succeeds.
 
-`GET /api/schedules/{scheduleId}/fires` returns paged fire history with status, reason, local scheduled fields, rendered parameters, skip or error details, and linked run id while the schedule exists. `DELETE /api/schedules/{scheduleId}` returns 204 with no body, removes the schedule and its fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Deleted schedule fire history is not a preserved live surface. Rerun descendants are ordinary run lineage and stay governed by run lineage. OpenAPI and regression tests assert the 204 delete operation and schedule provenance.
+`GET /api/schedules/{scheduleId}/fires` returns paged fire history with status, reason, local scheduled fields, rendered parameters, skip or error details, and linked run id while the schedule exists. `DELETE /api/schedules/{scheduleId}` returns 204 with no body, removes the schedule and its fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Deleted schedule fire history is not a preserved live surface. Reruns store only a source-run link. OpenAPI and regression tests assert the 204 delete operation and schedule provenance.
 
 ## Runs, Scheduler, And Reruns
 
@@ -165,17 +165,15 @@ Rerun is the root-parameter descendant flow.
 
 ## Runtime Input Semantics
 
-Workflow Package runtime inputs are workflow-scoped JSON object payloads. The launch page, Scheduled Tasks, reruns, and saved runtime input presets all converge on the same canonical validation rules before a payload is persisted or used to queue work.
+Workflow Package runtime inputs are workflow-scoped JSON object payloads. The launch page, Scheduled Tasks, and reruns all converge on the same canonical validation rules before a payload is persisted or used to queue work.
 
 For supported object schemas, the Web UI uses the generated schema form as the primary editing surface. Required fields and fields with schema defaults are active immediately. Optional inputs without defaults stay visible as Add Field rows, so operators can discover them without adding keys to the payload. They are omitted until the operator explicitly includes them. JSON Schema `title` supplies generated form labels, and `description` supplies generated help text. These are display metadata only and do not change runtime input JSON, validation, workflow wiring, or package-local agent invocation.
 
 Absent, `JSON null`, and `empty string` are distinct values. An absent optional key means the key is not part of the canonical payload. `JSON null` is accepted only when the input schema declares the narrow nullable form `type: [T, "null"]` or `type: ["null", T]`; explicit null is rejected for non-nullable fields. Blank optional form controls do not become null. If a string field is included and its value is `""`, the empty string is a real string value and is preserved. Schema defaults materialize intentionally in canonical payloads when the schema provides them.
 
-Advanced JSON is a secondary editing mode for supported schemas and the fallback for unsupported schemas. It lets operators inspect or edit the raw object payload, but it never bypasses validation. Before preflight, launch, save, or overwrite, the UI parses Advanced JSON and validates it into the canonical form state. Invalid JSON, non-object payloads, or local schema mismatches block those actions before any API call is made.
+Advanced JSON is a secondary editing mode for supported schemas and the fallback for unsupported schemas. It lets operators inspect or edit the raw object payload, but it never bypasses validation. Before preflight or launch, the UI parses Advanced JSON and validates it into the canonical form state. Invalid JSON, non-object payloads, or local schema mismatches block those actions before any API call is made.
 
-Saved runtime input presets persist named canonical payload presets for one package workflow. Creating or updating a saved runtime input preset validates the payload against the current workflow input schema and stores the canonical result. Name-only updates preserve the existing payload. When a saved runtime input preset is stale or incompatible with the current schema, the UI keeps it visible for review instead of silently mutating or dropping fields.
-
-The backend is the canonical persistence boundary. Launches, scheduled preview and materialization, reruns, and saved runtime input preset create/update paths share canonical workflow input validation: absent optional no-default fields stay absent, defaults materialize, explicit nullable nulls are preserved only for declared nullable fields, non-nullable nulls fail validation, and empty strings remain strings. Run snapshots and saved presets persist the canonical payload rather than raw editor text.
+The backend is the canonical persistence boundary. Launches, scheduled preview and materialization, and reruns share canonical workflow input validation: absent optional no-default fields stay absent, defaults materialize, explicit nullable nulls are preserved only for declared nullable fields, non-nullable nulls fail validation, and empty strings remain strings. Run snapshots persist the canonical payload rather than raw editor text.
 
 Unsupported help and schema mechanisms include YAML comments, `comment`, `x-signaldeck-*` metadata, `patternProperties`, `oneOf`, `allOf`, `if`, `then`, `else`, `not`, and schema-valued `additionalProperties`.
 
@@ -188,6 +186,8 @@ Studio, Tryout, orchestration, runtime-v2, simulations, backtests, skill-contrac
 Workflow-memory governance is not a live product surface. `spec.memory`, workflow/agent/step memory blocks, `/api/memory/*`, workflow checkpoints, direct memory runtime tools, and `workflowMemoryEvidence` are removed rather than aliased or redirected.
 
 Invocation-input run descendants are not a live product surface. The former draft/create APIs and persistence artifact are removed rather than aliased or redirected.
+
+Saved runtime input presets and history are not live product surfaces. The former runtime-input registry APIs and persistence artifacts are removed rather than aliased or redirected.
 
 ## CI And Verification
 

@@ -11,10 +11,6 @@ import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { SchemaValueEntryForm } from "@/components/platform-authoring/generated-form/schema-form";
-import {
-  SavedRuntimeInputRegistryPanel,
-  type SavedRuntimeInputRegistryEntry,
-} from "@/components/shared/saved-runtime-input-registry-panel";
 import { PageContextBar } from "@/components/shared/page-context-bar";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -47,14 +43,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 import {
   useCreateWorkflowPackageLaunch,
-  useCreateWorkflowPackageRuntimeInputPresetEntry,
-  useDeleteWorkflowPackageRuntimeInputPresetEntry,
   usePreflightWorkflowPackage,
-  useUpdateWorkflowPackageRuntimeInputPresetEntry,
   useWorkflowPackage,
   useWorkflowPackageLaunch,
   useWorkflowPackageManifest,
-  useWorkflowPackageRuntimeInputRegistry,
 } from "@/hooks/use-workflow-packages";
 import { ApiRequestError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
@@ -73,7 +65,6 @@ import type { ApiErrorDetail, UnknownRecord } from "@/lib/types/common";
 import type {
   WorkflowPackageLaunchRead,
   WorkflowPackageRead,
-  WorkflowPackageRuntimeInputEntryRead,
 } from "@/lib/types/workflow-package";
 
 type PackageDiagnostic = {
@@ -82,12 +73,7 @@ type PackageDiagnostic = {
   severity: "error" | "warning";
 };
 
-type SavedInputEntryMode = "history" | "preset";
 type LaunchInputMode = "form" | "json";
-
-const SAVED_INPUT_ENTRY_LIMIT = 20;
-const EMPTY_RUNTIME_INPUT_ENTRIES: readonly WorkflowPackageRuntimeInputEntryRead[] =
-  [];
 
 function validPackageId(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -156,31 +142,6 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function isNotFoundError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.status === 404;
-}
-
-function newestRuntimeInputEntries(
-  entries: readonly WorkflowPackageRuntimeInputEntryRead[],
-  timestampKey: "createdAt" | "updatedAt",
-): WorkflowPackageRuntimeInputEntryRead[] {
-  return [...entries].sort((left, right) => {
-    const timestampDelta =
-      Date.parse(right[timestampKey]) - Date.parse(left[timestampKey]);
-    return timestampDelta === 0 ? right.id - left.id : timestampDelta;
-  });
-}
-
-function savedInputEntryLabel(
-  entry: WorkflowPackageRuntimeInputEntryRead,
-  mode: SavedInputEntryMode,
-) {
-  const name = entry.name?.trim();
-  if (name) {
-    return name;
-  }
-  if (mode === "history" && entry.sourceRunId) {
-    return `Run #${entry.sourceRunId}`;
-  }
-  return mode === "history" ? `History #${entry.id}` : `Preset #${entry.id}`;
 }
 
 function LaunchPageSkeleton() {
@@ -354,24 +315,6 @@ function DiagnosticList({
       </div>
     </div>
   );
-}
-
-function savedRuntimeInputRegistryEntry(
-  entry: WorkflowPackageRuntimeInputEntryRead,
-  mode: SavedInputEntryMode,
-): SavedRuntimeInputRegistryEntry {
-  const timestamp = mode === "history" ? entry.createdAt : entry.updatedAt;
-
-  return {
-    id: entry.id,
-    label: savedInputEntryLabel(entry, mode),
-    mode,
-    sourceLabel: `${mode === "history" ? "Captured" : "Updated"} ${formatDateTime(timestamp)}`,
-    stale: entry.stale.stale,
-    staleReasonLines: entry.stale.reasons.map(
-      (reason) => `${reason.field}: ${reason.issue}`,
-    ),
-  };
 }
 
 function PackageDetailsDisclosure({
@@ -797,7 +740,6 @@ export function WorkflowPackageLaunchPage() {
   const [runtimeInputErrors, setRuntimeInputErrors] = useState<
     ApiErrorDetail[]
   >([]);
-  const [presetName, setPresetName] = useState("");
   const parametersEditedRef = useRef(false);
   const lastTemplateIdentityRef = useRef<string | null>(null);
   const resolvedWorkflowKey = workflowKey.trim();
@@ -836,55 +778,10 @@ export function WorkflowPackageLaunchPage() {
   );
   const preflightPackage = usePreflightWorkflowPackage();
   const createLaunch = useCreateWorkflowPackageLaunch();
-  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(
-    packageId,
-    activeWorkflowKey,
-  );
-  const createPresetEntry =
-    useCreateWorkflowPackageRuntimeInputPresetEntry();
-  const updatePresetEntry =
-    useUpdateWorkflowPackageRuntimeInputPresetEntry();
-  const deletePresetEntry =
-    useDeleteWorkflowPackageRuntimeInputPresetEntry();
   const launchRead = workflowSelected ? launchQuery.data : undefined;
   const launchMetadataError =
     workflowSelected && launchQuery.isError ? launchQuery.error : null;
   const launchMetadataPending = workflowSelected && launchQuery.isPending;
-  const savedInputsError =
-    workflowSelected && runtimeInputRegistry.isError
-      ? runtimeInputRegistry.error
-      : null;
-  const savedInputsLoading =
-    workflowSelected &&
-    (runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching);
-  const savedHistoryEntries = useMemo(
-    () =>
-      workflowSelected
-        ? (runtimeInputRegistry.data?.history ?? EMPTY_RUNTIME_INPUT_ENTRIES)
-        : EMPTY_RUNTIME_INPUT_ENTRIES,
-    [runtimeInputRegistry.data?.history, workflowSelected],
-  );
-  const savedPresetEntries = useMemo(
-    () =>
-      workflowSelected
-        ? (runtimeInputRegistry.data?.presets ?? EMPTY_RUNTIME_INPUT_ENTRIES)
-        : EMPTY_RUNTIME_INPUT_ENTRIES,
-    [runtimeInputRegistry.data?.presets, workflowSelected],
-  );
-  const savedHistoryPanelEntries = useMemo(
-    () =>
-      newestRuntimeInputEntries(savedHistoryEntries, "createdAt").map((entry) =>
-        savedRuntimeInputRegistryEntry(entry, "history"),
-      ),
-    [savedHistoryEntries],
-  );
-  const savedPresetPanelEntries = useMemo(
-    () =>
-      newestRuntimeInputEntries(savedPresetEntries, "updatedAt").map(
-        (entry) => savedRuntimeInputRegistryEntry(entry, "preset"),
-      ),
-    [savedPresetEntries],
-  );
   const readinessRead = preflightRead ?? launchRead;
   const diagnostics = useMemo(
     () => diagnosticsFromLaunch(readinessRead),
@@ -1105,38 +1002,6 @@ export function WorkflowPackageLaunchPage() {
     }
   };
 
-  const loadSavedInput = (entry: WorkflowPackageRuntimeInputEntryRead) => {
-    if (!workflowSelected) {
-      return;
-    }
-    parametersEditedRef.current = true;
-    if (launchInputState.schemaSupported) {
-      const { draft, issues } = createLaunchDraftFromValidatedPayload(
-        launchInputState,
-        entry.payload,
-      );
-      if (issues.length > 0 || !draft) {
-        setLaunchDraft(null);
-        setLaunchInputMode("json");
-        setParametersText(stringifyJson(entry.payload));
-        setRuntimeInputErrors(issues);
-        toast.error("Saved input needs review before it can update the form.");
-        return;
-      }
-      setLaunchDraft(draft);
-      setLaunchInputMode("form");
-      setParametersText(formatLaunchDraftJson(draft));
-    } else {
-      setParametersText(stringifyJson(entry.payload));
-    }
-    setRuntimeInputErrors([]);
-    toast.success(
-      launchInputState.schemaSupported
-        ? "Saved input loaded into the launch form"
-        : "Saved input loaded into the JSON editor",
-    );
-  };
-
   const runLaunchPreflight = async (
     runtimeParameters?: UnknownRecord,
   ): Promise<WorkflowPackageLaunchRead | null> => {
@@ -1168,87 +1033,6 @@ export function WorkflowPackageLaunchPage() {
         error instanceof Error ? error.message : "Package preflight failed.",
       );
       return null;
-    }
-  };
-
-  const savePresetInput = async () => {
-    if (!activeWorkflowKey) {
-      return;
-    }
-    const name = presetName.trim();
-    if (!name) {
-      toast.error("Name this saved runtime input preset before saving it.");
-      return;
-    }
-    const payload = parseCurrentRuntimeInputs();
-    if (!payload) {
-      return;
-    }
-    try {
-      await createPresetEntry.mutateAsync({
-        packageId,
-        payload: { name, payload },
-        workflowKey: activeWorkflowKey,
-      });
-      setPresetName("");
-      toast.success("Saved runtime input preset");
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to save runtime input preset.",
-      );
-    }
-  };
-
-  const overwritePresetInput = async (
-    entry: WorkflowPackageRuntimeInputEntryRead,
-  ) => {
-    if (!activeWorkflowKey) {
-      return;
-    }
-    const payload = parseCurrentRuntimeInputs();
-    if (!payload) {
-      return;
-    }
-    const name = presetName.trim() || entry.name;
-    try {
-      await updatePresetEntry.mutateAsync({
-        entryId: entry.id,
-        packageId,
-        payload: { name: name || null, payload },
-        workflowKey: activeWorkflowKey,
-      });
-      setPresetName("");
-      toast.success("Updated saved runtime input preset");
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to update saved runtime input preset.",
-      );
-    }
-  };
-
-  const deletePresetInput = async (
-    entry: WorkflowPackageRuntimeInputEntryRead,
-  ) => {
-    if (!activeWorkflowKey) {
-      return;
-    }
-    try {
-      await deletePresetEntry.mutateAsync({
-        entryId: entry.id,
-        packageId,
-        workflowKey: activeWorkflowKey,
-      });
-      toast.success("Deleted saved runtime input preset");
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to delete saved runtime input preset.",
-      );
     }
   };
 
@@ -1485,10 +1269,7 @@ export function WorkflowPackageLaunchPage() {
               />
             ) : null}
             <RuntimeInputValidationAlert errors={runtimeInputErrors} />
-            <div
-              className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
-              data-testid="runtime-input-console-grid"
-            >
+            <div className="grid min-w-0 gap-4" data-testid="runtime-input-console-grid">
               <div
                 className="flex min-w-0 flex-col gap-4"
                 data-testid="runtime-input-json-panel"
@@ -1580,8 +1361,7 @@ export function WorkflowPackageLaunchPage() {
                     <AlertTitle>Advanced JSON mode</AlertTitle>
                     <AlertDescription>
                       Apply valid JSON to update the canonical form. Invalid JSON
-                      stays local and blocks preflight, launch, save, and
-                      overwrite actions.
+                      stays local and blocks preflight and launch actions.
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -1680,74 +1460,6 @@ export function WorkflowPackageLaunchPage() {
                   </div>
                 )}
               </div>
-              <SavedRuntimeInputRegistryPanel
-                capMessage="Saved runtime input presets are capped at 20 per workflow. Delete one before saving another."
-                createDisabled={
-                  !workflowSelected ||
-                  savedInputsLoading ||
-                  !presetName.trim()
-                }
-                createPending={createPresetEntry.isPending}
-                deletePending={deletePresetEntry.isPending}
-                disableTabsWhenUnavailable
-                error={savedInputsError}
-                errorTitle="Saved inputs unavailable"
-                helperCopy={
-                  workflowSelected
-                    ? "Load saved runtime input presets or reuse launch history for this workflow."
-                    : "Choose a workflow to load saved runtime input presets or launch history."
-                }
-                historyEmptyMessage="No launch history yet."
-                historyEntries={savedHistoryPanelEntries}
-                loading={savedInputsLoading}
-                loadingMessage={`Loading saved inputs for ${activeWorkflowKey}...`}
-                presetEntries={savedPresetPanelEntries}
-                presetEmptyMessage="No saved runtime input presets for this workflow."
-                presetNameLabel="Saved runtime input preset name"
-                presetNamePlaceholder="Preset name"
-                presetNameValue={presetName}
-                presetLimit={SAVED_INPUT_ENTRY_LIMIT}
-                rowTestIdPrefix="saved-input"
-                saveLabel="Save current JSON"
-                staleNoticeTitle="Saved against older workflow metadata."
-                testId="runtime-input-saved-inputs-helper"
-                title="Saved inputs"
-                updatePending={updatePresetEntry.isPending}
-                workflowBadgeFallback="workflow pending"
-                workflowEnabled={workflowSelected}
-                workflowKey={activeWorkflowKey}
-                onCreate={() => void savePresetInput()}
-                onDelete={(entry) => {
-                  const savedEntry = savedPresetEntries.find(
-                    (candidate) => candidate.id === entry.id,
-                  );
-                  if (savedEntry) {
-                    void deletePresetInput(savedEntry);
-                  }
-                }}
-                onLoad={(entry) => {
-                  const savedEntry =
-                    entry.mode === "history"
-                      ? savedHistoryEntries.find(
-                          (candidate) => candidate.id === entry.id,
-                        )
-                      : savedPresetEntries.find(
-                          (candidate) => candidate.id === entry.id,
-                        );
-                  if (savedEntry) {
-                    loadSavedInput(savedEntry);
-                  }
-                }}
-                onOverwrite={(entry) => {
-                  const savedEntry = savedPresetEntries.find(
-                    (candidate) => candidate.id === entry.id,
-                  );
-                  if (savedEntry) {
-                    void overwritePresetInput(savedEntry);
-                  }
-                }}
-                onPresetNameChange={setPresetName}
-              />
             </div>
           </CardContent>
         </Card>

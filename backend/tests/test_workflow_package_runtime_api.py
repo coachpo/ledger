@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Event, Lock
+from threading import Event
 from typing import Any, cast, override
 
 import httpx
@@ -23,12 +23,11 @@ from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENS
 from app.models.model_connection import ModelConnection
 from app.models.run import Run, RunWorkflowPackageSnapshot
 from app.models.run_agent_invocation import RunAgentInvocation
-from app.models.workflow_package import WorkflowPackage, WorkflowPackageRuntimeInputEntry
+from app.models.workflow_package import WorkflowPackage
 from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
     WorkflowPackageScheduleFire,
 )
-from app.repositories.workflow_package import WorkflowPackageRepository
 from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.run import RunAgentInvocationRead, RunPackageProvenanceRead
 from app.schemas.schedule import (
@@ -41,7 +40,7 @@ from app.schemas.schedule import (
     OverlapPolicy,
     ScheduleCreate,
 )
-from app.schemas.workflow_package import WorkflowPackageLaunchCreateRequest, WorkflowPackageRead
+from app.schemas.workflow_package import WorkflowPackageRead
 from app.services.extension_service import ExtensionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import (
@@ -63,21 +62,8 @@ from app.services.model_gateway_provider_retry import (
 )
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
-from app.services.workflow_package_runtime_input_registry import (
-    WorkflowPackageRuntimeInputRegistryService,
-)
-from app.services.workflow_package_runtime_inputs import (
-    RUNTIME_INPUT_PAYLOAD_MAX_BYTES,
-    RUNTIME_INPUT_PAYLOAD_MAX_DEPTH,
-    RUNTIME_INPUT_PAYLOAD_MAX_NODES,
-    RUNTIME_INPUT_PAYLOAD_MAX_OBJECT_KEYS,
-    RuntimeInputStoredMetadata,
-    build_runtime_input_current_metadata,
-    evaluate_runtime_input_staleness,
-    runtime_input_schema_fingerprint,
-    validate_runtime_input_payload_safety,
-)
 from app.services.workflow_package_schedule_inputs import (
+    RUNTIME_INPUT_PAYLOAD_MAX_BYTES,
     SCHEDULE_RENDER_VALIDATION_FAILED,
     SCHEDULE_TEMPLATE_INVALID_EXPRESSION,
     SCHEDULE_TEMPLATE_MISSING_VALUE,
@@ -89,8 +75,6 @@ from app.services.workflow_package_schedule_materializer import WorkflowPackageS
 from app.services.workflow_package_schedule_service import WorkflowPackageScheduleService
 from app.workers.run_scheduler import RunSchedulerWorker, scheduler_lease_owner
 from tests.fake_openai_provider import run_fake_openai_provider
-
-RUNTIME_INPUT_PRESET_ENTRY_LIMIT = 20
 
 _DIGITAL_ORACLE_PHASE1_TOOL_KEYS = (
     "signaldeck.digital_oracle.prediction_markets.lookup",
@@ -944,43 +928,6 @@ def _wait_for_run(client: TestClient, run_id: int) -> dict[str, Any]:
     raise AssertionError(f"Run {run_id} did not finish in time: {last_body}")
 
 
-def _assert_runtime_input_payload_error(payload: object, expected_issue: str) -> None:
-    with pytest.raises(ApiError) as exc_info:
-        _ = validate_runtime_input_payload_safety(payload)
-    exc = exc_info.value
-    assert exc.status_code == 422
-    assert exc.code == "validation_error"
-    assert exc.message == "Runtime input payload validation failed"
-    assert exc.details[0]["issue"] == expected_issue
-
-
-def _runtime_input_payload_over_depth_limit() -> dict[str, Any]:
-    root: dict[str, Any] = {}
-    current = root
-    for _ in range(RUNTIME_INPUT_PAYLOAD_MAX_DEPTH):
-        child: dict[str, Any] = {}
-        current["child"] = child
-        current = child
-    return root
-
-
-def _create_runtime_input_launch(
-    session_factory: sessionmaker[Session],
-    package_id: int,
-    *,
-    ticker: str,
-) -> int:
-    with session_factory() as session:
-        launched = RunService(session, session_factory).create_workflow_package_launch(
-            package_id,
-            WorkflowPackageLaunchCreateRequest(
-                workflow_key="runtime_workflow",
-                parameters={"ticker": ticker},
-            ),
-        )
-        return launched.id
-
-
 def test_run_scheduler_locked_settings_defaults_and_lease_owner_format(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1265,843 +1212,18 @@ def test_stale_recovered_run_cannot_be_finalized_by_expired_executor(
         assert "scheduler lease expired" in str(run.error)
 
 
-def test_runtime_input_payload_validation_accepts_schema_agnostic_object_and_launch_still_validates(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_payload_validation_package")
-    payload = {"unexpected": {"still": ["safe", "json", "object"]}}
-
-    assert validate_runtime_input_payload_safety(payload) == payload
-
-    launch = client.post(
-        f"/api/workflow-packages/{created['id']}/launches",
-        json={"workflowKey": "runtime_workflow", "parameters": payload},
-    )
-    assert launch.status_code == 400, launch.json()
-    assert launch.json()["code"] == "run_invalid_input"
-
-
-@pytest.mark.parametrize("payload", [None, [], "ticker", 7, True])
-def test_runtime_input_payload_validation_rejects_non_object_json(payload: object) -> None:
-    _assert_runtime_input_payload_error(payload, "Payload must be a JSON object")
-
-
-def test_runtime_input_payload_validation_rejects_size_depth_and_structural_limits() -> None:
-    _assert_runtime_input_payload_error(
-        {"blob": "x" * RUNTIME_INPUT_PAYLOAD_MAX_BYTES},
-        f"Payload must serialize to at most {RUNTIME_INPUT_PAYLOAD_MAX_BYTES} bytes",
-    )
-    _assert_runtime_input_payload_error(
-        _runtime_input_payload_over_depth_limit(),
-        f"Payload nesting depth must be at most {RUNTIME_INPUT_PAYLOAD_MAX_DEPTH}",
-    )
-    _assert_runtime_input_payload_error(
-        {"items": [0] * RUNTIME_INPUT_PAYLOAD_MAX_NODES},
-        f"Payload may contain at most {RUNTIME_INPUT_PAYLOAD_MAX_NODES} JSON nodes",
-    )
-    _assert_runtime_input_payload_error(
-        {f"k{index}": index for index in range(RUNTIME_INPUT_PAYLOAD_MAX_OBJECT_KEYS + 1)},
-        f"Payload objects may contain at most {RUNTIME_INPUT_PAYLOAD_MAX_OBJECT_KEYS} keys",
-    )
-
-
-def test_runtime_input_stale_metadata_is_explanatory_and_entries_stay_loadable(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_stale_metadata_package")
-    package_id = cast(int, created["id"])
-    payload = {"unexpected": {"saved": True}}
-
-    assert runtime_input_schema_fingerprint({"b": 2, "a": 1}) == runtime_input_schema_fingerprint(
-        {"a": 1, "b": 2}
-    )
-
-    with session_factory() as session:
-        package = session.get(WorkflowPackage, package_id)
-        assert package is not None
-        current = build_runtime_input_current_metadata(
-            workflow_key="runtime_workflow",
-            manifest_hash=package.manifest_hash,
-            compiled_hash=package.compiled_hash,
-            compiled_plan=package.compiled_plan,
-        )
-        assert current is not None
-        entry = WorkflowPackageRuntimeInputEntry(
-            package_id=package.id,
-            workflow_key=current.workflow_key,
-            slot="preset",
-            name="Stale but loadable",
-            payload=validate_runtime_input_payload_safety(payload),
-            source_kind="manual",
-            manifest_hash=current.manifest_hash,
-            compiled_hash=current.compiled_hash,
-            schema_fingerprint=current.schema_fingerprint,
-            input_schema_snapshot=current.input_schema,
-        )
-        session.add(entry)
-        session.commit()
-        entry_id = entry.id
-
-        changed_schema = {
-            "type": "object",
-            "properties": {
-                "ticker": {"type": "string"},
-                "horizonDays": {"type": "integer"},
-            },
-            "required": ["ticker", "horizonDays"],
-        }
-        changed_workflows: list[dict[str, Any]] = []
-        for workflow in cast(list[dict[str, Any]], package.compiled_plan["workflows"]):
-            next_workflow = dict(workflow)
-            if next_workflow.get("key") == "runtime_workflow":
-                next_workflow["inputSchema"] = changed_schema
-            changed_workflows.append(next_workflow)
-        changed_plan = dict(package.compiled_plan)
-        changed_plan["workflows"] = changed_workflows
-        package.compiled_plan = changed_plan
-        package.manifest_hash = "d" * 64
-        package.compiled_hash = "e" * 64
-        session.commit()
-
-        loaded = session.get(WorkflowPackageRuntimeInputEntry, entry_id)
-        assert loaded is not None
-        refreshed_package = session.get(WorkflowPackage, package_id)
-        assert refreshed_package is not None
-        current_after_drift = build_runtime_input_current_metadata(
-            workflow_key=loaded.workflow_key,
-            manifest_hash=refreshed_package.manifest_hash,
-            compiled_hash=refreshed_package.compiled_hash,
-            compiled_plan=refreshed_package.compiled_plan,
-        )
-        assert current_after_drift is not None
-        stored = RuntimeInputStoredMetadata(
-            workflow_key=loaded.workflow_key,
-            manifest_hash=loaded.manifest_hash,
-            compiled_hash=loaded.compiled_hash,
-            schema_fingerprint=loaded.schema_fingerprint,
-        )
-        evaluation = evaluate_runtime_input_staleness(stored, current_after_drift)
-
-        assert evaluation.to_payload()["stale"] is True
-        assert [reason["field"] for reason in evaluation.reasons] == [
-            "manifestHash",
-            "compiledHash",
-            "schemaFingerprint",
-        ]
-        assert loaded.payload == payload
-        assert validate_runtime_input_payload_safety(loaded.payload) == payload
-
-        loaded.payload = {"stillArbitrary": {"afterStale": True}}
-        session.commit()
-        session.expire_all()
-        reloaded = session.get(WorkflowPackageRuntimeInputEntry, entry_id)
-        assert reloaded is not None
-        assert reloaded.payload == {"stillArbitrary": {"afterStale": True}}
-
-        missing_workflow = evaluate_runtime_input_staleness(stored, None)
-        assert missing_workflow.to_payload() == {
-            "stale": True,
-            "reasons": [
-                {
-                    "field": "workflowKey",
-                    "issue": "Saved workflow is no longer present in the current package",
-                    "stored": "runtime_workflow",
-                    "current": None,
-                }
-            ],
-        }
-
-
-def test_runtime_input_service_limits(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_service_limits_package")
-    package_id = cast(int, created["id"])
-
-    with session_factory() as session:
-        service = WorkflowPackageRuntimeInputRegistryService(session)
-        preset_entries = [
-            service.create_preset_entry(
-                package_id,
-                "runtime_workflow",
-                name="Duplicate preset name",
-                payload={"ticker": f"TICKER{index}"},
-            )
-            for index in range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT)
-        ]
-
-        assert len({entry.id for entry in preset_entries}) == RUNTIME_INPUT_PRESET_ENTRY_LIMIT
-        assert all(entry.name == "Duplicate preset name" for entry in preset_entries)
-        assert all(entry.slot == "preset" for entry in preset_entries)
-        assert all(
-            entry.stale.to_payload() == {"stale": False, "reasons": []} for entry in preset_entries
-        )
-
-        with pytest.raises(ApiError) as exc_info:
-            _ = service.create_preset_entry(
-                package_id,
-                "runtime_workflow",
-                name="Overflow preset",
-                payload={"ticker": "OVERFLOW"},
-            )
-        exc = exc_info.value
-        assert exc.status_code == 409
-        assert exc.code == "workflow_package_runtime_input_preset_limit_reached"
-        assert exc.details == [
-            {
-                "field": "presets",
-                "issue": "Runtime input presets are limited to 20 per workflow",
-                "limit": RUNTIME_INPUT_PRESET_ENTRY_LIMIT,
-                "actual": RUNTIME_INPUT_PRESET_ENTRY_LIMIT,
-            }
-        ]
-        registry_after_limit = service.list_registry(package_id, "runtime_workflow")
-        assert len(registry_after_limit.presets) == RUNTIME_INPUT_PRESET_ENTRY_LIMIT
-        assert registry_after_limit.history == []
-        assert not hasattr(service, "append_history_entry")
-
-
-def test_runtime_input_service_preset_cap_uses_scope_lock_for_concurrent_creates(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_preset_lock_package")
-    package_id = cast(int, created["id"])
-    with session_factory() as session:
-        service = WorkflowPackageRuntimeInputRegistryService(session)
-        for index in range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT - 1):
-            _ = service.create_preset_entry(
-                package_id,
-                "runtime_workflow",
-                name="Existing preset",
-                payload={"ticker": f"EXISTING{index:02d}"},
-            )
-
-    first_lock_acquired = Event()
-    first_lock_can_continue = Event()
-    second_lock_attempted = Event()
-    lock_observer = Lock()
-    lock_call_count = 0
-    original_acquire_scope_lock = WorkflowPackageRuntimeInputRegistryService._acquire_scope_lock
-
-    def observed_acquire_scope_lock(
-        self: WorkflowPackageRuntimeInputRegistryService,
-        scope,
-        *,
-        slot,
-    ) -> None:
-        nonlocal lock_call_count
-        with lock_observer:
-            lock_call_count += 1
-            call_number = lock_call_count
-        if call_number == 2:
-            second_lock_attempted.set()
-        original_acquire_scope_lock(self, scope, slot=slot)
-        if call_number == 1:
-            first_lock_acquired.set()
-            assert first_lock_can_continue.wait(timeout=5)
-
-    monkeypatch.setattr(
-        WorkflowPackageRuntimeInputRegistryService,
-        "_acquire_scope_lock",
-        observed_acquire_scope_lock,
-    )
-
-    def create_concurrent_preset(ticker: str) -> tuple[str, int | str]:
-        with session_factory() as session:
-            try:
-                entry = WorkflowPackageRuntimeInputRegistryService(session).create_preset_entry(
-                    package_id,
-                    "runtime_workflow",
-                    name="Concurrent preset",
-                    payload={"ticker": ticker},
-                )
-            except ApiError as exc:
-                return ("error", exc.code)
-            return ("created", entry.id)
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first = executor.submit(create_concurrent_preset, "LOCK_A")
-        assert first_lock_acquired.wait(timeout=5)
-        second = executor.submit(create_concurrent_preset, "LOCK_B")
-        assert second_lock_attempted.wait(timeout=5)
-        try:
-            assert not second.done()
-        finally:
-            first_lock_can_continue.set()
-        results = [first.result(timeout=5), second.result(timeout=5)]
-
-    assert sorted(result[0] for result in results) == ["created", "error"]
-    assert ("error", "workflow_package_runtime_input_preset_limit_reached") in results
-    with session_factory() as session:
-        registry = WorkflowPackageRuntimeInputRegistryService(session).list_registry(
-            package_id,
-            "runtime_workflow",
-        )
-        assert len(registry.presets) == RUNTIME_INPUT_PRESET_ENTRY_LIMIT
-
-
-def test_runtime_input_service_preset_payload_updates_validate_current_schema(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(
-        client,
-        package_key="runtime_input_service_schema_validated_package",
-    )
-    package_id = cast(int, created["id"])
-
-    with session_factory() as session:
-        service = WorkflowPackageRuntimeInputRegistryService(session)
-        created_entry = service.create_preset_entry(
-            package_id,
-            "runtime_workflow",
-            name="Validated preset",
-            payload={"ticker": "MSFT"},
-        )
-        assert created_entry.payload == {"ticker": "MSFT"}
-        assert created_entry.stale.to_payload() == {"stale": False, "reasons": []}
-
-        updated_entry = service.update_preset_entry(
-            package_id,
-            "runtime_workflow",
-            created_entry.id,
-            payload={"ticker": "AAPL"},
-        )
-        assert updated_entry.payload == {"ticker": "AAPL"}
-        assert updated_entry.stale.stale is False
-
-        package = session.get(WorkflowPackage, package_id)
-        assert package is not None
-        changed_schema = {
-            "type": "object",
-            "properties": {
-                "ticker": {"type": "string"},
-                "horizonDays": {"type": "integer"},
-            },
-            "required": ["ticker", "horizonDays"],
-        }
-        changed_workflows: list[dict[str, Any]] = []
-        for workflow in cast(list[dict[str, Any]], package.compiled_plan["workflows"]):
-            next_workflow = dict(workflow)
-            if next_workflow.get("key") == "runtime_workflow":
-                next_workflow["inputSchema"] = changed_schema
-            changed_workflows.append(next_workflow)
-        changed_plan = dict(package.compiled_plan)
-        changed_plan["workflows"] = changed_workflows
-        package.compiled_plan = changed_plan
-        package.manifest_hash = "f" * 64
-        package.compiled_hash = "0" * 64
-        session.commit()
-
-        registry_after_drift = service.list_registry(package_id, "runtime_workflow")
-        [stale_entry] = registry_after_drift.presets
-        assert stale_entry.stale.stale is True
-        assert [reason["field"] for reason in stale_entry.stale.reasons] == [
-            "manifestHash",
-            "compiledHash",
-            "schemaFingerprint",
-        ]
-
-        renamed_entry = service.update_preset_entry(
-            package_id,
-            "runtime_workflow",
-            created_entry.id,
-            name="Renamed stale preset",
-        )
-        assert renamed_entry.name == "Renamed stale preset"
-        assert renamed_entry.payload == {"ticker": "AAPL"}
-        assert renamed_entry.stale.stale is True
-
-        with pytest.raises(ApiError) as exc_info:
-            _ = service.update_preset_entry(
-                package_id,
-                "runtime_workflow",
-                created_entry.id,
-                payload={"noTicker": True},
-            )
-        assert exc_info.value.status_code == 400
-        assert exc_info.value.code == "run_invalid_input"
-        assert {"field": "ticker", "issue": "Field required"} in exc_info.value.details
-
-        resaved_entry = service.update_preset_entry(
-            package_id,
-            "runtime_workflow",
-            created_entry.id,
-            payload={"ticker": "MSFT", "horizonDays": 30},
-        )
-        assert resaved_entry.payload == {"ticker": "MSFT", "horizonDays": 30}
-        assert resaved_entry.stale.to_payload() == {"stale": False, "reasons": []}
-
-
-def test_runtime_input_presets_entry_persists_canonical_workflow_schema_payload(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package_from_source(
-        client,
-        manifest_source=_package_source_with_runtime_input_preset_schema(
-            package_key="runtime_input_preset_canonical_package"
-        ),
-    )
-    package_id = cast(int, created["id"])
-    endpoint = f"/api/workflow-packages/{package_id}/runtime-input-registry/presets"
-    params = {"workflowKey": "runtime_workflow"}
-
-    created_preset = client.post(
-        endpoint,
-        params=params,
-        json={"name": "Canonical preset", "payload": {"ticker": "MSFT", "sector": None}},
-    )
-
-    assert created_preset.status_code == 201, created_preset.json()
-    created_preset_body = cast(dict[str, Any], created_preset.json())
-    entry_id = int(created_preset_body["id"])
-    expected_payload = {"ticker": "MSFT", "sector": None, "horizonDays": 14}
-    assert created_preset_body["slot"] == "preset"
-    assert created_preset_body["payload"] == expected_payload
-
-    renamed_preset = client.patch(
-        f"{endpoint}/{entry_id}",
-        params=params,
-        json={"name": "Renamed canonical preset"},
-    )
-
-    assert renamed_preset.status_code == 200, renamed_preset.json()
-    renamed_preset_body = cast(dict[str, Any], renamed_preset.json())
-    assert renamed_preset_body["name"] == "Renamed canonical preset"
-    assert renamed_preset_body["payload"] == expected_payload
-
-    updated_preset = client.patch(
-        f"{endpoint}/{entry_id}",
-        params=params,
-        json={"payload": {"ticker": "AAPL"}},
-    )
-
-    assert updated_preset.status_code == 200, updated_preset.json()
-    updated_preset_body = cast(dict[str, Any], updated_preset.json())
-    assert updated_preset_body["name"] == "Renamed canonical preset"
-    assert updated_preset_body["payload"] == {"ticker": "AAPL", "horizonDays": 14}
-
-
-def test_runtime_input_presets_entry_rejects_missing_required_workflow_input(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package_from_source(
-        client,
-        manifest_source=_package_source_with_runtime_input_preset_schema(
-            package_key="runtime_input_preset_invalid_package"
-        ),
-    )
-    package_id = cast(int, created["id"])
-
-    response = client.post(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
-        params={"workflowKey": "runtime_workflow"},
-        json={
-            "name": "Invalid preset",
-            "payload": {"unexpected": True, "horizonDays": "soon"},
-        },
-    )
-
-    assert response.status_code == 400, response.json()
-    body = cast(dict[str, Any], response.json())
-    assert body["code"] == "run_invalid_input"
-    details_by_field = {detail["field"]: detail["issue"] for detail in body["details"]}
-    assert details_by_field["ticker"] == "Field required"
-    assert details_by_field["unexpected"] == "Extra inputs are not permitted"
-    assert "valid integer" in details_by_field["horizonDays"]
-
-
-def test_runtime_input_presets_entry_rejects_non_nullable_null(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package_from_source(
-        client,
-        manifest_source=_package_source_with_optional_wired_inputs(
-            package_key="runtime_input_preset_non_nullable_null_package"
-        ),
-    )
-    package_id = cast(int, created["id"])
-
-    response = client.post(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
-        params={"workflowKey": "runtime_workflow"},
-        json={
-            "name": "Invalid null preset",
-            "payload": {"ticker": "MSFT", "horizonDays": None},
-        },
-    )
-
-    assert response.status_code == 400, response.json()
-    body = cast(dict[str, Any], response.json())
-    assert body["code"] == "run_invalid_input"
-    assert {
-        "field": "horizonDays",
-        "issue": "Input should be a valid integer",
-    } in body["details"]
-
-
-def test_runtime_input_registry_api_contract_and_presets_mutations(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_registry_api_package")
-    package_id = cast(int, created["id"])
-
-    empty = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert empty.status_code == 200, empty.json()
-    empty_body = cast(dict[str, Any], empty.json())
-    assert empty_body["packageId"] == package_id
-    assert empty_body["packageKey"] == "runtime_input_registry_api_package"
-    assert empty_body["workflowKey"] == "runtime_workflow"
-    current_metadata = cast(dict[str, Any], empty_body["currentMetadata"])
-    assert current_metadata["workflowKey"] == "runtime_workflow"
-    assert current_metadata["inputSchema"]["required"] == ["ticker"]
-    assert empty_body["presets"] == []
-    assert empty_body["history"] == []
-
-    created_preset = client.post(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
-        params={"workflowKey": "runtime_workflow"},
-        json={"name": "  Morning preset  ", "payload": {"ticker": "SAVED"}},
-    )
-    assert created_preset.status_code == 201, created_preset.json()
-    created_preset_body = cast(dict[str, Any], created_preset.json())
-    entry_id = int(created_preset_body["id"])
-    assert created_preset_body["packageId"] == package_id
-    assert created_preset_body["workflowKey"] == "runtime_workflow"
-    assert created_preset_body["slot"] == "preset"
-    assert created_preset_body["name"] == "Morning preset"
-    assert created_preset_body["payload"] == {"ticker": "SAVED"}
-    assert created_preset_body["sourceKind"] == "manual"
-    assert created_preset_body["sourceRunId"] is None
-    assert created_preset_body["inputSchemaSnapshot"]["required"] == ["ticker"]
-    assert created_preset_body["stale"] == {"stale": False, "reasons": []}
-
-    invalid_payload = client.post(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
-        params={"workflowKey": "runtime_workflow"},
-        json={"name": "Not an object", "payload": []},
-    )
-    assert invalid_payload.status_code == 422, invalid_payload.json()
-    invalid_body = invalid_payload.json()
-    assert invalid_body["code"] == "validation_error"
-    assert invalid_body["message"] == "Runtime input payload validation failed"
-    assert invalid_body["details"] == [
-        {"field": "payload", "issue": "Payload must be a JSON object"}
-    ]
-
-    launch = client.post(
-        f"/api/workflow-packages/{package_id}/launches",
-        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "HIST"}},
-    )
-    assert launch.status_code == 201, launch.json()
-    source_run_id = int(launch.json()["id"])
-
-    registry = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert registry.status_code == 200, registry.json()
-    registry_body = cast(dict[str, Any], registry.json())
-    presets = cast(list[dict[str, Any]], registry_body["presets"])
-    history = cast(list[dict[str, Any]], registry_body["history"])
-    [history_entry] = history
-    history_id = int(history_entry["id"])
-    assert [entry["id"] for entry in presets] == [entry_id]
-    assert history_entry["slot"] == "history"
-    assert history_entry["name"] is None
-    assert history_entry["sourceKind"] == "launch"
-    assert history_entry["sourceRunId"] == source_run_id
-    assert history_entry["payload"] == {"ticker": "HIST"}
-
-    history_update = client.patch(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{history_id}",
-        params={"workflowKey": "runtime_workflow"},
-        json={"name": "History must stay immutable"},
-    )
-    assert history_update.status_code == 404, history_update.json()
-
-    updated = client.patch(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{entry_id}",
-        params={"workflowKey": "runtime_workflow"},
-        json={"name": "Renamed preset", "payload": {"ticker": "RENAMED"}},
-    )
-    assert updated.status_code == 200, updated.json()
-    updated_body = cast(dict[str, Any], updated.json())
-    assert updated_body["id"] == entry_id
-    assert updated_body["name"] == "Renamed preset"
-    assert updated_body["payload"] == {"ticker": "RENAMED"}
-    assert updated_body["stale"] == {"stale": False, "reasons": []}
-
-    deleted = client.delete(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{entry_id}",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert deleted.status_code == 204, deleted.text
-
-    history_delete = client.delete(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{history_id}",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert history_delete.status_code == 404, history_delete.json()
-
-    after_delete = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert after_delete.status_code == 200, after_delete.json()
-    after_delete_body = cast(dict[str, Any], after_delete.json())
-    assert after_delete_body["presets"] == []
-    assert len(cast(list[dict[str, Any]], after_delete_body["history"])) == 1
-
-    with session_factory() as session:
-        service = WorkflowPackageRuntimeInputRegistryService(session)
-        for index in range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT):
-            _ = service.create_preset_entry(
-                package_id,
-                "runtime_workflow",
-                name="Duplicate API preset",
-                payload={"ticker": f"CAP{index}"},
-            )
-
-    overflow = client.post(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets",
-        params={"workflowKey": "runtime_workflow"},
-        json={"name": "Overflow", "payload": {"ticker": "OVERFLOW"}},
-    )
-    assert overflow.status_code == 409, overflow.json()
-    overflow_body = overflow.json()
-    assert overflow_body["code"] == "workflow_package_runtime_input_preset_limit_reached"
-    assert overflow_body["details"] == [
-        {
-            "field": "presets",
-            "issue": "Runtime input presets are limited to 20 per workflow",
-            "limit": RUNTIME_INPUT_PRESET_ENTRY_LIMIT,
-            "actual": RUNTIME_INPUT_PRESET_ENTRY_LIMIT,
-        }
-    ]
-
-
-def test_runtime_input_registry_api_allows_duplicate_preset_names_as_distinct_ids(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_duplicate_names_package")
-    package_id = cast(int, created["id"])
-    endpoint = f"/api/workflow-packages/{package_id}/runtime-input-registry/presets"
-    params = {"workflowKey": "runtime_workflow"}
-
-    first = client.post(
-        endpoint,
-        params=params,
-        json={"name": "Morning preset", "payload": {"ticker": "AAPL"}},
-    )
-    second = client.post(
-        endpoint,
-        params=params,
-        json={"name": "Morning preset", "payload": {"ticker": "MSFT"}},
-    )
-
-    assert first.status_code == 201, first.json()
-    assert second.status_code == 201, second.json()
-    first_body = cast(dict[str, Any], first.json())
-    second_body = cast(dict[str, Any], second.json())
-    assert first_body["id"] != second_body["id"]
-    assert first_body["slot"] == second_body["slot"] == "preset"
-    assert first_body["name"] == second_body["name"] == "Morning preset"
-
-    registry = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params=params,
-    )
-    assert registry.status_code == 200, registry.json()
-    presets = cast(list[dict[str, Any]], registry.json()["presets"])
-    assert [entry["id"] for entry in presets] == [second_body["id"], first_body["id"]]
-    assert [entry["payload"] for entry in presets] == [
-        {"ticker": "MSFT"},
-        {"ticker": "AAPL"},
-    ]
-
-    deleted = client.delete(
-        f"{endpoint}/{first_body['id']}",
-        params=params,
-    )
-    assert deleted.status_code == 204, deleted.text
-
-    after_delete = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params=params,
-    )
-    assert after_delete.status_code == 200, after_delete.json()
-    remaining = cast(list[dict[str, Any]], after_delete.json()["presets"])
-    assert [entry["id"] for entry in remaining] == [second_body["id"]]
-    assert remaining[0]["name"] == "Morning preset"
-
-
-def test_runtime_input_registry_stale_workflow_read_remains_available(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_registry_stale_package")
-    package_id = cast(int, created["id"])
-
-    with session_factory() as session:
-        service = WorkflowPackageRuntimeInputRegistryService(session)
-        preset_entry = service.create_preset_entry(
-            package_id,
-            "runtime_workflow",
-            name="Removed workflow preset",
-            payload={"ticker": "MSFT"},
-        )
-        preset_id = preset_entry.id
-
-    launch = client.post(
-        f"/api/workflow-packages/{package_id}/launches",
-        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "AAPL"}},
-    )
-    assert launch.status_code == 201, launch.json()
-    [history_entry] = _runtime_input_history_entries(client, package_id)
-    history_id = int(history_entry["id"])
-
-    with session_factory() as session:
-        package = session.get(WorkflowPackage, package_id)
-        assert package is not None
-        changed_plan = dict(package.compiled_plan)
-        changed_plan["workflows"] = []
-        package.compiled_plan = changed_plan
-        package.manifest_hash = "a" * 64
-        package.compiled_hash = "b" * 64
-        session.commit()
-
-    stale_read = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert stale_read.status_code == 200, stale_read.json()
-    stale_body = cast(dict[str, Any], stale_read.json())
-    assert stale_body["packageId"] == package_id
-    assert stale_body["workflowKey"] == "runtime_workflow"
-    assert stale_body["currentMetadata"] is None
-    presets = cast(list[dict[str, Any]], stale_body["presets"])
-    history = cast(list[dict[str, Any]], stale_body["history"])
-    assert [entry["id"] for entry in presets] == [preset_id]
-    assert [entry["id"] for entry in history] == [history_id]
-    expected_stale = {
-        "stale": True,
-        "reasons": [
-            {
-                "field": "workflowKey",
-                "issue": "Saved workflow is no longer present in the current package",
-                "stored": "runtime_workflow",
-                "current": None,
-            }
-        ],
-    }
-    assert presets[0]["stale"] == expected_stale
-    assert history[0]["stale"] == expected_stale
-    assert presets[0]["payload"] == {"ticker": "MSFT"}
-    assert history[0]["payload"] == {"ticker": "AAPL"}
-
-    renamed = client.patch(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{preset_id}",
-        params={"workflowKey": "runtime_workflow"},
-        json={"name": "Renamed stale workflow preset"},
-    )
-    assert renamed.status_code == 200, renamed.json()
-    renamed_body = cast(dict[str, Any], renamed.json())
-    assert renamed_body["name"] == "Renamed stale workflow preset"
-    assert renamed_body["stale"] == expected_stale
-
-    deleted = client.delete(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry/presets/{preset_id}",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert deleted.status_code == 204, deleted.text
-
-    after_delete = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert after_delete.status_code == 200, after_delete.json()
-    after_delete_body = cast(dict[str, Any], after_delete.json())
-    assert after_delete_body["currentMetadata"] is None
-    assert after_delete_body["presets"] == []
-    assert cast(list[dict[str, Any]], after_delete_body["history"])[0]["id"] == history_id
-
-
-def test_runtime_input_registry_openapi_contract_is_scope_safe(client: TestClient) -> None:
+def test_runtime_input_registry_endpoints_are_removed_from_openapi(client: TestClient) -> None:
     response = client.get("/openapi.json")
     assert response.status_code == 200, response.json()
     openapi = cast(dict[str, Any], response.json())
-    components = cast(dict[str, Any], openapi["components"])
     paths = cast(dict[str, dict[str, Any]], openapi["paths"])
-    schemas = cast(dict[str, dict[str, Any]], components["schemas"])
 
     registry_path = "/api/workflow-packages/{package_id}/runtime-input-registry"
     presets_path = "/api/workflow-packages/{package_id}/runtime-input-registry/presets"
     presets_item_path = f"{presets_path}/{{entry_id}}"
-    assert registry_path in paths
-    assert presets_path in paths
-    assert presets_item_path in paths
-
-    for path, method in (
-        (registry_path, "get"),
-        (presets_path, "post"),
-        (presets_item_path, "patch"),
-        (presets_item_path, "delete"),
-    ):
-        operation = cast(dict[str, Any], paths[path][method])
-        parameters = cast(list[dict[str, Any]], operation.get("parameters") or [])
-        parameter_names = {str(parameter["name"]) for parameter in parameters}
-        assert {"package_id", "workflowKey"} <= parameter_names
-
-    registry_properties = cast(
-        dict[str, Any],
-        schemas["WorkflowPackageRuntimeInputRegistryRead"]["properties"],
-    )
-    create_properties = cast(
-        dict[str, Any],
-        schemas["WorkflowPackageRuntimeInputPresetEntryCreateRequest"]["properties"],
-    )
-    update_properties = cast(
-        dict[str, Any],
-        schemas["WorkflowPackageRuntimeInputPresetEntryUpdateRequest"]["properties"],
-    )
-
-    assert set(registry_properties) == {
-        "packageId",
-        "packageKey",
-        "workflowKey",
-        "currentMetadata",
-        "presets",
-        "history",
-    }
-    assert set(create_properties) == {"name", "payload"}
-    assert set(update_properties) == {"name", "payload"}
+    assert registry_path not in paths
+    assert presets_path not in paths
+    assert presets_item_path not in paths
 
 
 def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_live_readiness(
@@ -2263,7 +1385,7 @@ def test_workflow_package_preflight_rejects_typed_parameter_errors_before_launch
     _seed_model_connection(session_factory)
     created = _create_package_from_source(
         client,
-        manifest_source=_package_source_with_runtime_input_preset_schema(
+        manifest_source=_package_source_with_runtime_input_default(
             package_key="runtime_preflight_invalid_typed_package"
         ),
     )
@@ -4167,39 +3289,6 @@ def _package_source_with_runtime_input_default(*, package_key: str) -> str:
     )
 
 
-def _package_source_with_runtime_input_preset_schema(*, package_key: str) -> str:
-    original_input_schema = (
-        "      inputSchema:\n"
-        "        type: object\n"
-        "        properties:\n"
-        "          ticker:\n"
-        "            type: string\n"
-        "        required: [ticker]\n"
-        "      flow:\n"
-    )
-    preset_input_schema = (
-        "      inputSchema:\n"
-        "        type: object\n"
-        "        properties:\n"
-        "          ticker:\n"
-        "            type: string\n"
-        "          sector:\n"
-        '            type: [string, "null"]\n'
-        "          horizonDays:\n"
-        "            type: integer\n"
-        "            default: 14\n"
-        "          optionalNote:\n"
-        "            type: string\n"
-        "        required: [ticker]\n"
-        "      flow:\n"
-    )
-    return _package_source(package_key=package_key).replace(
-        original_input_schema,
-        preset_input_schema,
-        1,
-    )
-
-
 def _package_source_with_nullable_optional_input(*, package_key: str) -> str:
     return (
         _package_source_with_optional_wired_inputs(package_key=package_key)
@@ -4309,18 +3398,6 @@ spec:
 """
 
 
-def _runtime_input_history_entries(
-    client: TestClient,
-    package_id: int,
-) -> list[dict[str, Any]]:
-    response = client.get(
-        f"/api/workflow-packages/{package_id}/runtime-input-registry",
-        params={"workflowKey": "runtime_workflow"},
-    )
-    assert response.status_code == 200, response.json()
-    return cast(list[dict[str, Any]], response.json()["history"])
-
-
 def test_workflow_package_launch_records_canonical_required_parameters(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -4345,8 +3422,6 @@ def test_workflow_package_launch_records_canonical_required_parameters(
 
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
-    history = _runtime_input_history_entries(client, package_id)
-    assert history[0]["payload"] == expected_parameters
     with session_factory() as session:
         run = session.get(Run, run_id)
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -4380,8 +3455,6 @@ def test_workflow_package_launch_materializes_defaulted_optional_input(
 
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
-    history = _runtime_input_history_entries(client, package_id)
-    assert history[0]["payload"] == expected_parameters
     with session_factory() as session:
         run = session.get(Run, run_id)
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -4415,8 +3488,6 @@ def test_workflow_package_launch_preserves_explicit_empty_string(
 
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
-    history = _runtime_input_history_entries(client, package_id)
-    assert history[0]["payload"] == expected_parameters
     with session_factory() as session:
         run = session.get(Run, run_id)
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -4450,8 +3521,6 @@ def test_workflow_package_launch_preserves_nullable_null_when_schema_allows_it(
 
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
-    history = _runtime_input_history_entries(client, package_id)
-    assert history[0]["payload"] == expected_parameters
     with session_factory() as session:
         run = session.get(Run, run_id)
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -4486,8 +3555,6 @@ def test_workflow_package_launch_preserves_nullable_null_for_enum_when_schema_al
 
     assert launch.status_code == 201, launch.json()
     run_id = int(launch.json()["id"])
-    history = _runtime_input_history_entries(client, package_id)
-    assert history[0]["payload"] == expected_parameters
     with session_factory() as session:
         run = session.get(Run, run_id)
         snapshot = session.get(RunWorkflowPackageSnapshot, run_id)
@@ -4632,206 +3699,6 @@ def test_workflow_package_wired_missing_required_input_path_fails(
             "issue": "Required input field source is missing from the run input",
         }
     ]
-
-
-def test_runtime_input_history_on_launch_persists_validated_payload_source_run_and_trims(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _RuntimeRecordingOpenAIClient.reset()
-    _RuntimeRecordingOpenAIClient.output_text = '{"summary": "runtime input source output"}'
-    monkeypatch.setattr("app.services.run_service.OpenAI", _RuntimeRecordingOpenAIClient)
-    _seed_model_connection(session_factory)
-    created = client.post(
-        "/api/workflow-packages",
-        json={
-            "manifestSource": _package_source_with_runtime_input_default(
-                package_key="runtime_input_history_on_launch_package"
-            )
-        },
-    )
-    assert created.status_code == 201, created.json()
-    package_id = int(created.json()["id"])
-    submitted_payload = {"ticker": "MSFT"}
-    expected_validated_payload = {"ticker": "MSFT", "horizonDays": 14}
-
-    launch = client.post(
-        f"/api/workflow-packages/{package_id}/launches",
-        json={"workflowKey": "runtime_workflow", "parameters": submitted_payload},
-    )
-    assert launch.status_code == 201, launch.json()
-    source_run_id = int(launch.json()["id"])
-
-    history = _runtime_input_history_entries(client, package_id)
-    assert len(history) == 1
-    assert history[0]["slot"] == "history"
-    assert history[0]["name"] is None
-    assert history[0]["sourceKind"] == "launch"
-    assert history[0]["sourceRunId"] == source_run_id
-    assert history[0]["payload"] == expected_validated_payload
-
-    with session_factory() as session:
-        run = session.get(Run, source_run_id)
-        snapshot = session.get(RunWorkflowPackageSnapshot, source_run_id)
-        assert run is not None
-        assert snapshot is not None
-        assert run.input == expected_validated_payload
-        assert snapshot.launch_parameters == expected_validated_payload
-        entry = (
-            session.query(WorkflowPackageRuntimeInputEntry)
-            .filter_by(
-                package_id=package_id,
-                workflow_key="runtime_workflow",
-                slot="history",
-            )
-            .one()
-        )
-        assert entry.payload == run.input
-        assert entry.source_run_id == source_run_id
-
-    _drain_run_queue(session_factory)
-    source_detail = _wait_for_run(client, source_run_id)
-    assert source_detail["status"] == "succeeded"
-    source_invocation = cast(dict[str, Any], source_detail["steps"][0]["invocations"][0])
-    assert source_invocation["resolvedInput"] == {"ticker": "MSFT"}
-
-    rerun = client.post(
-        f"/api/runs/{source_run_id}/reruns",
-        json={"parameters": {"ticker": "AAPL"}},
-    )
-    assert rerun.status_code == 201, rerun.json()
-    assert len(_runtime_input_history_entries(client, package_id)) == 1
-    _drain_run_queue(session_factory)
-    assert len(_runtime_input_history_entries(client, package_id)) == 1
-
-    for index in range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT):
-        next_launch = client.post(
-            f"/api/workflow-packages/{package_id}/launches",
-            json={
-                "workflowKey": "runtime_workflow",
-                "parameters": {"ticker": f"HIST{index:02d}"},
-            },
-        )
-        assert next_launch.status_code == 201, next_launch.json()
-
-    trimmed_history = _runtime_input_history_entries(client, package_id)
-    trimmed_payloads = [entry["payload"] for entry in trimmed_history]
-    assert trimmed_payloads == [
-        {"ticker": f"HIST{index:02d}", "horizonDays": 14}
-        for index in reversed(range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT))
-    ]
-    assert all(entry["sourceKind"] == "launch" for entry in trimmed_history)
-    assert all(entry["sourceRunId"] is not None for entry in trimmed_history)
-
-
-def test_runtime_input_history_trim_uses_scope_lock_for_concurrent_launches(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_history_lock_package")
-    package_id = cast(int, created["id"])
-    for index in range(RUNTIME_INPUT_PRESET_ENTRY_LIMIT):
-        _ = _create_runtime_input_launch(
-            session_factory,
-            package_id,
-            ticker=f"PRE{index:02d}",
-        )
-    assert (
-        len(_runtime_input_history_entries(client, package_id)) == RUNTIME_INPUT_PRESET_ENTRY_LIMIT
-    )
-
-    first_trim_entered = Event()
-    first_trim_can_continue = Event()
-    second_trim_entered = Event()
-    delay_lock = Lock()
-    delayed_once = False
-    original_trim = WorkflowPackageRepository.trim_runtime_input_history_overflow
-
-    def delayed_trim(
-        self: WorkflowPackageRepository,
-        *args: Any,
-        **kwargs: Any,
-    ) -> int:
-        nonlocal delayed_once
-        should_delay = False
-        with delay_lock:
-            if not delayed_once:
-                delayed_once = True
-                should_delay = True
-        if should_delay:
-            first_trim_entered.set()
-            assert first_trim_can_continue.wait(timeout=5)
-        elif first_trim_entered.is_set() and not first_trim_can_continue.is_set():
-            second_trim_entered.set()
-        return original_trim(self, *args, **kwargs)
-
-    monkeypatch.setattr(
-        WorkflowPackageRepository,
-        "trim_runtime_input_history_overflow",
-        delayed_trim,
-    )
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first = executor.submit(
-            _create_runtime_input_launch,
-            session_factory,
-            package_id,
-            ticker="CONCURRENT_A",
-        )
-        assert first_trim_entered.wait(timeout=5)
-        second = executor.submit(
-            _create_runtime_input_launch,
-            session_factory,
-            package_id,
-            ticker="CONCURRENT_B",
-        )
-        try:
-            assert not second_trim_entered.wait(timeout=0.2)
-        finally:
-            first_trim_can_continue.set()
-        source_run_ids = {first.result(timeout=5), second.result(timeout=5)}
-
-    trimmed_history = _runtime_input_history_entries(client, package_id)
-    payload_tickers = [entry["payload"]["ticker"] for entry in trimmed_history]
-    assert len(trimmed_history) == RUNTIME_INPUT_PRESET_ENTRY_LIMIT
-    assert {"CONCURRENT_A", "CONCURRENT_B"} <= set(payload_tickers)
-    assert {"PRE00", "PRE01"}.isdisjoint(payload_tickers)
-    assert source_run_ids <= {int(entry["sourceRunId"]) for entry in trimmed_history}
-
-
-def test_runtime_input_no_history_on_invalid_launch_or_preflight(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client, package_key="runtime_input_no_history_invalid_package")
-    package_id = cast(int, created["id"])
-
-    preflight = client.post(
-        f"/api/workflow-packages/{package_id}/preflight",
-        json={"workflowKey": "runtime_workflow", "parameters": {"ticker": "MSFT"}},
-    )
-    assert preflight.status_code == 200, preflight.json()
-    assert _runtime_input_history_entries(client, package_id) == []
-
-    invalid_launch = client.post(
-        f"/api/workflow-packages/{package_id}/launches",
-        json={
-            "workflowKey": "runtime_workflow",
-            "parameters": {"ticker": "MSFT", "unexpected": True},
-        },
-    )
-    assert invalid_launch.status_code == 400, invalid_launch.json()
-    assert invalid_launch.json()["code"] == "run_invalid_input"
-    assert _runtime_input_history_entries(client, package_id) == []
-
-    with session_factory() as session:
-        assert session.query(Run).count() == 0
-        assert session.query(WorkflowPackageRuntimeInputEntry).count() == 0
 
 
 def _assert_no_snake_case_keys(value: object) -> None:
@@ -5854,6 +4721,30 @@ def test_schedule_template_render_exact_placeholder_type_preservation() -> None:
     assert result.rendered_parameters["payload"] == {"symbols": ["NVDA"], "active": True}
     assert result.rendered_parameters["scheduleId"] == 44
     assert result.rendered_parameters["lastRunId"] == 710
+
+
+def test_schedule_template_payload_limit_uses_compact_json_size() -> None:
+    template = {"items": ["x" * 128 for _ in range(1000)]}
+    compact_size = len(
+        json.dumps(
+            template,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    default_size = len(json.dumps(template, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+
+    assert compact_size <= RUNTIME_INPUT_PAYLOAD_MAX_BYTES
+    assert default_size > RUNTIME_INPUT_PAYLOAD_MAX_BYTES
+
+    result = render_scheduled_input_template(
+        template,
+        _schedule_template_render_context(),
+    )
+
+    assert result.validation_errors == []
+    assert result.rendered_parameters == template
 
 
 def test_schedule_template_render_embedded_placeholders_are_strings() -> None:

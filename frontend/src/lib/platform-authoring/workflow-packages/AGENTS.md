@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, `/frontend/src/lib/AGENTS.md`, and `/frontend/src/lib/platform-authoring/AGENTS.md`.
 
 ## OVERVIEW
-`workflow-packages/` owns browser-side Workflow Package manifest parsing, serialization, resource assembly, runtime-input registry wiring, package secret binding shapes, and private MCP transport normalization for package artifacts.
+`workflow-packages/` owns browser-side Workflow Package manifest parsing, serialization, resource assembly, package secret binding shapes, and private MCP transport normalization for package artifacts.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
@@ -14,7 +14,7 @@
 ## CONVENTIONS
 - Package manifests are the only executable workflow authoring root in the browser.
 - Private MCP `env`, `headers`, and `query` values are secret-bearing authoring/runtime config; browser-visible reads and exports must omit them.
-- Runtime-input registry and package secret binding shapes stay package-scoped; do not move them into global route helpers.
+- Package secret binding shapes stay package-scoped; do not move them into global route helpers.
 - Preserve package-local refs as refs, not raw database ids.
 
 ## ANTI-PATTERNS

@@ -50,7 +50,6 @@ from app.schemas.schedule import (
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.output_schema_compiler import OutputSchemaCompiler
 from app.services.run_service import RunService
-from app.services.workflow_package_runtime_inputs import build_runtime_input_current_metadata
 from app.services.workflow_package_schedule_inputs import (
     SCHEDULE_RENDER_VALIDATION_FAILED,
     ScheduledInputLastRunContext,
@@ -124,6 +123,25 @@ class RunServiceFactory(Protocol):
         *,
         provider_bundle: ExecutionProviderBundle | None = None,
     ) -> RunService: ...
+
+
+def _workflow_input_schema(
+    package: WorkflowPackage,
+    workflow_key: str,
+) -> dict[str, Any] | None:
+    workflows = package.compiled_plan.get("workflows")
+    if not isinstance(workflows, Sequence):
+        return None
+    for workflow in workflows:
+        if not isinstance(workflow, Mapping):
+            continue
+        if str(workflow.get("key") or "") != workflow_key:
+            continue
+        input_schema = workflow.get("inputSchema")
+        if isinstance(input_schema, dict):
+            return cast(dict[str, Any], deepcopy(input_schema))
+        return {}
+    return None
 
 
 class WorkflowPackageScheduleService:
@@ -757,13 +775,8 @@ class WorkflowPackageScheduleService:
             last_run=last_run,
             template_vars=template_vars,
         )
-        current_metadata = build_runtime_input_current_metadata(
-            workflow_key=workflow_key,
-            manifest_hash=package.manifest_hash,
-            compiled_hash=package.compiled_hash,
-            compiled_plan=package.compiled_plan,
-        )
-        if current_metadata is None:
+        input_schema = _workflow_input_schema(package, workflow_key)
+        if input_schema is None:
             return ScheduledInputRenderPreview(
                 template_context=template_context,
                 rendered_parameters={},
@@ -778,7 +791,7 @@ class WorkflowPackageScheduleService:
         return render_and_validate_scheduled_input_template(
             input_template=input_template,
             template_context=template_context,
-            input_schema=current_metadata.input_schema,
+            input_schema=input_schema,
             schema_compiler=self.schema_compiler,
         )
 

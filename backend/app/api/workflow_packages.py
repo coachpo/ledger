@@ -1,14 +1,11 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownParameterType=false, reportMissingImports=false
 from __future__ import annotations
 
-from typing import Annotated, cast
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
-from app.api.dependencies import (
-    get_workflow_package_runtime_input_registry_service,
-    get_workflow_package_service,
-)
+from app.api.dependencies import get_workflow_package_service
 from app.schemas.workflow_package import (
     WorkflowPackageImportRequest,
     WorkflowPackageLaunchCreateRequest,
@@ -19,18 +16,11 @@ from app.schemas.workflow_package import (
     WorkflowPackageManifestRequest,
     WorkflowPackagePreflightRequest,
     WorkflowPackageRead,
-    WorkflowPackageRuntimeInputEntryRead,
-    WorkflowPackageRuntimeInputPresetEntryCreateRequest,
-    WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
-    WorkflowPackageRuntimeInputRegistryRead,
     WorkflowPackageSecretBindingListRead,
     WorkflowPackageSecretBindingRead,
     WorkflowPackageSecretBindingUpdateRequest,
     WorkflowPackageUpdateRequest,
     WorkflowPackageValidationRead,
-)
-from app.services.workflow_package_runtime_input_registry import (
-    WorkflowPackageRuntimeInputRegistryService,
 )
 from app.services.workflow_package_service import WorkflowPackageService
 
@@ -139,104 +129,6 @@ def delete_workflow_package_secret_binding(
     service: Annotated[WorkflowPackageService, Depends(get_workflow_package_service)],
 ) -> Response:
     service.delete_secret_binding(package_id, key)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get(
-    "/{package_id}/runtime-input-registry",
-    response_model=WorkflowPackageRuntimeInputRegistryRead,
-)
-def list_workflow_package_runtime_input_registry(
-    package_id: int,
-    workflow_key: Annotated[str, Query(alias="workflowKey")],
-    service: Annotated[
-        WorkflowPackageRuntimeInputRegistryService,
-        Depends(get_workflow_package_runtime_input_registry_service),
-    ],
-) -> WorkflowPackageRuntimeInputRegistryRead:
-    registry = service.list_registry(package_id, workflow_key)
-    return WorkflowPackageRuntimeInputRegistryRead.model_validate(registry)
-
-
-@router.post(
-    "/{package_id}/runtime-input-registry/presets",
-    response_model=WorkflowPackageRuntimeInputEntryRead,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_workflow_package_runtime_input_preset_entry(
-    package_id: int,
-    workflow_key: Annotated[str, Query(alias="workflowKey")],
-    payload: WorkflowPackageRuntimeInputPresetEntryCreateRequest,
-    service: Annotated[
-        WorkflowPackageRuntimeInputRegistryService,
-        Depends(get_workflow_package_runtime_input_registry_service),
-    ],
-) -> WorkflowPackageRuntimeInputEntryRead:
-    entry = service.create_preset_entry(
-        package_id,
-        workflow_key,
-        name=cast(str | None, payload.name),
-        payload=payload.payload,
-    )
-    return WorkflowPackageRuntimeInputEntryRead.model_validate(entry)
-
-
-@router.patch(
-    "/{package_id}/runtime-input-registry/presets/{entry_id}",
-    response_model=WorkflowPackageRuntimeInputEntryRead,
-)
-def update_workflow_package_runtime_input_preset_entry(
-    package_id: int,
-    entry_id: int,
-    workflow_key: Annotated[str, Query(alias="workflowKey")],
-    payload: WorkflowPackageRuntimeInputPresetEntryUpdateRequest,
-    service: Annotated[
-        WorkflowPackageRuntimeInputRegistryService,
-        Depends(get_workflow_package_runtime_input_registry_service),
-    ],
-) -> WorkflowPackageRuntimeInputEntryRead:
-    if "name" in payload.model_fields_set and "payload" in payload.model_fields_set:
-        entry = service.update_preset_entry(
-            package_id,
-            workflow_key,
-            entry_id,
-            name=cast(str | None, payload.name),
-            payload=payload.payload,
-        )
-    elif "name" in payload.model_fields_set:
-        entry = service.update_preset_entry(
-            package_id,
-            workflow_key,
-            entry_id,
-            name=cast(str | None, payload.name),
-        )
-    elif "payload" in payload.model_fields_set:
-        entry = service.update_preset_entry(
-            package_id,
-            workflow_key,
-            entry_id,
-            payload=payload.payload,
-        )
-    else:
-        entry = service.update_preset_entry(package_id, workflow_key, entry_id)
-    return WorkflowPackageRuntimeInputEntryRead.model_validate(entry)
-
-
-@router.delete(
-    "/{package_id}/runtime-input-registry/presets/{entry_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_model=None,
-)
-def delete_workflow_package_runtime_input_preset_entry(
-    package_id: int,
-    entry_id: int,
-    workflow_key: Annotated[str, Query(alias="workflowKey")],
-    service: Annotated[
-        WorkflowPackageRuntimeInputRegistryService,
-        Depends(get_workflow_package_runtime_input_registry_service),
-    ],
-) -> Response:
-    service.delete_preset_entry(package_id, workflow_key, entry_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

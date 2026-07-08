@@ -23,10 +23,6 @@ import {
   ResourceStatusStrip,
   type ResourceStatusStripItem,
 } from "@/components/shared/resource-status-strip";
-import {
-  SavedRuntimeInputRegistryPanel,
-  type SavedRuntimeInputRegistryEntry,
-} from "@/components/shared/saved-runtime-input-registry-panel";
 import { WorkspacePageShell } from "@/components/shared/workspace-page-shell";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -72,11 +68,7 @@ import {
   useUpdateScheduledTask,
 } from "@/hooks/use-scheduled-tasks";
 import {
-  useCreateWorkflowPackageRuntimeInputPresetEntry,
-  useDeleteWorkflowPackageRuntimeInputPresetEntry,
-  useUpdateWorkflowPackageRuntimeInputPresetEntry,
   useWorkflowPackageManifest,
-  useWorkflowPackageRuntimeInputRegistry,
 } from "@/hooks/use-workflow-packages";
 import { ApiRequestError } from "@/lib/api-client";
 import { formatDateTime, formatDateTimeInTimeZone } from "@/lib/format";
@@ -110,7 +102,6 @@ import type {
   ScheduleValidationError,
   ScheduleWriteStatus,
 } from "@/lib/types/schedule";
-import type { WorkflowPackageRuntimeInputEntryRead } from "@/lib/types/workflow-package";
 
 import { ScheduleDateTimePicker, ScheduleTimePicker } from "./pickers";
 import { buildTimeZoneOptions, resolveBrowserTimeZone } from "./time-zones";
@@ -157,14 +148,10 @@ type ScheduleEditorDraft = {
   timezone: string;
 };
 
-type SavedInputEntryMode = "history" | "preset";
-
 type ScheduleInputDraft = {
   inputTemplate: UnknownRecord;
   templateVars: UnknownRecord;
 };
-
-const SAVED_INPUT_ENTRY_LIMIT = 20;
 const FIRE_HISTORY_ROW_DEFERRED_CLASS_NAME =
   "[content-visibility:auto] [contain-intrinsic-size:auto_320px]";
 
@@ -254,6 +241,7 @@ const MISSING_WORKFLOW_RUNTIME_INPUTS_UNAVAILABLE_MESSAGE =
 
 type ScheduleWorkflowState = {
   activeWorkflowKey: string;
+  inputSchema: UnknownRecord | null;
   isStale: boolean;
   packageDisplayLabel: string;
   workflowDisplayLabel: string;
@@ -268,6 +256,7 @@ function resolveScheduleWorkflowState(
   if (!manifest) {
     return {
       activeWorkflowKey: "",
+      inputSchema: null,
       isStale: false,
       packageDisplayLabel: fallbackPackageLabel,
       workflowDisplayLabel: persistedWorkflowKey || "workflow",
@@ -302,9 +291,17 @@ function resolveScheduleWorkflowState(
   const manifestWorkflow = getWorkflowOptions(
     manifest as Parameters<typeof getWorkflowOptions>[0],
   ).find((option) => option.key === persistedWorkflowKey);
+  const inputSchema =
+    manifestWorkflow &&
+    typeof manifestWorkflow.inputSchema === "object" &&
+    manifestWorkflow.inputSchema &&
+    !Array.isArray(manifestWorkflow.inputSchema)
+      ? (manifestWorkflow.inputSchema as UnknownRecord)
+      : null;
 
   return {
     activeWorkflowKey: manifestWorkflow?.key ?? "",
+    inputSchema,
     isStale: Boolean(persistedWorkflowKey) && !manifestWorkflow,
     packageDisplayLabel,
     workflowDisplayLabel: displayWorkflowLabel || "workflow",
@@ -398,31 +395,6 @@ function scheduleInputDraftErrors(
       },
     ];
   }
-}
-
-function newestRuntimeInputEntries(
-  entries: readonly WorkflowPackageRuntimeInputEntryRead[],
-  timestampKey: "createdAt" | "updatedAt",
-): WorkflowPackageRuntimeInputEntryRead[] {
-  return [...entries].sort((left, right) => {
-    const timestampDelta =
-      Date.parse(right[timestampKey]) - Date.parse(left[timestampKey]);
-    return timestampDelta === 0 ? right.id - left.id : timestampDelta;
-  });
-}
-
-function savedInputEntryLabel(
-  entry: WorkflowPackageRuntimeInputEntryRead,
-  mode: SavedInputEntryMode,
-): string {
-  const name = entry.name?.trim();
-  if (name) {
-    return name;
-  }
-  if (mode === "history" && entry.sourceRunId) {
-    return `Run #${entry.sourceRunId}`;
-  }
-  return mode === "history" ? `History #${entry.id}` : `Preset #${entry.id}`;
 }
 
 function summarizeRenderedParameterValue(value: unknown): string {
@@ -1740,24 +1712,6 @@ function ScheduleInputValidationAlert({
   );
 }
 
-function savedRuntimeInputRegistryEntry(
-  entry: WorkflowPackageRuntimeInputEntryRead,
-  mode: SavedInputEntryMode,
-): SavedRuntimeInputRegistryEntry {
-  const timestamp = mode === "history" ? entry.createdAt : entry.updatedAt;
-
-  return {
-    id: entry.id,
-    label: savedInputEntryLabel(entry, mode),
-    mode,
-    sourceLabel: `${mode === "history" ? "Captured from a package run" : "Updated"} ${formatDateTime(timestamp)}`,
-    stale: entry.stale.stale,
-    staleReasonLines: entry.stale.reasons.map(
-      (reason) => `${reason.field}: ${reason.issue}`,
-    ),
-  };
-}
-
 function ScheduleTemplateVarsEditor({
   disabled,
   rows,
@@ -2006,6 +1960,7 @@ function ScheduleInputPreview({
 function ScheduledInputsEditor({
   activeWorkflowKey,
   disabled,
+  inputSchema,
   isSaving,
   schedule,
   workflowInputsUnavailableReason,
@@ -2013,6 +1968,7 @@ function ScheduledInputsEditor({
 }: {
   activeWorkflowKey: string;
   disabled: boolean;
+  inputSchema: UnknownRecord | null;
   isSaving: boolean;
   schedule: ScheduleRead;
   workflowInputsUnavailableReason: string | null;
@@ -2021,16 +1977,6 @@ function ScheduledInputsEditor({
     successMessage?: string,
   ) => Promise<void>;
 }) {
-  const runtimeInputRegistry = useWorkflowPackageRuntimeInputRegistry(
-    schedule.packageId,
-    activeWorkflowKey,
-  );
-  const createPresetEntry =
-    useCreateWorkflowPackageRuntimeInputPresetEntry();
-  const updatePresetEntry =
-    useUpdateWorkflowPackageRuntimeInputPresetEntry();
-  const deletePresetEntry =
-    useDeleteWorkflowPackageRuntimeInputPresetEntry();
   const previewScheduledInputs = usePreviewUnsavedScheduledTask();
   const [inputTemplateText, setInputTemplateText] = useState(() =>
     stringifyJson({}),
@@ -2038,7 +1984,6 @@ function ScheduledInputsEditor({
   const [templateVarRows, setTemplateVarRows] = useState<RuntimeInputRow[]>(
     () => createRuntimeInputRows("scheduled-template-vars"),
   );
-  const [presetName, setPresetName] = useState("");
   const [previewRead, setPreviewRead] = useState<SchedulePreviewRead | null>(
     null,
   );
@@ -2048,10 +1993,7 @@ function ScheduledInputsEditor({
   const inputTemplateEditedRef = useRef(false);
   const lastTemplateIdentityRef = useRef<string | null>(null);
 
-  const inputSchema = runtimeInputRegistry.data?.currentMetadata?.inputSchema;
-  const inputSchemaFingerprint =
-    runtimeInputRegistry.data?.currentMetadata?.schemaFingerprint ??
-    stringifyJson(inputSchema);
+  const inputSchemaFingerprint = stringifyJson(inputSchema ?? {});
   const inputTemplate = useMemo(
     () => createLaunchParametersTemplate(inputSchema),
     [inputSchema],
@@ -2064,22 +2006,6 @@ function ScheduledInputsEditor({
   const draftErrors = useMemo(
     () => scheduleInputDraftErrors(inputTemplateText),
     [inputTemplateText],
-  );
-  const presetPanelEntries = useMemo(
-    () =>
-      newestRuntimeInputEntries(
-        runtimeInputRegistry.data?.presets ?? [],
-        "updatedAt",
-      ).map((entry) => savedRuntimeInputRegistryEntry(entry, "preset")),
-    [runtimeInputRegistry.data?.presets],
-  );
-  const historyPanelEntries = useMemo(
-    () =>
-      newestRuntimeInputEntries(
-        runtimeInputRegistry.data?.history ?? [],
-        "createdAt",
-      ).map((entry) => savedRuntimeInputRegistryEntry(entry, "history")),
-    [runtimeInputRegistry.data?.history],
   );
   const controlDisabled = disabled || isSaving;
   const canUseNextFire = Boolean(schedule.nextFireAt);
@@ -2218,80 +2144,6 @@ function ScheduledInputsEditor({
     );
   };
 
-  const loadSavedInput = (entry: WorkflowPackageRuntimeInputEntryRead) => {
-    inputTemplateEditedRef.current = true;
-    setInputTemplateText(stringifyJson(entry.payload));
-    setPreviewRead(null);
-    setPreviewRequestErrors([]);
-    toast.success("Saved scheduled input loaded into the template editor");
-  };
-
-  const savePresetInput = async () => {
-    const name = presetName.trim();
-    if (!name) {
-      toast.error("Name this scheduled input preset before saving it.");
-      return;
-    }
-    const draft = buildDraft();
-    if (!draft) {
-      return;
-    }
-    try {
-      await createPresetEntry.mutateAsync({
-        packageId: schedule.packageId,
-        payload: { name, payload: draft.inputTemplate },
-        workflowKey: activeWorkflowKey,
-      });
-      setPresetName("");
-      toast.success("Saved runtime input preset");
-    } catch (error) {
-      toast.error(
-        errorMessage(error, "Failed to save scheduled input preset."),
-      );
-    }
-  };
-
-  const overwritePresetInput = async (
-    entry: WorkflowPackageRuntimeInputEntryRead,
-  ) => {
-    const draft = buildDraft();
-    if (!draft) {
-      return;
-    }
-    const name = presetName.trim() || entry.name;
-    try {
-      await updatePresetEntry.mutateAsync({
-        entryId: entry.id,
-        packageId: schedule.packageId,
-        payload: { name: name || null, payload: draft.inputTemplate },
-        workflowKey: activeWorkflowKey,
-      });
-      setPresetName("");
-      toast.success("Updated scheduled input preset");
-    } catch (error) {
-      toast.error(
-        errorMessage(error, "Failed to update scheduled input preset."),
-      );
-    }
-  };
-
-  const deletePresetInput = async (
-    entry: WorkflowPackageRuntimeInputEntryRead,
-  ) => {
-    try {
-      await deletePresetEntry.mutateAsync({
-        entryId: entry.id,
-        packageId: schedule.packageId,
-        workflowKey: activeWorkflowKey,
-      });
-      toast.success("Deleted scheduled input preset");
-    } catch (error) {
-      toast.error(
-        errorMessage(error, "Failed to delete scheduled input preset."),
-      );
-    }
-  };
-
   return (
     <div
       className="flex min-w-0 flex-col gap-4"
@@ -2409,85 +2261,6 @@ function ScheduledInputsEditor({
           disabled={controlDisabled}
           rows={templateVarRows}
           onRowsChange={setTemplateVarRows}
-        />
-        <SavedRuntimeInputRegistryPanel
-          capMessage="Saved runtime input presets are capped at 20 per workflow. Delete one before saving another."
-          createDisabled={
-            runtimeInputRegistry.isPending ||
-            runtimeInputRegistry.isFetching ||
-            !presetName.trim() ||
-            draftErrors.length > 0
-          }
-          createPending={createPresetEntry.isPending}
-          deletePending={deletePresetEntry.isPending}
-          entryLabelNoun="scheduled input"
-          error={
-            runtimeInputRegistry.isError ? runtimeInputRegistry.error : null
-          }
-          errorTitle="Saved scheduled inputs unavailable"
-          helperCopy="Load saved runtime input presets or reuse previous run inputs as a starting point for this task."
-          historyEmptyMessage="No runtime input history yet for this workflow."
-          historyEntries={historyPanelEntries}
-          historyListClassName="scheduled-input-history-list flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
-          historyListTestId="scheduled-input-history-list"
-          historySectionLabel="Recent run-captured inputs"
-          loading={
-            runtimeInputRegistry.isPending || runtimeInputRegistry.isFetching
-          }
-          loadingMessage={`Loading saved inputs for ${activeWorkflowKey || "this workflow"}...`}
-          presetEntries={presetPanelEntries}
-          presetEmptyMessage="No saved runtime input presets for this workflow."
-          presetListClassName="flex min-w-0 max-h-80 flex-col gap-2 overflow-y-auto pr-1"
-          presetNameInputId="scheduled-input-preset-name"
-          presetNameInputName="scheduledInputPresetName"
-          presetNameLabel="Scheduled input preset name"
-          presetNamePlaceholder="Preset name"
-          presetNameValue={presetName}
-          presetLimit={SAVED_INPUT_ENTRY_LIMIT}
-          presetSectionLabel="Saved runtime input presets for this workflow"
-          rowTestIdPrefix="scheduled-input"
-          saveLabel="Save current template"
-          showPresetNameLabel
-          staleNoticeTitle="Saved against older workflow metadata."
-          tabContentClassName="data-[state=inactive]:hidden"
-          tabsListClassName="h-auto w-full justify-start overflow-x-auto sm:w-fit"
-          testId="scheduled-input-saved-inputs-helper"
-          title="Schedule input presets"
-          updatePending={updatePresetEntry.isPending}
-          workflowBadgeFallback="workflow"
-          workflowEnabled
-          workflowKey={activeWorkflowKey}
-          onCreate={() => void savePresetInput()}
-          onDelete={(entry) => {
-            const savedEntry = (runtimeInputRegistry.data?.presets ?? []).find(
-              (candidate) => candidate.id === entry.id,
-            );
-            if (savedEntry) {
-              void deletePresetInput(savedEntry);
-            }
-          }}
-          onLoad={(entry) => {
-            const savedEntry =
-              entry.mode === "history"
-                ? (runtimeInputRegistry.data?.history ?? []).find(
-                    (candidate) => candidate.id === entry.id,
-                  )
-                : (runtimeInputRegistry.data?.presets ?? []).find(
-                    (candidate) => candidate.id === entry.id,
-                  );
-            if (savedEntry) {
-              loadSavedInput(savedEntry);
-            }
-          }}
-          onOverwrite={(entry) => {
-            const savedEntry = (runtimeInputRegistry.data?.presets ?? []).find(
-              (candidate) => candidate.id === entry.id,
-            );
-            if (savedEntry) {
-              void overwritePresetInput(savedEntry);
-            }
-          }}
-          onPresetNameChange={setPresetName}
         />
       </div>
     </div>
@@ -2752,6 +2525,7 @@ function ScheduleTabs({
   schedule,
   workflowDisplayLabel,
   workflowIsStale,
+  workflowInputSchema,
   workflowInputsUnavailableReason,
   workflowRegistryKey,
 }: {
@@ -2768,6 +2542,7 @@ function ScheduleTabs({
   schedule: ScheduleRead;
   workflowDisplayLabel: string;
   workflowIsStale: boolean;
+  workflowInputSchema: UnknownRecord | null;
   workflowInputsUnavailableReason: string | null;
   workflowRegistryKey: string;
 }) {
@@ -2830,12 +2605,13 @@ function ScheduleTabs({
         value="inputs"
       >
         <SummaryCard
-          description="Review the workflow-seeded input template, placeholders, presets, and future-run values."
+          description="Review the workflow-seeded input template, placeholders, and future-run values."
           title="Inputs"
         >
           <ScheduledInputsEditor
             activeWorkflowKey={workflowRegistryKey}
             disabled={false}
+            inputSchema={workflowInputSchema}
             isSaving={mutationPending}
             schedule={schedule}
             workflowInputsUnavailableReason={workflowInputsUnavailableReason}
@@ -3063,6 +2839,7 @@ export function ScheduledTaskDetailPage() {
         schedule={schedule}
         workflowDisplayLabel={workflowState.workflowDisplayLabel}
         workflowIsStale={workflowState.isStale}
+        workflowInputSchema={workflowState.inputSchema}
         workflowInputsUnavailableReason={workflowScopedActionUnavailableReason}
         workflowRegistryKey={workflowState.activeWorkflowKey}
       />

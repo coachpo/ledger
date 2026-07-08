@@ -106,9 +106,6 @@ from app.services.workflow_package_preflight import (
     WorkflowPackagePreflightResult,
     WorkflowPackagePreflightService,
 )
-from app.services.workflow_package_runtime_input_registry import (
-    WorkflowPackageRuntimeInputRegistryService,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -938,19 +935,6 @@ class RunService:
                 plan=plan,
                 validated_input=validated_input,
             )
-            if plan.target.kind == "workflow_package":
-                if workflow_package is None or package_workflow_key is None:
-                    raise ValueError(
-                        "Workflow package launch history requires package and workflow context"
-                    )
-                _ = WorkflowPackageRuntimeInputRegistryService(
-                    self.session
-                ).append_history_entry_for_launch(
-                    package_id=workflow_package.id,
-                    workflow_key=package_workflow_key,
-                    payload=validated_input,
-                    source_run_id=run.id,
-                )
             if commit:
                 self.session.commit()
                 self.session.refresh(run)

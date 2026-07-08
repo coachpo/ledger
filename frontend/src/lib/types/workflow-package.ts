@@ -101,65 +101,6 @@ export interface WorkflowPackageLaunchRead {
   resolvedModelConnections: RunPackageResolvedModelConnectionRead[];
 }
 
-export type WorkflowPackageRuntimeInputSlot = "history" | "preset";
-
-export interface WorkflowPackageRuntimeInputStaleReason {
-  field: string;
-  issue: string;
-  stored: string | null;
-  current: string | null;
-}
-
-export interface WorkflowPackageRuntimeInputStaleRead {
-  stale: boolean;
-  reasons: WorkflowPackageRuntimeInputStaleReason[];
-}
-
-export interface WorkflowPackageRuntimeInputCurrentMetadataRead {
-  workflowKey: string;
-  manifestHash: string;
-  compiledHash: string;
-  schemaFingerprint: string;
-  inputSchema: UnknownRecord;
-}
-
-export interface WorkflowPackageRuntimeInputEntryRead {
-  id: number;
-  packageId: number;
-  workflowKey: string;
-  slot: WorkflowPackageRuntimeInputSlot;
-  name: string | null;
-  payload: UnknownRecord;
-  sourceKind: string;
-  manifestHash: string;
-  compiledHash: string;
-  schemaFingerprint: string;
-  inputSchemaSnapshot: UnknownRecord | null;
-  sourceRunId: number | null;
-  stale: WorkflowPackageRuntimeInputStaleRead;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface WorkflowPackageRuntimeInputRegistryRead {
-  packageId: number;
-  packageKey: string;
-  workflowKey: string;
-  currentMetadata: WorkflowPackageRuntimeInputCurrentMetadataRead | null;
-  presets: WorkflowPackageRuntimeInputEntryRead[];
-  history: WorkflowPackageRuntimeInputEntryRead[];
-}
-
-export interface WorkflowPackageRuntimeInputPresetEntryCreateRequest {
-  name?: string | null;
-  payload: UnknownRecord;
-}
-
-export interface WorkflowPackageRuntimeInputPresetEntryUpdateRequest {
-  name?: string | null;
-  payload?: UnknownRecord;
-}
-
 export interface WorkflowPackagePreflightRequest {
   workflowKey?: string | null;
   parameters?: UnknownRecord;

@@ -30,7 +30,7 @@ platform-authoring/
 - `common/AGENTS.md` — resource refs, field paths, issue text, and safe serialization
 - `schema/AGENTS.md` — schema IR, JSON Schema codec, preview, templates, launch input state, and validation
 - `values/AGENTS.md` — generated-form value-entry model, codec, factories, and validation
-- `workflow-packages/AGENTS.md` — package manifest parsing/serialization, runtime-input registry, secret bindings, and private MCP transport helpers
+- `workflow-packages/AGENTS.md` — package manifest parsing/serialization, secret bindings, and private MCP transport helpers
 
 ## WHERE TO LOOK
 | Task | Location | Notes |

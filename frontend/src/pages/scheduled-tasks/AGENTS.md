@@ -33,7 +33,7 @@ scheduled-tasks/
 | Schedule console | `detail.tsx` | recurrence editor, JSON template/vars editor, preview, run-now, delete, fire history, latest run links |
 | Schedule hooks | `../../hooks/use-scheduled-tasks.ts` | list/detail/fire queries, create/update/delete/preview/run-now mutations, linked run invalidation |
 | Wire/API contracts | `../../lib/api/schedules.ts`, `../../lib/types/schedule.ts` | `/api/schedules` helpers plus recurrence, fire, preview, run-now, and 204 delete payloads |
-| Runtime input helpers | `../../hooks/use-workflow-packages.ts`, `../../lib/runtime-inputs.ts` | saved runtime input presets and trimmed row-to-map conversion |
+| Runtime input helpers | `../../lib/runtime-inputs.ts` | trimmed row-to-map conversion |
 | Route metadata | `../../routes.metadata.ts` | list is inventory/scroll/wide, new is editor/fullHeight/full, detail is console/fullHeight/full |
 | Coverage | `list.test.tsx`, `detail.test.tsx`, `../../hooks/use-scheduled-tasks.test.ts`, `../../lib/api/schedules.test.ts` | route behavior, hook invalidation, and API endpoint contracts |
 

@@ -30,7 +30,7 @@ src/lib/api/
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
 ├── extensions.ts          # statically resident extension list/toggle state
-├── workflow-packages.ts   # package manifest, version, runtime-input registry, secret bindings, preflight, launch, import, export
+├── workflow-packages.ts   # package manifest, version, secret bindings, preflight, launch, import, export
 ├── schedules.ts           # Scheduled Task CRUD, preview, fire history, and run-now requests
 ├── tools.ts               # read-only server-declared tool catalog
 ├── model-connections.ts   # saved model endpoint CRUD and connection testing
@@ -42,7 +42,7 @@ src/lib/api/
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
 | Preserved product contracts | `portfolios.ts`, `balances.ts`, `positions.ts`, `trading-operations.ts`, `market-data.ts`, `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
-| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, runtime-input registry/history, package secret bindings, Scheduled Tasks, read-only tool metadata, model bindings, and run inspection |
+| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, package secret bindings, Scheduled Tasks, read-only tool metadata, model bindings, and run inspection |
 | CSV import endpoints | `positions.ts` | preview/commit upload helpers |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 
@@ -52,7 +52,7 @@ src/lib/api/
 - Keep upload/download specifics here: multipart report upload, CSV preview/commit, and markdown download URLs should not leak into hooks or pages.
 - Keep preserved `/api/v1` resource paths and current unversioned platform `/api/*` paths separate in the module layer.
 - `schedules.ts` owns `/api/schedules` path helpers for list/detail/create/update/delete, fire history, unsaved/saved preview, and run-now; do not split run-now into run helpers.
-- `workflow-packages.ts` owns package runtime-input registry/history and secret-binding helpers; do not hide those package-scoped APIs inside route components or generic run helpers.
+- `workflow-packages.ts` owns package authoring, preflight, launch, import/export, and secret-binding helpers; do not hide those package-scoped APIs inside route components or generic run helpers.
 - Match backend casing exactly; request/response types come from `../types/*` rather than inline object literals.
 
 ## ANTI-PATTERNS

@@ -12,11 +12,7 @@ from app.models.run_step import RunStep
 from app.models.symbol_name_cache import SymbolNameCache
 from app.models.text_template import TextTemplate
 from app.models.trading_operation import TradingOperation
-from app.models.workflow_package import (
-    WorkflowPackage,
-    WorkflowPackageRuntimeInputEntry,
-    WorkflowPackageSecretBinding,
-)
+from app.models.workflow_package import WorkflowPackage, WorkflowPackageSecretBinding
 from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
     WorkflowPackageScheduleFire,
@@ -39,7 +35,6 @@ __all__ = [
     "TextTemplate",
     "TradingOperation",
     "WorkflowPackage",
-    "WorkflowPackageRuntimeInputEntry",
     "WorkflowPackageSchedule",
     "WorkflowPackageScheduleFire",
     "WorkflowPackageSecretBinding",
