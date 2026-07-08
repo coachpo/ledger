@@ -295,7 +295,7 @@ from app.models.run_step import RunStep
 from app.schemas.market_data import MarketHistoryPointRead, MarketHistorySeriesRead, MarketQuoteRead
 from app.schemas.report import ReportRead
 from app.services.agent_execution_service import AgentExecutionService
-from app.services.execution_ownership import PackageExecutionOwnership
+from app.services.execution_plan import PackageExecutionOwnership
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
 from app.services.model_gateway_openai import ModelToolCallRetryState, build_model_tool_call

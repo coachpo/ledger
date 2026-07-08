@@ -25,12 +25,6 @@ class BaseRepository[ModelType: Base]:
         self.session.add(instance)
         return instance
 
-    def create(self, instance: ModelType) -> ModelType:
-        return self.add(instance)
-
-    def update(self, instance: ModelType) -> ModelType:
-        return self.add(instance)
-
     def delete(self, instance: ModelType) -> None:
         self.session.delete(instance)
 

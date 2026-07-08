@@ -4,12 +4,11 @@ import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.agents.mcp import McpRuntimeDispatcher, McpRuntimeResolver, McpToolClient
 from app.agents.runtime_tools import (
     RuntimeToolContext,
     RuntimeToolError,
@@ -24,8 +23,7 @@ from app.agents.runtime_tools.failure_taxonomy import (
 )
 from app.core.config import get_settings
 from app.repositories.model_connection import ModelConnectionRepository
-from app.services.execution_ownership import PackageExecutionOwnership
-from app.services.execution_plan import PackageRuntimeAgentSpec
+from app.services.execution_plan import PackageExecutionOwnership, PackageRuntimeAgentSpec
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.model_gateway import ModelExecutionGateway
@@ -45,6 +43,9 @@ from app.services.model_gateway_dto import (
 )
 from app.services.model_gateway_openai import OpenAIProtocolAdapter
 from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
+
+if TYPE_CHECKING:
+    from app.agents.mcp import McpRuntimeDispatcher, McpToolClient
 
 
 class RunExecutionError(Exception):
@@ -294,6 +295,8 @@ class AgentExecutionService:
         trace_id: str | None,
         trace_span_id: str | None,
     ) -> RunAgentInvocationResult:
+        from app.agents.mcp import McpRuntimeResolver
+
         runtime_tool_registry = self._runtime_tool_registry()
         native_tool_descriptors = runtime_tool_registry.get_execution_descriptors(granted_tool_keys)
         settings = get_settings()

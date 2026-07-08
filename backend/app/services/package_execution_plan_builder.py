@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any, cast
 
-from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import (
     ExecutionPlan,
     ExecutionPlanAgent,
@@ -20,6 +19,7 @@ from app.services.execution_plan import (
     ExecutionPlanTarget,
     PackageAgentExecutionRequirements,
     PackageCapabilityProfileGrant,
+    PackageExecutionOwnership,
     PackageExecutionRequirements,
     PackageExecutionStep,
     PackageExecutionWorkflow,

@@ -18,7 +18,7 @@ from app.schemas.common import CamelModel
 from app.services.execution_providers import ExecutionProviderBundle
 
 if TYPE_CHECKING:
-    from app.services.execution_ownership import PackageExecutionOwnership
+    from app.services.execution_plan import PackageExecutionOwnership
 
 
 class RuntimeToolError(Exception):

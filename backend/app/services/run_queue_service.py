@@ -5,7 +5,7 @@ import os
 import socket
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
@@ -20,6 +20,9 @@ from app.models.run_step import RunStep
 from app.repositories.run import RunRepository
 from app.services.execution_providers import ExecutionProviderBundle
 
+if TYPE_CHECKING:
+    from app.services.run_service import RunService
+
 logger = logging.getLogger(__name__)
 
 _STALE_LEASE_FAILURE_MESSAGE = (
@@ -31,20 +34,16 @@ _PENDING_LEASE_SKIP_MESSAGE = (
 )
 
 
-class RunExecutor(Protocol):
-    def execute_claimed_run(self, run_id: int, *, lease_owner: str | None = None) -> None: ...
-
-
 def default_run_executor_factory(
     session: Session,
     session_factory: sessionmaker[Session],
     provider_bundle: ExecutionProviderBundle,
-) -> RunExecutor:
+) -> RunService:
     import importlib
 
     run_service_class = importlib.import_module("app.services.run_service").__dict__["RunService"]
     return cast(
-        RunExecutor,
+        "RunService",
         run_service_class(
             session,
             session_factory,
@@ -60,7 +59,7 @@ class RunQueueService:
         session_factory: sessionmaker[Session] | None = None,
         provider_bundle: ExecutionProviderBundle | None = None,
         executor_factory: (
-            Callable[[Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor] | None
+            Callable[[Session, sessionmaker[Session], ExecutionProviderBundle], RunService] | None
         ) = None,
         lease_owner: str | None = None,
         lease_ttl_seconds: float | None = None,
@@ -70,7 +69,7 @@ class RunQueueService:
         settings = get_settings()
         self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
         self.executor_factory: Callable[
-            [Session, sessionmaker[Session], ExecutionProviderBundle], RunExecutor
+            [Session, sessionmaker[Session], ExecutionProviderBundle], RunService
         ] = (executor_factory or default_run_executor_factory)
         self.lease_owner: str = lease_owner or f"scheduler:{socket.gethostname()}:{os.getpid()}:0"
         self.lease_ttl_seconds: float = (
@@ -229,7 +228,7 @@ class RunQueueService:
                 )
             )
 
-    def _build_executor(self, session: Session) -> RunExecutor:
+    def _build_executor(self, session: Session) -> RunService:
         return self.executor_factory(session, self.session_factory, self.provider_bundle)
 
 

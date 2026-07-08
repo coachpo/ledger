@@ -13,11 +13,11 @@ from app.models.workflow_package import WorkflowPackage
 from app.repositories.run import RunRepository
 from app.schemas.model_connection import ModelConnectionRuntimeProfile
 from app.schemas.run import RunRerunCreateRequest, RunRerunDraftRead, RunTargetKind
-from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import (
     ExecutionPlan,
     ExecutionPlanBuilderError,
     ExecutionPlanTarget,
+    PackageExecutionOwnership,
     PackageResolvedModelBinding,
 )
 from app.services.model_connection_resolution import ModelConnectionResolutionService

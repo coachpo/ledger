@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import calendar
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
-from typing import Any, Final, Protocol, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -49,7 +49,6 @@ from app.schemas.schedule import (
 )
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.output_schema_compiler import OutputSchemaCompiler
-from app.services.run_service import RunService
 from app.services.workflow_package_schedule_inputs import (
     SCHEDULE_RENDER_VALIDATION_FAILED,
     ScheduledInputLastRunContext,
@@ -58,6 +57,9 @@ from app.services.workflow_package_schedule_inputs import (
     render_and_validate_scheduled_input_template,
     require_scheduled_input_render_ready,
 )
+
+if TYPE_CHECKING:
+    from app.services.run_service import RunService
 
 _UNSET: Final = object()
 
@@ -115,14 +117,26 @@ class ScheduleOccurrenceContext:
     scheduled_local_datetime: str
 
 
-class RunServiceFactory(Protocol):
-    def __call__(
-        self,
-        session: Session,
-        session_factory: sessionmaker[Session] | None = None,
-        *,
-        provider_bundle: ExecutionProviderBundle | None = None,
-    ) -> RunService: ...
+RunServiceFactory = Callable[..., "RunService"]
+
+
+def default_run_service_factory(
+    session: Session,
+    session_factory: sessionmaker[Session],
+    *,
+    provider_bundle: ExecutionProviderBundle | None = None,
+) -> RunService:
+    import importlib
+
+    run_service_class = importlib.import_module("app.services.run_service").__dict__["RunService"]
+    return cast(
+        "RunService",
+        run_service_class(
+            session,
+            session_factory,
+            provider_bundle=provider_bundle,
+        ),
+    )
 
 
 def _workflow_input_schema(
@@ -152,7 +166,7 @@ class WorkflowPackageScheduleService:
         *,
         provider_bundle: ExecutionProviderBundle | None = None,
         run_service: RunService | None = None,
-        run_service_factory: RunServiceFactory = RunService,
+        run_service_factory: RunServiceFactory = default_run_service_factory,
     ) -> None:
         self.session: Session = session
         self.session_factory: sessionmaker[Session] = session_factory or get_session_factory()

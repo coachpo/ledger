@@ -60,7 +60,6 @@ from app.services.agent_execution_service import (
     RunExecutionError,
     normalize_agent_invocation_result,
 )
-from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import (
     ExecutionPlan,
     ExecutionPlanAgent,
@@ -70,6 +69,7 @@ from app.services.execution_plan import (
     ExecutionPlanSource,
     ExecutionPlanStep,
     ExecutionPlanTarget,
+    PackageExecutionOwnership,
     PackageLocalOutputSchemaSpec,
     PackageResolvedModelBinding,
     PackageRuntimeAgentSpec,

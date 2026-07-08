@@ -4,8 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from app.services.execution_ownership import PackageExecutionOwnership
-
 ExecutionPlanInputMode = Literal["passthrough", "wired"]
 ExecutionPlanOperationKind = Literal["http"]
 ExecutionPlanTargetKind = Literal["workflow_package"]
@@ -67,6 +65,15 @@ class PackageResolvedModelBinding:
     api_style: str
     timeout_seconds: int
     has_api_key: bool
+
+
+@dataclass(frozen=True)
+class PackageExecutionOwnership:
+    package_id: int
+    package_key: str
+    manifest_hash: str
+    compiled_hash: str
+    workflow_key: str
 
 
 @dataclass(frozen=True)
