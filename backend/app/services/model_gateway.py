@@ -10,19 +10,11 @@ from app.services.model_gateway_dto import (
     ModelConnectionTestResult,
     ModelExecutionRequest,
     ModelExecutionResult,
-    ModelExecutionStrategies,
     ModelGatewayConnectionConfig,
     ModelGatewayError,
-    ModelProtocolAdapter,
     ModelToolExecutor,
 )
 from app.services.model_gateway_openai import OpenAIProtocolAdapter
-from app.services.model_gateway_output_validation import select_output_strategy
-from app.services.model_gateway_policy_strategy import (
-    select_reasoning_strategy,
-    select_streaming_strategy,
-)
-from app.services.model_gateway_tool_strategy import select_tool_strategy
 
 _SUPPORTED_OPENAI_COMPATIBLE_API_STYLES = frozenset({"responses", "chat_completions"})
 
@@ -30,7 +22,7 @@ _SUPPORTED_OPENAI_COMPATIBLE_API_STYLES = frozenset({"responses", "chat_completi
 class ModelExecutionGateway:
     def __init__(
         self,
-        protocol_adapter: ModelProtocolAdapter | None = None,
+        protocol_adapter: OpenAIProtocolAdapter | None = None,
         *,
         client_factory: type[Any] | None = None,
     ) -> None:
@@ -62,29 +54,6 @@ class ModelExecutionGateway:
                 agent_key=request.agent_key,
             )
         return self._protocol_adapter.invoke(request, tool_executor=tool_executor)
-
-    @staticmethod
-    def _selected_strategies_for_request(
-        request: ModelExecutionRequest,
-    ) -> ModelExecutionStrategies:
-        output_strategy = select_output_strategy(request)
-        tool_strategy = select_tool_strategy(request)
-        reasoning_strategy = select_reasoning_strategy(request)
-        streaming_strategy = select_streaming_strategy(request)
-        return ModelExecutionStrategies(
-            output_strategy=output_strategy.strategy,
-            tool_call_strategy=(
-                "none"
-                if not tool_strategy.has_tools
-                else ("parallel" if tool_strategy.allow_parallel_tool_calls else "serialize")
-            ),
-            parallel_tool_calls=(
-                tool_strategy.allow_parallel_tool_calls if tool_strategy.has_tools else False
-            ),
-            reasoning_strategy=reasoning_strategy.strategy,
-            reasoning_effort=reasoning_strategy.reasoning_effort,
-            streaming_strategy=streaming_strategy.strategy,
-        )
 
     def test_connection(
         self,

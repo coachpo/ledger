@@ -43,6 +43,7 @@ from app.services.model_gateway_dto import (
     ModelToolExecutor,
     ModelToolResult,
 )
+from app.services.model_gateway_openai import OpenAIProtocolAdapter
 from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
 
 
@@ -397,7 +398,7 @@ class AgentExecutionService:
             ),
         )
 
-        class _ClientProtocolAdapter:
+        class _ClientProtocolAdapter(OpenAIProtocolAdapter):
             def invoke(
                 self,
                 request: ModelExecutionRequest,

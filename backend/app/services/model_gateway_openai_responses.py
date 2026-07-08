@@ -21,6 +21,15 @@ from app.services.model_gateway_dto import (
     ModelToolCall,
     ModelToolExecutor,
 )
+from app.services.model_gateway_openai import (
+    ModelToolCallRetryState,
+    ProviderRetryRecorder,
+    _call_with_provider_retry,
+    _is_retryable_tool_call_failure,
+    _select_model_execution_strategies,
+    _select_tool_strategy,
+    build_model_tool_call,
+)
 from app.services.model_gateway_output_validation import (
     exhausted_validation_error,
     select_output_strategy,
@@ -28,16 +37,6 @@ from app.services.model_gateway_output_validation import (
     validation_failed_error,
     validation_retry_input,
 )
-from app.services.model_gateway_policy_strategy import select_model_execution_strategies
-from app.services.model_gateway_provider_retry import (
-    ProviderRetryRecorder,
-    call_with_provider_retry,
-)
-from app.services.model_gateway_tool_retry import (
-    ModelToolCallRetryState,
-    is_retryable_tool_call_failure,
-)
-from app.services.model_gateway_tool_strategy import build_model_tool_call, select_tool_strategy
 
 _MAX_SERVER_TOOL_CALL_ROUNDS = 5
 
@@ -54,10 +53,10 @@ class OpenAIResponsesAdapter:
         response_input: str | list[Any] = request.input_text
         replay_input_items: list[Any] = []
         usage = ModelExecutionUsage()
-        tool_strategy = select_tool_strategy(request)
+        tool_strategy = _select_tool_strategy(request)
         tools = self._tools_from_declarations(request.tools)
         output_strategy = select_output_strategy(request)
-        selected_strategies = select_model_execution_strategies(
+        selected_strategies = _select_model_execution_strategies(
             request,
             output_strategy=output_strategy.strategy,
             has_tools=tool_strategy.has_tools,
@@ -100,7 +99,7 @@ class OpenAIResponsesAdapter:
                         )
                         replay_input_items = []
                         continue
-                    if is_retryable_tool_call_failure(exc):
+                    if _is_retryable_tool_call_failure(exc):
                         raise tool_retry_state.exhausted_error(exc) from exc
                     raise
                 if not pending_tool_calls:
@@ -338,7 +337,7 @@ class OpenAIResponsesAdapter:
         ) -> Any:
             return client.responses.create(**request_payload)
 
-        return call_with_provider_retry(
+        return _call_with_provider_retry(
             create_response,
             recorder=provider_retry_recorder,
         )
@@ -383,7 +382,7 @@ class OpenAIResponsesAdapter:
                     prior_successful_tool_results=len(items),
                 ):
                     return [], tool_retry_state.record_retry(exc, tool_call=tool_call)
-                if is_retryable_tool_call_failure(exc):
+                if _is_retryable_tool_call_failure(exc):
                     raise tool_retry_state.exhausted_error(exc, tool_call=tool_call) from exc
                 raise
             items.append(

@@ -364,11 +364,11 @@ def test_invoke_responses_agent_provider_retry_keeps_completed_tool_dispatch_sin
         return 137
 
     monkeypatch.setattr(
-        "app.services.model_gateway_provider_retry.time.sleep",
+        "app.services.model_gateway_openai.time.sleep",
         lambda _: None,
     )
     monkeypatch.setattr(
-        "app.services.model_gateway_provider_retry.random.randint",
+        "app.services.model_gateway_openai.random.randint",
         jitter_random_int,
     )
 

@@ -247,25 +247,6 @@ class ModelToolExecutor(Protocol):
     def __call__(self, tool_call: ModelToolCall) -> ModelToolResult: ...
 
 
-class ModelProtocolAdapter(Protocol):
-    def invoke(
-        self,
-        request: ModelExecutionRequest,
-        *,
-        tool_executor: ModelToolExecutor,
-    ) -> ModelExecutionResult: ...
-
-    def test_connection(
-        self,
-        request: ModelConnectionTestRequest,
-    ) -> ModelConnectionTestResult: ...
-
-    def probe_capabilities(
-        self,
-        request: ModelCapabilityProbeRequest,
-    ) -> ModelCapabilityProbeResult: ...
-
-
 __all__ = [
     "ModelCapabilityProbeOutcome",
     "ModelCapabilityProbeRequest",
@@ -279,7 +260,6 @@ __all__ = [
     "ModelGatewayConnectionConfig",
     "ModelGatewayError",
     "ModelOutputSchema",
-    "ModelProtocolAdapter",
     "ModelToolCall",
     "ModelToolDeclaration",
     "ModelToolExecutor",

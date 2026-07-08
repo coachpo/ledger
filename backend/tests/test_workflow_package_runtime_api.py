@@ -50,13 +50,11 @@ from app.services.model_gateway_dto import (
 )
 from app.services.model_gateway_openai import (
     OPENAI_COMPATIBLE_USER_AGENT,
-    _build_openai_compatible_user_agent,
-)
-from app.services.model_gateway_provider_retry import (
     ProviderRetryAttempt,
     ProviderRetryPolicy,
     ProviderRetryRecorder,
-    call_with_provider_retry,
+    _build_openai_compatible_user_agent,
+    _call_with_provider_retry,
 )
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
@@ -2050,11 +2048,11 @@ def test_workflow_package_runtime_chat_provider_retry_records_providerRetries_mo
         return 137
 
     monkeypatch.setattr(
-        "app.services.model_gateway_provider_retry.time.sleep",
+        "app.services.model_gateway_openai.time.sleep",
         lambda _: None,
     )
     monkeypatch.setattr(
-        "app.services.model_gateway_provider_retry.random.randint",
+        "app.services.model_gateway_openai.random.randint",
         jitter_random_int,
     )
     monkeypatch.setattr(
@@ -2195,7 +2193,7 @@ def test_provider_retry_policy_classifies_retryable_provider_failures() -> None:
     policy = ProviderRetryPolicy()
 
     assert (
-        call_with_provider_retry(
+        _call_with_provider_retry(
             lambda: "provider seam ready",
             policy=policy,
             recorder=ProviderRetryRecorder(policy=policy),
@@ -2296,7 +2294,7 @@ def test_provider_retry_helper_retries_with_full_jitter_and_retry_after() -> Non
         return 137
 
     assert (
-        call_with_provider_retry(
+        _call_with_provider_retry(
             operation,
             recorder=recorder,
             sleep=sleep_calls.append,
@@ -2348,7 +2346,7 @@ def test_provider_retry_helper_exhausts_after_max_attempts() -> None:
         return {500: 137, 1000: 911}[upper]
 
     with pytest.raises(openai.APIStatusError):
-        call_with_provider_retry(
+        _call_with_provider_retry(
             operation,
             recorder=recorder,
             sleep=sleep_calls.append,
@@ -2679,11 +2677,11 @@ def test_workflow_package_runtime_responses_provider_retry_records_providerRetri
         return 137
 
     monkeypatch.setattr(
-        "app.services.model_gateway_provider_retry.time.sleep",
+        "app.services.model_gateway_openai.time.sleep",
         lambda _: None,
     )
     monkeypatch.setattr(
-        "app.services.model_gateway_provider_retry.random.randint",
+        "app.services.model_gateway_openai.random.randint",
         jitter_random_int,
     )
     monkeypatch.setattr(

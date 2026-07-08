@@ -298,8 +298,7 @@ from app.services.agent_execution_service import AgentExecutionService
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_providers import ExecutionProviderBundle
 from app.services.model_gateway_dto import ModelGatewayError, ModelToolCall
-from app.services.model_gateway_tool_retry import ModelToolCallRetryState
-from app.services.model_gateway_tool_strategy import build_model_tool_call
+from app.services.model_gateway_openai import ModelToolCallRetryState, build_model_tool_call
 from app.services.news_provider import NewsProvider, NewsScope, ProviderNewsItem, ProviderNewsResult
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.quote_provider import (

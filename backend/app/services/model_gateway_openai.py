@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import random
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import openai
 from openai import OpenAI
@@ -12,7 +16,11 @@ from openai import OpenAI
 from app.agents.runtime_tools.declarations import SignalDeckToolDeclaration
 from app.agents.runtime_tools.failure_taxonomy import (
     PROVIDER_NETWORK_FAILURE,
+    PROVIDER_TOOL_ARGUMENT_JSON_INVALID,
+    PROVIDER_TOOL_ARGUMENT_OBJECT_INVALID,
     PROVIDER_TRANSPORT_FAILURE,
+    RETRY_BOUND_EXHAUSTED_FAILURE,
+    ToolFailureClassification,
     provider_status_failure_classification,
 )
 from app.agents.runtime_tools.types import RuntimeToolError
@@ -31,7 +39,6 @@ from app.services.model_gateway_dto import (
     ModelToolCall,
     ModelToolExecutor,
 )
-from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
 from app.services.model_gateway_output_validation import (
     exhausted_validation_error,
     select_output_strategy,
@@ -39,16 +46,6 @@ from app.services.model_gateway_output_validation import (
     validation_failed_error,
     validation_retry_input,
 )
-from app.services.model_gateway_policy_strategy import select_model_execution_strategies
-from app.services.model_gateway_provider_retry import (
-    ProviderRetryRecorder,
-    call_with_provider_retry,
-)
-from app.services.model_gateway_tool_retry import (
-    ModelToolCallRetryState,
-    is_retryable_tool_call_failure,
-)
-from app.services.model_gateway_tool_strategy import build_model_tool_call, select_tool_strategy
 
 DEFAULT_OPENAI_CLIENT_FACTORY = OpenAI
 _BACKEND_VERSION_FALLBACK = "0.1.0"
@@ -143,7 +140,7 @@ class OpenAIProtocolAdapter:
         selected_strategies: ModelExecutionStrategies | None = None
         provider_retry_recorder: ProviderRetryRecorder | None = None
         try:
-            tool_strategy = select_tool_strategy(request)
+            tool_strategy = _select_tool_strategy(request)
             output_strategy = select_output_strategy(request)
             selected_strategies = self._selected_strategies(
                 request,
@@ -157,6 +154,8 @@ class OpenAIProtocolAdapter:
             )
             with self._client_factory(**client_kwargs) as client:
                 if request.connection.api_style == "responses":
+                    from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
+
                     return OpenAIResponsesAdapter().invoke_with_client(
                         client=client,
                         request=request,
@@ -412,6 +411,8 @@ class OpenAIProtocolAdapter:
         request: ModelConnectionTestRequest,
     ) -> Any:
         if request.connection.api_style == "responses":
+            from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
+
             return OpenAIResponsesAdapter().create_connection_test_response(
                 client=client,
                 request=request,
@@ -510,6 +511,8 @@ class OpenAIProtocolAdapter:
             else (_CAPABILITY_PROBE_TOOL,)
         )
         if connection.api_style == "responses":
+            from app.services.model_gateway_openai_responses import OpenAIResponsesAdapter
+
             request_kwargs = self._responses_probe_kwargs(connection)
             request_kwargs["tools"] = OpenAIResponsesAdapter._tools_from_declarations(tools)
             if parallel:
@@ -724,7 +727,7 @@ class OpenAIProtocolAdapter:
         has_tools: bool,
         allow_parallel_tool_calls: bool,
     ) -> ModelExecutionStrategies:
-        return select_model_execution_strategies(
+        return _select_model_execution_strategies(
             request,
             output_strategy=output_strategy,
             has_tools=has_tools,
@@ -744,7 +747,7 @@ class OpenAIProtocolAdapter:
             {"role": "system", "content": request.instructions},
             {"role": "user", "content": request.input_text},
         ]
-        tool_strategy = select_tool_strategy(request)
+        tool_strategy = _select_tool_strategy(request)
         chat_tools = self._chat_tools_from_declarations(request.tools)
         output_strategy = select_output_strategy(request)
         selected_strategies = self._selected_strategies(
@@ -776,7 +779,7 @@ class OpenAIProtocolAdapter:
             ) -> Any:
                 return client.chat.completions.create(**request_payload)
 
-            response = call_with_provider_retry(
+            response = _call_with_provider_retry(
                 create_chat_completion,
                 recorder=provider_retry_recorder,
             )
@@ -788,7 +791,7 @@ class OpenAIProtocolAdapter:
                 if tool_retry_state.can_retry(exc):
                     messages.append({"role": "user", "content": tool_retry_state.record_retry(exc)})
                     continue
-                if is_retryable_tool_call_failure(exc):
+                if _is_retryable_tool_call_failure(exc):
                     raise tool_retry_state.exhausted_error(exc) from exc
                 raise
             if not pending_tool_calls:
@@ -1029,7 +1032,7 @@ class OpenAIProtocolAdapter:
                     prior_successful_tool_results=len(messages),
                 ):
                     return [], tool_retry_state.record_retry(exc, tool_call=tool_call)
-                if is_retryable_tool_call_failure(exc):
+                if _is_retryable_tool_call_failure(exc):
                     raise tool_retry_state.exhausted_error(exc, tool_call=tool_call) from exc
                 raise
             messages.append(
@@ -1163,11 +1166,11 @@ class OpenAIProtocolAdapter:
 
     @classmethod
     def _read_usage_int(cls, usage: Any, *fields: str) -> int | None:
-        for field in fields:
+        for usage_field in fields:
             if isinstance(usage, dict):
-                raw_value = usage.get(field)
+                raw_value = usage.get(usage_field)
             else:
-                raw_value = getattr(usage, field, None)
+                raw_value = getattr(usage, usage_field, None)
             try:
                 if raw_value is not None:
                     return int(raw_value)
@@ -1222,7 +1225,712 @@ class OpenAIProtocolAdapter:
         return normalized or "Agent execution failed."
 
 
+_REASONING_CAPABILITY = "reasoningHints"
+_NATIVE_TOOL_CAPABILITY = "nativeToolCalls"
+_PARALLEL_TOOL_CAPABILITY = "parallelToolCalls"
+_UNSUPPORTED = "unsupported"
+_NOT_APPLICABLE = "notApplicable"
+_UNSUPPORTED_CAPABILITY_STATUSES = {_UNSUPPORTED, _NOT_APPLICABLE}
+_ALLOW_PARALLEL = "allow"
+_SERIALIZE_PARALLEL = "serialize"
+_FORBID_TOOLS = "forbid"
+
+_TOOL_CALL_RETRY_MAX_ATTEMPTS = 1
+_MAX_FAILURE_RECORDS = 3
+_MAX_DETAIL_RECORDS = 5
+_MAX_DETAIL_TEXT_LENGTH = 300
+_EXHAUSTED_METADATA_KEY = "exhausted"
+
+_PROVIDER_RETRY_POLICY = "transientProviderRetry/v1"
+_PROVIDER_RETRY_MAX_ATTEMPTS = 3
+_PROVIDER_RETRY_BASE_DELAY_MS = 500
+_PROVIDER_RETRY_BACKOFF_MULTIPLIER = 2
+_PROVIDER_RETRY_MAX_DELAY_MS = 8000
+_PROVIDER_RETRY_AFTER_MAX_DELAY_MS = 10000
+_RETRYABLE_STATUS_CODES = frozenset({408, 409, 429})
+_RETRY_AFTER_STATUS_CODES = frozenset({429, 503})
+_ALLOWED_ATTEMPT_OUTCOMES = frozenset({"retryScheduled", "retryAfterHonored", "exhausted"})
+
+
+def _metadata_without_none(payload: Mapping[str, object]) -> dict[str, object]:
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+@dataclass(frozen=True, slots=True)
+class _ModelReasoningStrategySelection:
+    strategy: str
+    reasoning_effort: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ModelStreamingStrategySelection:
+    strategy: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ModelToolStrategySelection:
+    has_tools: bool
+    allow_parallel_tool_calls: bool
+
+
+def _select_reasoning_strategy(
+    request: ModelExecutionRequest,
+) -> _ModelReasoningStrategySelection:
+    if request.connection.reasoning_policy == "forbid":
+        return _ModelReasoningStrategySelection(
+            strategy="disabledByPolicy",
+            reasoning_effort=None,
+        )
+    reasoning_effort = request.connection.reasoning_effort
+    if reasoning_effort is None:
+        return _ModelReasoningStrategySelection(
+            strategy="disabled",
+            reasoning_effort=None,
+        )
+    status = _capability_status(request, _REASONING_CAPABILITY)
+    if status in _UNSUPPORTED_CAPABILITY_STATUSES:
+        raise ModelGatewayError(
+            code="model_reasoning_unsupported",
+            message="Model connection does not support configured reasoning hints.",
+            details=[
+                {
+                    "field": _REASONING_CAPABILITY,
+                    "issue": f"Capability is {status}",
+                }
+            ],
+        )
+    return _ModelReasoningStrategySelection(
+        strategy="enabled",
+        reasoning_effort=reasoning_effort,
+    )
+
+
+def _select_streaming_strategy(
+    request: ModelExecutionRequest,
+) -> _ModelStreamingStrategySelection:
+    if request.connection.streaming_policy == "forbid":
+        return _ModelStreamingStrategySelection(strategy="disabledByPolicy")
+    return _ModelStreamingStrategySelection(strategy="disabled")
+
+
+def _select_model_execution_strategies(
+    request: ModelExecutionRequest,
+    *,
+    output_strategy: str,
+    has_tools: bool,
+    allow_parallel_tool_calls: bool,
+) -> ModelExecutionStrategies:
+    tool_call_strategy = "none"
+    if has_tools:
+        tool_call_strategy = "parallel" if allow_parallel_tool_calls else "serialize"
+    selected = ModelExecutionStrategies(
+        output_strategy=output_strategy,
+        tool_call_strategy=tool_call_strategy,
+        parallel_tool_calls=allow_parallel_tool_calls if has_tools else False,
+    )
+    try:
+        reasoning = _select_reasoning_strategy(request)
+    except ModelGatewayError as exc:
+        raise exc.with_execution_context(
+            usage=None,
+            selected_strategies=selected,
+            duration_ms=None,
+        ) from exc
+    streaming = _select_streaming_strategy(request)
+    return ModelExecutionStrategies(
+        output_strategy=output_strategy,
+        tool_call_strategy=selected.tool_call_strategy,
+        parallel_tool_calls=selected.parallel_tool_calls,
+        reasoning_strategy=reasoning.strategy,
+        reasoning_effort=reasoning.reasoning_effort,
+        streaming_strategy=streaming.strategy,
+    )
+
+
+def _select_tool_strategy(request: ModelExecutionRequest) -> _ModelToolStrategySelection:
+    if not request.tools:
+        return _ModelToolStrategySelection(has_tools=False, allow_parallel_tool_calls=False)
+
+    policy = request.connection.parallel_tool_calls_policy
+    if policy == _FORBID_TOOLS:
+        raise ModelGatewayError(
+            code="model_capability_required_missing",
+            message="Model connection policy forbids tool calls required by this package.",
+            details=[{"field": "parallelToolCallsPolicy", "issue": "Policy forbids tools"}],
+        )
+    native_status = _capability_status(request, _NATIVE_TOOL_CAPABILITY)
+    if native_status in _UNSUPPORTED_CAPABILITY_STATUSES:
+        raise ModelGatewayError(
+            code="model_capability_required_missing",
+            message="Model connection does not support required native tool calls.",
+            details=[{"field": _NATIVE_TOOL_CAPABILITY, "issue": f"Capability is {native_status}"}],
+        )
+
+    parallel_status = _capability_status(request, _PARALLEL_TOOL_CAPABILITY)
+    allow_parallel = (
+        policy == _ALLOW_PARALLEL and parallel_status not in _UNSUPPORTED_CAPABILITY_STATUSES
+    )
+    if policy not in {_ALLOW_PARALLEL, _SERIALIZE_PARALLEL}:
+        allow_parallel = False
+    return _ModelToolStrategySelection(
+        has_tools=True,
+        allow_parallel_tool_calls=allow_parallel,
+    )
+
+
+def build_model_tool_call(
+    *,
+    name: Any,
+    arguments: Any,
+    call_id: Any,
+    context: str,
+) -> ModelToolCall:
+    normalized_name = _required_tool_call_text(name, field="name", context=context)
+    normalized_call_id = _required_tool_call_text(call_id, field="call id", context=context)
+    if not isinstance(arguments, str):
+        raise _invalid_tool_call(
+            context=context,
+            issue=f"Tool call {normalized_name!r} did not include JSON-string arguments.",
+        )
+    _validate_arguments_json(arguments, context=context, tool_name=normalized_name)
+    return ModelToolCall(
+        tool_name=normalized_name,
+        arguments_json=arguments,
+        call_id=normalized_call_id,
+    )
+
+
+def _capability_status(request: ModelExecutionRequest, key: str) -> str | None:
+    capabilities = request.connection.capabilities or {}
+    raw_state = capabilities.get(key)
+    if not isinstance(raw_state, Mapping):
+        return None
+    raw_status = raw_state.get("status")
+    return raw_status if isinstance(raw_status, str) else None
+
+
+def _required_tool_call_text(value: Any, *, field: str, context: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    raise _invalid_tool_call(context=context, issue=f"Tool call is missing a valid {field}.")
+
+
+def _validate_arguments_json(arguments: str, *, context: str, tool_name: str) -> None:
+    try:
+        payload = json.loads(arguments)
+    except json.JSONDecodeError as exc:
+        raise _invalid_tool_call(
+            context=context,
+            issue=f"Tool call {tool_name!r} arguments are not valid JSON.",
+            failure_classification=PROVIDER_TOOL_ARGUMENT_JSON_INVALID,
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise _invalid_tool_call(
+            context=context,
+            issue=f"Tool call {tool_name!r} arguments must be a JSON object.",
+            failure_classification=PROVIDER_TOOL_ARGUMENT_OBJECT_INVALID,
+        )
+
+
+def _invalid_tool_call(
+    *,
+    context: str,
+    issue: str,
+    failure_classification: ToolFailureClassification | None = None,
+) -> ModelGatewayError:
+    return ModelGatewayError(
+        code="model_tool_call_payload_invalid",
+        message=f"{context} returned a malformed tool call payload.",
+        details=[{"field": "toolCall", "issue": issue}],
+        failure_classification=failure_classification,
+    )
+
+
+@dataclass(slots=True)
+class ModelToolCallRetryState:
+    max_attempts: int = _TOOL_CALL_RETRY_MAX_ATTEMPTS
+    attempts_used: int = 0
+    failures: list[dict[str, object]] = field(default_factory=list)
+
+    def can_retry(
+        self,
+        exc: BaseException,
+        *,
+        prior_successful_tool_results: int = 0,
+    ) -> bool:
+        if prior_successful_tool_results:
+            return False
+        return _is_retryable_tool_call_failure(exc) and self.attempts_used < self.max_attempts
+
+    def record_retry(
+        self,
+        exc: BaseException,
+        *,
+        tool_call: ModelToolCall | None = None,
+    ) -> str:
+        self.attempts_used += 1
+        record = self._append_failure(exc, tool_call=tool_call)
+        return _model_tool_call_retry_feedback(
+            record,
+            attempt=self.attempts_used,
+            max_attempts=self.max_attempts,
+        )
+
+    def exhausted_error(
+        self,
+        exc: BaseException,
+        *,
+        tool_call: ModelToolCall | None = None,
+    ) -> ModelGatewayError:
+        record = self._append_failure(exc, tool_call=tool_call)
+        taxonomy = record.get("failureTaxonomy")
+        failure_class = "unknown"
+        if isinstance(taxonomy, Mapping):
+            taxonomy_record = cast(Mapping[str, object], taxonomy)
+            failure_class = _bounded_text(
+                taxonomy_record.get("failureClass"),
+                default="unknown",
+            )
+        retry_word = "retry" if self.max_attempts == 1 else "retries"
+        return ModelGatewayError(
+            code="model_tool_call_retry_exhausted",
+            message=f"Model tool call correction failed after {self.max_attempts} {retry_word}.",
+            details=[
+                {
+                    "field": "toolCall",
+                    "issue": "Retryable tool-call correction attempts were exhausted",
+                    "lastFailureClass": failure_class,
+                }
+            ],
+            failure_classification=RETRY_BOUND_EXHAUSTED_FAILURE,
+            tool_retry_metadata=self.metadata(exhausted=True),
+        )
+
+    def metadata(self, *, exhausted: bool = False) -> dict[str, object] | None:
+        if self.attempts_used == 0 and not self.failures:
+            return None
+        return {
+            "attemptsUsed": self.attempts_used,
+            "maxAttempts": self.max_attempts,
+            _EXHAUSTED_METADATA_KEY: exhausted,
+            "failures": list(self.failures[:_MAX_FAILURE_RECORDS]),
+        }
+
+    def _append_failure(
+        self,
+        exc: BaseException,
+        *,
+        tool_call: ModelToolCall | None,
+    ) -> dict[str, object]:
+        record = _tool_call_retry_failure_record(exc, tool_call=tool_call)
+        if len(self.failures) < _MAX_FAILURE_RECORDS:
+            self.failures.append(record)
+        return record
+
+
+def _is_retryable_tool_call_failure(exc: BaseException) -> bool:
+    classification = _failure_classification(exc)
+    return bool(classification and classification.retryable)
+
+
+def _tool_call_retry_failure_record(
+    exc: BaseException,
+    *,
+    tool_call: ModelToolCall | None,
+) -> dict[str, object]:
+    classification = _failure_classification(exc)
+    if classification is None:
+        raise TypeError("Tool-call retry failures require typed failure classification.")
+    record: dict[str, object] = {
+        "code": str(getattr(exc, "code", "model_tool_call_failed")),
+        "failureTaxonomy": classification.to_metadata(),
+    }
+    if tool_call is not None:
+        record["toolName"] = tool_call.tool_name
+        record["callId"] = tool_call.call_id
+    details = _bounded_details(getattr(exc, "details", ()))
+    if details:
+        record["details"] = details
+    return record
+
+
+def _model_tool_call_retry_feedback(
+    record: Mapping[str, object],
+    *,
+    attempt: int,
+    max_attempts: int,
+) -> str:
+    payload = {
+        "toolCallRetry": {
+            "attempt": attempt,
+            "maxAttempts": max_attempts,
+            "failure": dict(record),
+        }
+    }
+    correction_instruction = " ".join(
+        (
+            "The previous tool call was rejected before execution. Emit one corrected",
+            "tool call with valid JSON-object arguments, or return final JSON output if",
+            "no tool is needed.",
+        )
+    )
+    metadata_instruction = " ".join(
+        (
+            "Do not repeat the same invalid arguments. Use only the bounded failure",
+            "metadata below; no raw argument payloads are included.",
+        )
+    )
+    return "\n\n".join(
+        (
+            correction_instruction,
+            metadata_instruction,
+            json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        )
+    )
+
+
+def _failure_classification(exc: BaseException) -> ToolFailureClassification | None:
+    classification = getattr(exc, "failure_classification", None)
+    return classification if isinstance(classification, ToolFailureClassification) else None
+
+
+def _bounded_details(details: object) -> list[dict[str, str]]:
+    if not isinstance(details, Sequence) or isinstance(details, (str, bytes, bytearray)):
+        return []
+    bounded: list[dict[str, str]] = []
+    for detail in details[:_MAX_DETAIL_RECORDS]:
+        if not isinstance(detail, Mapping):
+            continue
+        detail_record = cast(Mapping[str, object], detail)
+        field = _bounded_text(detail_record.get("field"), default="detail")
+        issue = _bounded_text(detail_record.get("issue"), default="Invalid value")
+        bounded.append({"field": field, "issue": issue})
+    return bounded
+
+
+def _bounded_text(value: object, *, default: str) -> str:
+    text = " ".join(str(value if value is not None else default).split()).strip()
+    if not text:
+        text = default
+    if len(text) > _MAX_DETAIL_TEXT_LENGTH:
+        return f"{text[: _MAX_DETAIL_TEXT_LENGTH - 3]}..."
+    return text
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderRetryPolicy:
+    policy: str = _PROVIDER_RETRY_POLICY
+    max_attempts: int = _PROVIDER_RETRY_MAX_ATTEMPTS
+    base_delay_ms: int = _PROVIDER_RETRY_BASE_DELAY_MS
+    backoff_multiplier: int = _PROVIDER_RETRY_BACKOFF_MULTIPLIER
+    max_delay_ms: int = _PROVIDER_RETRY_MAX_DELAY_MS
+    max_retry_after_ms: int = _PROVIDER_RETRY_AFTER_MAX_DELAY_MS
+
+    def is_retryable(self, exc: BaseException) -> bool:
+        if isinstance(exc, openai.APITimeoutError):
+            return True
+        if isinstance(exc, openai.APIConnectionError):
+            return True
+        if isinstance(exc, openai.APIStatusError):
+            return self.is_retryable_status_code(_provider_status_code(exc))
+        return False
+
+    def is_retryable_status_code(self, status_code: object) -> bool:
+        if not isinstance(status_code, int):
+            return False
+        return status_code in _RETRYABLE_STATUS_CODES or status_code >= 500
+
+    def retry_after_delay_ms(self, exc: BaseException) -> int | None:
+        if not isinstance(exc, openai.APIStatusError):
+            return None
+        status_code = _provider_status_code(exc)
+        if status_code is None or status_code not in _RETRY_AFTER_STATUS_CODES:
+            return None
+        retry_after_ms = _retry_after_ms_from_response(getattr(exc, "response", None))
+        if retry_after_ms is None:
+            return None
+        if retry_after_ms <= 0 or retry_after_ms > self.max_retry_after_ms:
+            return None
+        return retry_after_ms
+
+    def build_attempt(
+        self,
+        exc: BaseException,
+        *,
+        outcome: str,
+        attempt: int,
+        delay_ms: int | None = None,
+    ) -> ProviderRetryAttempt:
+        return ProviderRetryAttempt(
+            attempt=attempt,
+            outcome=outcome,
+            error_code=_provider_error_code(exc),
+            status_code=_provider_status_code(exc),
+            failure_class=_provider_failure_classification(exc).failure_class.value,
+            delay_ms=delay_ms,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderRetryAttempt:
+    attempt: int
+    outcome: str
+    error_code: str
+    failure_class: str
+    status_code: int | None = None
+    delay_ms: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.attempt < 1:
+            raise ValueError("Provider retry attempts must use 1-based numbering.")
+        if self.outcome not in _ALLOWED_ATTEMPT_OUTCOMES:
+            raise ValueError(f"Unsupported provider retry outcome {self.outcome!r}.")
+
+    def to_metadata(self) -> dict[str, object]:
+        return _metadata_without_none(
+            {
+                "attempt": self.attempt,
+                "outcome": self.outcome,
+                "errorCode": self.error_code,
+                "statusCode": self.status_code,
+                "failureClass": self.failure_class,
+                "delayMs": self.delay_ms,
+            }
+        )
+
+
+@dataclass(slots=True)
+class ProviderRetryRecorder:
+    policy: ProviderRetryPolicy = field(default_factory=ProviderRetryPolicy)
+    attempts: list[ProviderRetryAttempt] = field(default_factory=list)
+
+    def record_retry(
+        self,
+        exc: BaseException,
+        *,
+        delay_ms: int,
+        retry_after_honored: bool = False,
+    ) -> ProviderRetryAttempt:
+        if not self.policy.is_retryable(exc):
+            raise ValueError("Provider retry attempts require retryable provider failures.")
+        attempt = self.policy.build_attempt(
+            exc,
+            outcome="retryAfterHonored" if retry_after_honored else "retryScheduled",
+            attempt=len(self.attempts) + 1,
+            delay_ms=delay_ms,
+        )
+        self.attempts.append(attempt)
+        return attempt
+
+    def record_exhausted(self, exc: BaseException) -> ProviderRetryAttempt:
+        if not self.policy.is_retryable(exc):
+            raise ValueError("Provider retry attempts require retryable provider failures.")
+        attempt = self.policy.build_attempt(
+            exc,
+            outcome="exhausted",
+            attempt=len(self.attempts) + 1,
+        )
+        self.attempts.append(attempt)
+        return attempt
+
+    def success_metadata(self) -> dict[str, object] | None:
+        if not self.attempts:
+            return None
+        return self._metadata(terminal_outcome="succeededAfterRetry")
+
+    def exhausted_metadata(self) -> dict[str, object] | None:
+        if not self.attempts:
+            return None
+        return self._metadata(terminal_outcome="exhausted")
+
+    def _metadata(self, *, terminal_outcome: str) -> dict[str, object]:
+        return {
+            "policy": self.policy.policy,
+            "maxAttempts": self.policy.max_attempts,
+            "attempts": [attempt.to_metadata() for attempt in self.attempts],
+            "terminalOutcome": terminal_outcome,
+        }
+
+
+def _call_with_provider_retry[
+    T
+](
+    operation: Callable[[], T],
+    *,
+    policy: ProviderRetryPolicy | None = None,
+    recorder: ProviderRetryRecorder | None = None,
+    sleep: Callable[[float], object] | None = None,
+    random_int: Callable[[int, int], int] | None = None,
+) -> T:
+    active_policy, active_recorder = _resolve_retry_components(
+        policy=policy,
+        recorder=recorder,
+    )
+    sleeper = sleep or time.sleep
+    jitter_random_int = random_int or random.randint
+    while True:
+        try:
+            return operation()
+        except Exception as exc:
+            if not active_policy.is_retryable(exc):
+                raise
+            attempt = len(active_recorder.attempts) + 1
+            if attempt >= active_policy.max_attempts:
+                _ = active_recorder.record_exhausted(exc)
+                raise
+            retry_after_delay_ms = active_policy.retry_after_delay_ms(exc)
+            if retry_after_delay_ms is not None:
+                delay_ms = retry_after_delay_ms
+            else:
+                capped_delay_ms = _retry_backoff_delay_ms(active_policy, attempt=attempt)
+                delay_ms = _full_jitter_delay_ms(
+                    capped_delay_ms,
+                    random_int=jitter_random_int,
+                )
+            _ = active_recorder.record_retry(
+                exc,
+                delay_ms=delay_ms,
+                retry_after_honored=retry_after_delay_ms is not None,
+            )
+            _ = sleeper(delay_ms / 1000)
+
+
+def _resolve_retry_components(
+    *,
+    policy: ProviderRetryPolicy | None,
+    recorder: ProviderRetryRecorder | None,
+) -> tuple[ProviderRetryPolicy, ProviderRetryRecorder]:
+    if recorder is None:
+        active_policy = policy or ProviderRetryPolicy()
+        return active_policy, ProviderRetryRecorder(policy=active_policy)
+    active_policy = policy or recorder.policy
+    if recorder.policy != active_policy:
+        raise ValueError("Provider retry recorder policy mismatch.")
+    return active_policy, recorder
+
+
+def _retry_backoff_delay_ms(
+    policy: ProviderRetryPolicy,
+    *,
+    attempt: int,
+) -> int:
+    exponent = max(attempt - 1, 0)
+    delay_ms = int(policy.base_delay_ms) * (int(policy.backoff_multiplier) ** exponent)
+    max_delay_ms = int(policy.max_delay_ms)
+    return delay_ms if delay_ms <= max_delay_ms else max_delay_ms
+
+
+def _full_jitter_delay_ms(
+    capped_delay_ms: int,
+    *,
+    random_int: Callable[[int, int], int],
+) -> int:
+    if capped_delay_ms < 0:
+        raise ValueError("Provider retry delay cannot be negative.")
+    return random_int(0, capped_delay_ms)
+
+
+def _provider_error_code(exc: BaseException) -> str:
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code.strip():
+        return code.strip()
+    if isinstance(exc, openai.APITimeoutError):
+        return "agent_provider_timeout"
+    if isinstance(exc, openai.APIConnectionError):
+        return "agent_provider_connection_error"
+    if isinstance(exc, openai.APIStatusError):
+        return "agent_provider_status_error"
+    if isinstance(exc, openai.APIError):
+        return "agent_provider_error"
+    return "agent_provider_error"
+
+
+def _provider_status_code(exc: BaseException) -> int | None:
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+    response = getattr(exc, "response", None)
+    response_status_code = getattr(response, "status_code", None)
+    return response_status_code if isinstance(response_status_code, int) else None
+
+
+def _provider_failure_classification(exc: BaseException) -> ToolFailureClassification:
+    classification = getattr(exc, "failure_classification", None)
+    if isinstance(classification, ToolFailureClassification):
+        return classification
+    if isinstance(exc, openai.APITimeoutError):
+        return PROVIDER_NETWORK_FAILURE
+    if isinstance(exc, openai.APIConnectionError):
+        return PROVIDER_NETWORK_FAILURE
+    if isinstance(exc, openai.APIStatusError):
+        return provider_status_failure_classification(_provider_status_code(exc))
+    return PROVIDER_TRANSPORT_FAILURE
+
+
+def _retry_after_ms_from_response(response: object) -> int | None:
+    raw_headers = getattr(response, "headers", None)
+    if not isinstance(raw_headers, Mapping):
+        return None
+    headers = cast(Mapping[str, object], raw_headers)
+    retry_after_ms = _header_text(headers, "retry-after-ms")
+    if retry_after_ms is not None:
+        parsed = _parse_positive_milliseconds(retry_after_ms)
+        if parsed is not None:
+            return parsed
+    retry_after = _header_text(headers, "retry-after")
+    if retry_after is None:
+        return None
+    seconds_delay = _parse_positive_seconds(retry_after)
+    if seconds_delay is not None:
+        return seconds_delay
+    return _parse_retry_after_http_date(retry_after)
+
+
+def _header_text(headers: Mapping[str, object], key: str) -> str | None:
+    value = headers.get(key)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _parse_positive_milliseconds(value: str) -> int | None:
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _parse_positive_seconds(value: str) -> int | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    delay_ms = int(parsed * 1000)
+    return delay_ms if delay_ms > 0 else None
+
+
+def _parse_retry_after_http_date(value: str) -> int | None:
+    try:
+        retry_at = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=UTC)
+    delay_ms = int((retry_at - datetime.now(UTC)).total_seconds() * 1000)
+    return delay_ms if delay_ms > 0 else None
+
+
 __all__ = [
     "DEFAULT_OPENAI_CLIENT_FACTORY",
     "OpenAIProtocolAdapter",
+    "OPENAI_COMPATIBLE_USER_AGENT",
+    "ModelToolCallRetryState",
+    "ProviderRetryAttempt",
+    "ProviderRetryPolicy",
+    "ProviderRetryRecorder",
+    "_build_openai_compatible_user_agent",
+    "_call_with_provider_retry",
+    "build_model_tool_call",
 ]
