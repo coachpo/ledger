@@ -7,6 +7,9 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from app.extensions import BundledApiRouterContribution, BundledServerDeclaredToolContribution
+from app.extensions.contract import Extension
+from app.extensions.signaldeck_digital_oracle import EXTENSION as DIGITAL_ORACLE
+from app.extensions.signaldeck_finance import EXTENSION as FINANCE
 from app.services.execution_providers import (
     ExecutionProviderBundle,
     merge_execution_provider_bundles,
@@ -22,6 +25,20 @@ FINANCE_WORKSPACE_LABEL = "Finance Workspace"
 DIGITAL_ORACLE_DEFAULT_ENABLED = True
 DIGITAL_ORACLE_EXTENSION_KEY = "signaldeck.digital_oracle"
 DIGITAL_ORACLE_LABEL = "Digital Oracle Runtime"
+
+INSTALLED_EXTENSIONS: tuple[Extension, ...] = (FINANCE, DIGITAL_ORACLE)
+
+
+def _assert_unique_tool_keys() -> None:
+    seen: set[str] = set()
+    for extension in INSTALLED_EXTENSIONS:
+        for declaration in extension.tool_declarations:
+            if declaration.key in seen:
+                raise RuntimeError(f"duplicate tool key: {declaration.key}")
+            seen.add(declaration.key)
+
+
+_assert_unique_tool_keys()
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,5 +296,6 @@ __all__ = [
     "BundledServerDeclaredToolContribution",
     "BundledExtensionDefinition",
     "BundledExtensionRegistry",
+    "INSTALLED_EXTENSIONS",
     "get_bundled_extension_registry",
 ]

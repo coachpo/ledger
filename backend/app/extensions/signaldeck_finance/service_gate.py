@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy.orm import Session
 
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.services.extension_gate import require_extension_enabled
-from app.services.extension_service import ResolvedExtensionState
+
+if TYPE_CHECKING:
+    from app.services.extension_service import ResolvedExtensionState
 
 MARKET_DATA_SERVICE_SURFACE = "service.market_data"
 TEXT_TEMPLATE_SERVICE_SURFACE = "service.text_template"
@@ -17,6 +20,8 @@ def require_finance_workspace_enabled(
     *,
     surface: str,
 ) -> ResolvedExtensionState:
+    from app.services.extension_gate import require_extension_enabled
+
     return require_extension_enabled(
         session,
         extension_key=FINANCE_WORKSPACE_EXTENSION_KEY,

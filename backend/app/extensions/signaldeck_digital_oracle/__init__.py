@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from .mappers import (
-    map_market_sentiment_result,
-    map_prediction_markets_result,
-    map_sec_filings_result,
-)
+from app.extensions.contract import Extension
+
 from .ownership import (
     DIGITAL_ORACLE_DEFAULT_ENABLED,
     DIGITAL_ORACLE_DENIED_CODE,
@@ -16,30 +13,15 @@ from .ownership import (
     DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES,
     DIGITAL_ORACLE_RUNTIME_TOOL_KEYS,
 )
-from .service import DigitalOraclePhase1Service, create_digital_oracle_phase1_service
-from .types import (
-    DigitalOracleMarketSentimentProvider,
-    DigitalOracleMarketSentimentProviderQuery,
-    DigitalOracleMarketSentimentProviderResult,
-    DigitalOracleMarketSentimentQuery,
-    DigitalOracleMarketSentimentResult,
-    DigitalOraclePredictionMarketContract,
-    DigitalOraclePredictionMarketEvent,
-    DigitalOraclePredictionMarketProvider,
-    DigitalOraclePredictionMarketsProviderQuery,
-    DigitalOraclePredictionMarketsProviderResult,
-    DigitalOraclePredictionMarketsQuery,
-    DigitalOraclePredictionMarketsResult,
-    DigitalOracleProviderError,
-    DigitalOracleSecFiling,
-    DigitalOracleSecFilingsProvider,
-    DigitalOracleSecFilingsProviderQuery,
-    DigitalOracleSecFilingsProviderResult,
-    DigitalOracleSecFilingsQuery,
-    DigitalOracleSecFilingsResult,
+from .tool_specs import DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS
+
+EXTENSION = Extension(
+    key=DIGITAL_ORACLE_EXTENSION_KEY,
+    tool_declarations=DIGITAL_ORACLE_SERVER_DECLARED_TOOL_SPECS,
 )
 
 __all__ = [
+    "EXTENSION",
     "DIGITAL_ORACLE_DEFAULT_ENABLED",
     "DIGITAL_ORACLE_DENIED_CODE",
     "DIGITAL_ORACLE_DENIED_MESSAGES",
@@ -47,28 +29,4 @@ __all__ = [
     "DIGITAL_ORACLE_LABEL",
     "DIGITAL_ORACLE_OPENAI_FUNCTION_NAMES",
     "DIGITAL_ORACLE_RUNTIME_TOOL_KEYS",
-    "DigitalOracleMarketSentimentProvider",
-    "DigitalOracleMarketSentimentProviderQuery",
-    "DigitalOracleMarketSentimentProviderResult",
-    "DigitalOracleMarketSentimentQuery",
-    "DigitalOracleMarketSentimentResult",
-    "DigitalOraclePhase1Service",
-    "DigitalOraclePredictionMarketContract",
-    "DigitalOraclePredictionMarketEvent",
-    "DigitalOraclePredictionMarketProvider",
-    "DigitalOraclePredictionMarketsProviderQuery",
-    "DigitalOraclePredictionMarketsProviderResult",
-    "DigitalOraclePredictionMarketsQuery",
-    "DigitalOraclePredictionMarketsResult",
-    "DigitalOracleProviderError",
-    "DigitalOracleSecFiling",
-    "DigitalOracleSecFilingsProvider",
-    "DigitalOracleSecFilingsProviderQuery",
-    "DigitalOracleSecFilingsProviderResult",
-    "DigitalOracleSecFilingsQuery",
-    "DigitalOracleSecFilingsResult",
-    "create_digital_oracle_phase1_service",
-    "map_market_sentiment_result",
-    "map_prediction_markets_result",
-    "map_sec_filings_result",
 ]
