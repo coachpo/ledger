@@ -103,7 +103,7 @@ test.describe("Reports", () => {
 
     const detailActions = page.getByTestId("report-detail-actions");
     await expect(
-      detailActions.getByRole("link", { name: /download/i }),
+      detailActions.getByRole("button", { name: /download/i }),
     ).toBeVisible();
     await expect(
       detailActions.getByRole("button", { name: /edit/i }),
@@ -145,13 +145,17 @@ test.describe("Reports", () => {
       "Edited content.",
     );
 
-    const downloadLink = page.getByRole("link", { name: /download/i });
-    await expect(downloadLink).toBeVisible();
-    const href = await downloadLink.getAttribute("href");
-    expect(href).toContain("/reports/");
-    expect(href).toContain("/download");
+    const downloadButton = page.getByRole("button", { name: /download/i });
+    await expect(downloadButton).toBeVisible();
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      downloadButton.click(),
+    ]);
+    expect(download.suggestedFilename()).toBe(`${generatedSlug}.md`);
 
-    const downloadResponse = await request.get(href!);
+    const downloadResponse = await request.get(
+      `${API_BASE}/reports/${generatedSlug}/download`,
+    );
     expect(downloadResponse.ok()).toBeTruthy();
     expect(downloadResponse.headers()["content-type"]).toContain(
       "text/markdown",

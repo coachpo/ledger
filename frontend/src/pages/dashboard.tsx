@@ -79,6 +79,7 @@ export function Dashboard() {
         {statusCounts.map(({ count, status }) => (
           <div
             className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2"
+            data-testid={`dashboard-status-${status}`}
             key={status}
           >
             <ResourceStatusBadge label={status} tone={statusTone(status)} />

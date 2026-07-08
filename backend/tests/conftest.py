@@ -167,6 +167,16 @@ def _quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
+@pytest.fixture(autouse=True)
+def _isolate_api_token_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.delenv("SIGNALDECK_API_TOKEN", raising=False)
+    reset_settings_cache()
+
+    yield
+
+    reset_settings_cache()
+
+
 @pytest.fixture()
 def database_url() -> Iterator[str]:
     base_database_url = _get_base_database_url()

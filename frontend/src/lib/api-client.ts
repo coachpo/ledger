@@ -15,6 +15,10 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+export interface DownloadFileOptions extends RequestOptions {
+  filename?: string;
+}
+
 export interface ApiRequestErrorOptions {
   code: string;
   details?: ApiErrorDetail[];
@@ -31,6 +35,7 @@ const CONFIGURED_API_BASE_URL = normalizeApiBaseUrl(
 const API_BASE_URL = toVersionedApiBaseUrl(CONFIGURED_API_BASE_URL, "v1");
 const PLATFORM_API_BASE_URL = toPlatformApiBaseUrl(CONFIGURED_API_BASE_URL);
 const DETAIL_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/;
+const API_TOKEN_STORAGE_KEY = "signaldeck.apiToken";
 const UNSAFE_DETAIL_KEY_PARTS = [
   "apikey",
   "authorization",
@@ -129,6 +134,49 @@ function buildQueryString(query?: Record<string, RequestQueryValue>): string {
   }
 
   return searchParams.toString();
+}
+
+function readStoredApiToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(API_TOKEN_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredApiToken(token: string): void {
+  try {
+    window.localStorage.setItem(API_TOKEN_STORAGE_KEY, token);
+  } catch {
+    return;
+  }
+}
+
+function applyStoredApiToken(headers: Headers): void {
+  const token = readStoredApiToken();
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+}
+
+// ponytail: prompt-based token entry; build a settings page if multi-user ever happens.
+function promptForApiToken(): string | null {
+  if (typeof window === "undefined" || typeof window.prompt !== "function") {
+    return null;
+  }
+
+  const token = window.prompt("API token")?.trim();
+  if (!token) {
+    return null;
+  }
+
+  writeStoredApiToken(token);
+  return token;
 }
 
 function buildUrlForBaseUrl(
@@ -235,13 +283,47 @@ async function toApiRequestError(response: Response): Promise<ApiRequestError> {
   });
 }
 
-async function requestWithBaseUrl<T>(
+function filenameFromContentDisposition(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const encodedFilename = /filename\*=UTF-8''([^;]+)/i.exec(value)?.[1];
+  if (encodedFilename) {
+    try {
+      return decodeURIComponent(encodedFilename);
+    } catch {
+      return encodedFilename;
+    }
+  }
+
+  return (
+    /filename="([^"]+)"/i.exec(value)?.[1] ??
+    /filename=([^;]+)/i.exec(value)?.[1]?.trim() ??
+    null
+  );
+}
+
+function triggerBrowserDownload(blob: Blob, filename: string): void {
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(href);
+}
+
+async function fetchWithBaseUrl(
   baseUrl: string,
   path: string,
   options: RequestOptions = {},
-): Promise<T> {
+  defaultAccept: string,
+): Promise<Response> {
   const headers = new Headers(options.headers);
   const method = options.method ?? "GET";
+  const url = buildUrlForBaseUrl(baseUrl, path, options.query);
   let body: BodyInit | undefined;
 
   if (options.body instanceof FormData) {
@@ -254,22 +336,49 @@ async function requestWithBaseUrl<T>(
   }
 
   if (!headers.has("Accept")) {
-    headers.set("Accept", "application/json");
+    headers.set("Accept", defaultAccept);
   }
+  applyStoredApiToken(headers);
 
-  const response = await fetch(
-    buildUrlForBaseUrl(baseUrl, path, options.query),
-    {
-      body,
-      headers,
-      method,
-      signal: options.signal,
-    },
-  );
+  let response = await fetch(url, {
+    body,
+    headers,
+    method,
+    signal: options.signal,
+  });
+
+  if (response.status === 401) {
+    const token = promptForApiToken();
+    if (token) {
+      const retryHeaders = new Headers(headers);
+      retryHeaders.set("Authorization", `Bearer ${token}`);
+      response = await fetch(url, {
+        body,
+        headers: retryHeaders,
+        method,
+        signal: options.signal,
+      });
+    }
+  }
 
   if (!response.ok) {
     throw await toApiRequestError(response);
   }
+
+  return response;
+}
+
+async function requestWithBaseUrl<T>(
+  baseUrl: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const response = await fetchWithBaseUrl(
+    baseUrl,
+    path,
+    options,
+    "application/json",
+  );
 
   if (response.status === 204 || response.status === 205) {
     return undefined as T;
@@ -284,6 +393,51 @@ async function requestWithBaseUrl<T>(
   return JSON.parse(text) as T;
 }
 
+async function requestTextWithBaseUrl(
+  baseUrl: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<string> {
+  const response = await fetchWithBaseUrl(
+    baseUrl,
+    path,
+    options,
+    "text/plain, application/yaml, */*",
+  );
+
+  return response.text();
+}
+
+async function requestBlobWithBaseUrl(
+  baseUrl: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  const response = await fetchWithBaseUrl(
+    baseUrl,
+    path,
+    options,
+    "application/octet-stream, */*",
+  );
+
+  return response.blob();
+}
+
+async function downloadFileWithBaseUrl(
+  baseUrl: string,
+  path: string,
+  options: DownloadFileOptions = {},
+): Promise<void> {
+  const response = await fetchWithBaseUrl(baseUrl, path, options, "*/*");
+  const blob = await response.blob();
+  const filename =
+    filenameFromContentDisposition(response.headers.get("content-disposition")) ??
+    options.filename ??
+    "download";
+
+  triggerBrowserDownload(blob, filename);
+}
+
 export async function request<T>(
   path: string,
   options: RequestOptions = {},
@@ -296,4 +450,46 @@ export async function requestPlatform<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   return requestWithBaseUrl<T>(PLATFORM_API_BASE_URL, path, options);
+}
+
+export function requestText(
+  path: string,
+  options: RequestOptions = {},
+): Promise<string> {
+  return requestTextWithBaseUrl(API_BASE_URL, path, options);
+}
+
+export function requestPlatformText(
+  path: string,
+  options: RequestOptions = {},
+): Promise<string> {
+  return requestTextWithBaseUrl(PLATFORM_API_BASE_URL, path, options);
+}
+
+export function requestBlob(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  return requestBlobWithBaseUrl(API_BASE_URL, path, options);
+}
+
+export function requestPlatformBlob(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  return requestBlobWithBaseUrl(PLATFORM_API_BASE_URL, path, options);
+}
+
+export function downloadFile(
+  path: string,
+  options: DownloadFileOptions = {},
+): Promise<void> {
+  return downloadFileWithBaseUrl(API_BASE_URL, path, options);
+}
+
+export function downloadPlatformFile(
+  path: string,
+  options: DownloadFileOptions = {},
+): Promise<void> {
+  return downloadFileWithBaseUrl(PLATFORM_API_BASE_URL, path, options);
 }

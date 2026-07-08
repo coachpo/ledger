@@ -78,11 +78,13 @@ let fetchMock = createFetchMock();
 beforeEach(() => {
   fetchMock = createFetchMock();
   globalThis.fetch = fetchMock as typeof fetch;
+  localStorage.clear();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", "");
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  localStorage.clear();
   globalThis.fetch = ORIGINAL_FETCH;
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", ORIGINAL_API_BASE_URL);
 });
@@ -99,6 +101,37 @@ describe("api client", () => {
     expect(init?.method).toBe("GET");
     expect(init?.body).toBeUndefined();
     expect(new Headers(init?.headers).get("Accept")).toBe("application/json");
+  });
+
+  it("sends the stored API token as a bearer token", async () => {
+    const { listTemplates } = await loadApiModule();
+    localStorage.setItem("signaldeck.apiToken", "test-token");
+    fetchMock.mockResolvedValueOnce(jsonResponse([templateFixture], 200));
+
+    await expect(listTemplates()).resolves.toEqual([templateFixture]);
+
+    const { init } = getLastFetchCall(fetchMock);
+    expect(new Headers(init?.headers).get("Authorization")).toBe(
+      "Bearer test-token",
+    );
+  });
+
+  it("prompts once for an API token after a 401 and retries the request", async () => {
+    const { listTemplates } = await loadApiModule();
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("test-token");
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ detail: "Unauthorized" }, 401))
+      .mockResolvedValueOnce(jsonResponse([templateFixture], 200));
+
+    await expect(listTemplates()).resolves.toEqual([templateFixture]);
+
+    expect(promptSpy).toHaveBeenCalledTimes(1);
+    expect(promptSpy).toHaveBeenCalledWith("API token");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem("signaldeck.apiToken")).toBe("test-token");
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("Authorization")).toBe(
+      "Bearer test-token",
+    );
   });
 
   it("sends a successful POST request for createTemplate", async () => {

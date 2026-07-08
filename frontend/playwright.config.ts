@@ -25,6 +25,7 @@ export default defineConfig({
       command: `node scripts/start-playwright-backend.mjs`,
       port: BACKEND_PORT,
       reuseExistingServer: false,
+      gracefulShutdown: { signal: "SIGTERM", timeout: 5_000 },
       timeout: 30_000,
     },
     {

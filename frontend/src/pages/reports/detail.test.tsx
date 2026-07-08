@@ -108,11 +108,8 @@ describe("ReportDetailPage", () => {
     const actions = screen.getByTestId("report-detail-actions");
     expect(actions).toHaveClass("flex-wrap", "sm:w-auto");
     expect(
-      within(actions).getByRole("link", { name: /download/i }),
-    ).toHaveAttribute(
-      "href",
-      expect.stringContaining("/reports/agent_memory_snapshot/download"),
-    );
+      within(actions).getByRole("button", { name: /download/i }),
+    ).toBeVisible();
     expect(
       within(actions).getByRole("button", { name: /edit/i }),
     ).toBeVisible();

@@ -16,6 +16,13 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
+function textResponse(body: string, status: number): Response {
+  return new Response(body, {
+    status,
+    headers: { "content-type": "application/yaml" },
+  });
+}
+
 function getLastFetchCall(fetchMock: ReturnType<typeof createFetchMock>) {
   const call = fetchMock.mock.calls.at(-1);
   if (!call) {
@@ -44,10 +51,12 @@ let fetchMock = createFetchMock();
 beforeEach(() => {
   fetchMock = createFetchMock();
   globalThis.fetch = fetchMock as typeof fetch;
+  localStorage.clear();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", "");
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  localStorage.clear();
   globalThis.fetch = ORIGINAL_FETCH;
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", ORIGINAL_API_BASE_URL);
 });
@@ -130,6 +139,28 @@ describe("workflow packages api", () => {
 
     expect(exportWorkflowPackageUrl(12)).toBe("https://signaldeck.example.com/api/workflow-packages/12/export");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fetches workflow package exports as authenticated text and retries after a 401 prompt", async () => {
+    const { exportWorkflowPackageSource } = await loadWorkflowPackagesApi(
+      "https://signaldeck.example.com/api/v1/",
+    );
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("fresh-token");
+    localStorage.setItem("signaldeck.apiToken", "stale-token");
+    fetchMock
+      .mockResolvedValueOnce(textResponse("Unauthorized", 401))
+      .mockResolvedValueOnce(textResponse(manifestSource, 200));
+
+    await expect(exportWorkflowPackageSource(12)).resolves.toBe(manifestSource);
+
+    expect(promptSpy).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("Authorization")).toBe(
+      "Bearer stale-token",
+    );
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get("Authorization")).toBe(
+      "Bearer fresh-token",
+    );
   });
 
   it("posts preflight bodies and reads launch metadata with workflowKey query params", async () => {

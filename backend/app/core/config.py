@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
@@ -15,6 +16,7 @@ PLACEHOLDER_AGENT_PLATFORM_ENCRYPTION_KEYS = {
     "change-me",
     "changeme",
 }
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -35,6 +37,7 @@ class Settings(BaseSettings):
         alias="MARKET_DATA_CACHE_DIR",
     )
     public_base_url: str | None = Field(default=None, alias="PUBLIC_BASE_URL")
+    api_token: str | None = Field(default=None, alias="SIGNALDECK_API_TOKEN")
     mcp_runtime_enabled: bool = Field(default=False, alias="MCP_RUNTIME_ENABLED")
     mcp_runtime_timeout_seconds: float = Field(default=5.0, alias="MCP_RUNTIME_TIMEOUT")
     http_operation_allowed_methods: Annotated[list[str], NoDecode] = Field(
@@ -145,6 +148,14 @@ class Settings(BaseSettings):
             return None
         return normalized.rstrip("/")
 
+    @field_validator("api_token", mode="before")
+    @classmethod
+    def normalize_api_token(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
     @field_validator("runtime_mode", mode="before")
     @classmethod
     def normalize_runtime_mode(cls, value: object) -> object:
@@ -176,6 +187,12 @@ class Settings(BaseSettings):
                 "value in production runtime mode"
             )
             raise ValueError(message)
+
+        if self.api_token is None:
+            logger.warning(
+                "SIGNALDECK_API_TOKEN is not configured in production runtime mode; "
+                "relying on reverse-proxy authentication."
+            )
 
         return self
 

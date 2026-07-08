@@ -79,8 +79,8 @@ test.describe("Primary workspace navigation", () => {
     const dashboardPage = page.getByTestId("dashboard-page");
     await expect(dashboardPage.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     await expect(dashboardPage.getByText("Recent workflow runs.")).toBeVisible();
-    await expect(dashboardPage.getByText("queued", { exact: true })).toBeVisible();
-    await expect(dashboardPage.getByText("running", { exact: true })).toBeVisible();
+    await expect(dashboardPage.getByTestId("dashboard-status-queued")).toContainText("queued");
+    await expect(dashboardPage.getByTestId("dashboard-status-running")).toContainText("running");
     await expect(dashboardPage.getByRole("button")).toHaveCount(0);
 
     for (const route of platformRoutes) {

@@ -63,7 +63,10 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { exportWorkflowPackageUrl } from "@/lib/api/workflow-packages";
+import {
+  downloadWorkflowPackageExport,
+  exportWorkflowPackageSource,
+} from "@/lib/api/workflow-packages";
 import { formatDateTime } from "@/lib/format";
 import {
   createPackageAgentDraft,
@@ -1908,30 +1911,23 @@ export function ExportsTab(props: {
     [draft],
   );
   const [exportPreview, setExportPreview] = useState(generatedManifestSource);
-  const exportHref = packageId
-    ? exportWorkflowPackageUrl(packageId)
-    : undefined;
+  const [isDownloadingExport, setIsDownloadingExport] = useState(false);
 
   useEffect(() => {
-    if (!exportHref) {
+    if (!packageId) {
       setExportPreview(generatedManifestSource);
     }
-  }, [exportHref, generatedManifestSource]);
+  }, [packageId, generatedManifestSource]);
 
   useEffect(() => {
-    if (!exportHref) {
+    if (!packageId) {
       return;
     }
 
     let active = true;
+    const controller = new AbortController();
     setExportPreview("Loading package export preview...");
-    void fetch(exportHref)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Failed to load export preview.");
-        }
-        return response.text();
-      })
+    void exportWorkflowPackageSource(packageId, controller.signal)
       .then((text) => {
         if (active) {
           setExportPreview(text);
@@ -1950,19 +1946,43 @@ export function ExportsTab(props: {
 
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [exportHref, generatedManifestSource]);
+  }, [packageId, generatedManifestSource]);
+
+  const handleDownloadExport = async () => {
+    if (!packageId) {
+      return;
+    }
+
+    setIsDownloadingExport(true);
+    try {
+      const filename = `${draft.metadata.key.trim() || "workflow-package"}.yaml`;
+      await downloadWorkflowPackageExport(packageId, { filename });
+    } catch {
+      toast.error("Failed to download package export.");
+    } finally {
+      setIsDownloadingExport(false);
+    }
+  };
 
   return (
     <AuthoringSection
       actions={
         <div className="flex flex-wrap gap-2">
-          {exportHref ? (
-            <Button asChild size="sm">
-              <a href={exportHref} download>
+          {packageId ? (
+            <Button
+              disabled={isDownloadingExport}
+              onClick={() => void handleDownloadExport()}
+              size="sm"
+              type="button"
+            >
+              {isDownloadingExport ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
                 <Download data-icon="inline-start" />
-                Download YAML
-              </a>
+              )}
+              Download YAML
             </Button>
           ) : null}
           <Button

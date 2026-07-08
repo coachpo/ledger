@@ -1,5 +1,7 @@
 import {
   buildPlatformApiUrl,
+  downloadPlatformFile,
+  requestPlatformText,
   requestPlatform,
   toPathSegment,
   toQueryRecord,
@@ -33,6 +35,11 @@ function workflowPackageSecretBindingPath(packageId: IdParam, key: IdParam): str
 type WorkflowPackageWorkflowOptions = {
   signal?: AbortSignal;
   workflowKey?: string | null;
+};
+
+type WorkflowPackageDownloadOptions = {
+  filename?: string;
+  signal?: AbortSignal;
 };
 
 function workflowKeyQuery(options: WorkflowPackageWorkflowOptions = {}) {
@@ -155,6 +162,25 @@ export function exportWorkflowPackageUrl(packageId: IdParam): string {
   return buildPlatformApiUrl(`${workflowPackagePath(packageId)}/export`);
 }
 
+export function exportWorkflowPackageSource(
+  packageId: IdParam,
+  signal?: AbortSignal,
+): Promise<string> {
+  return requestPlatformText(`${workflowPackagePath(packageId)}/export`, {
+    signal,
+  });
+}
+
+export function downloadWorkflowPackageExport(
+  packageId: IdParam,
+  options: WorkflowPackageDownloadOptions = {},
+): Promise<void> {
+  return downloadPlatformFile(`${workflowPackagePath(packageId)}/export`, {
+    filename: options.filename ?? `${String(packageId)}.yaml`,
+    signal: options.signal,
+  });
+}
+
 export function preflightWorkflowPackage(
   packageId: IdParam,
   payload: WorkflowPackagePreflightRequest,
@@ -194,6 +220,8 @@ export const workflowPackagesApi = {
   deleteSecretBinding: deleteWorkflowPackageSecretBinding,
   create: createWorkflowPackage,
   createLaunch: createWorkflowPackageLaunch,
+  downloadExport: downloadWorkflowPackageExport,
+  exportSource: exportWorkflowPackageSource,
   exportUrl: exportWorkflowPackageUrl,
   get: getWorkflowPackage,
   getLaunch: getWorkflowPackageLaunch,

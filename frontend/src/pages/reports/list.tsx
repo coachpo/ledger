@@ -20,7 +20,7 @@ import {
 } from "@/hooks/use-reports";
 import { useTemplates } from "@/hooks/use-templates";
 import { formatDateTime } from "@/lib/format";
-import { downloadReportUrl } from "@/lib/api/reports";
+import { downloadReport } from "@/lib/api/reports";
 import type { ReportRead } from "@/lib/types/report";
 import type { TextTemplateRead } from "@/lib/types/text-template";
 import { ReportUploadDialog } from "@/components/forms/report-upload-dialog";
@@ -286,6 +286,14 @@ export function ReportListPage() {
     });
   };
 
+  const handleDownloadReport = async (report: ReportRead) => {
+    try {
+      await downloadReport(report.slug);
+    } catch {
+      toast.error("Failed to download report");
+    }
+  };
+
   return (
     <InventoryPageShell
       filterBar={
@@ -524,14 +532,13 @@ export function ReportListPage() {
                                   <ResourceActionsMenu
                                     ariaLabel={`Open actions for ${report.name}`}
                                   >
-                                    <DropdownMenuItem asChild>
-                                      <a
-                                        href={downloadReportUrl(report.slug)}
-                                        download
-                                      >
-                                        <Download data-icon="inline-start" />
-                                        Download
-                                      </a>
+                                    <DropdownMenuItem
+                                      onSelect={() =>
+                                        void handleDownloadReport(report)
+                                      }
+                                    >
+                                      <Download data-icon="inline-start" />
+                                      Download
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       onSelect={() => setDeleting(report)}

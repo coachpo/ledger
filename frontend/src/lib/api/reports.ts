@@ -1,5 +1,11 @@
 import type { ReportCompileInput, ReportRead, ReportUpdateInput } from "../types/report";
-import { type IdParam, buildApiUrl, request, toPathSegment } from "../api-client";
+import {
+  type IdParam,
+  buildApiUrl,
+  downloadFile,
+  request,
+  toPathSegment,
+} from "../api-client";
 
 function reportPath(slug: IdParam): string {
   return `/reports/${toPathSegment(slug)}`;
@@ -65,9 +71,20 @@ export function downloadReportUrl(slug: IdParam): string {
   return buildApiUrl(`${reportPath(slug)}/download`);
 }
 
+export function downloadReport(
+  slug: IdParam,
+  signal?: AbortSignal,
+): Promise<void> {
+  return downloadFile(`${reportPath(slug)}/download`, {
+    filename: `${String(slug)}.md`,
+    signal,
+  });
+}
+
 export const reportsApi = {
   compile: compileReport,
   delete: deleteReport,
+  download: downloadReport,
   downloadUrl: downloadReportUrl,
   get: getReport,
   list: listReports,

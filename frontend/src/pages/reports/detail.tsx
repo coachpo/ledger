@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 
 import { useReport, useUpdateReport } from "@/hooks/use-reports";
 import { formatDateTime } from "@/lib/format";
-import { downloadReportUrl } from "@/lib/api/reports";
+import { downloadReport } from "@/lib/api/reports";
 import { getReportSourceLabel } from "@/lib/report-grouping";
 
 import { PageContextBar } from "@/components/shared/page-context-bar";
@@ -23,6 +23,7 @@ export function ReportDetailPage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     if (report) {
@@ -48,6 +49,19 @@ export function ReportDetailPage() {
   const handleCancelEdit = () => {
     if (report) setEditContent(report.content);
     setIsEditing(false);
+  };
+
+  const handleDownload = async () => {
+    if (!report) return;
+
+    setIsDownloading(true);
+    try {
+      await downloadReport(report.slug);
+    } catch {
+      toast.error("Failed to download report");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   if (isLoading) {
@@ -112,12 +126,16 @@ export function ReportDetailPage() {
                 variant="outline"
                 size="sm"
                 className="h-8 text-xs"
-                asChild
+                disabled={isDownloading}
+                onClick={() => void handleDownload()}
+                type="button"
               >
-                <a href={downloadReportUrl(report.slug)} download>
+                {isDownloading ? (
+                  <Loader2 className="mr-1 size-3 animate-spin" />
+                ) : (
                   <Download className="mr-1 size-3" />
-                  Download
-                </a>
+                )}
+                Download
               </Button>
               {isEditing ? (
                 <>
