@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/lib/types/` mirrors the backend wire contracts for templates, reports, Workflow Packages, Scheduled Tasks, Tools, Model Connections, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
 
-Extension model: backend extensions are statically installed; frontend extension state types are stale Task 5.3 cleanup targets.
+Extension model: backend extensions are statically installed; frontend shared types cover shipped routes and platform contracts only.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -25,7 +25,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Template contract | `text-template.ts` | template CRUD, compile payloads, runtime-input maps, and placeholder tree |
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
 | Shared helpers | `common.ts` | common ids and timestamps |
-| Transitional extension state contract | `extension.ts` | stale frontend extension-state types scheduled for Task 5.3 removal |
 | Workflow Package contracts | `workflow-package.ts` | package manifests, secret bindings, versions, diagnostics, preflight, launch, import, and export payloads |
 | Workflow Package authoring contracts | `workflow-package.ts`, `../platform-authoring/schema/types.ts` | package manifest API payloads and local schema-builder IR |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
@@ -40,7 +39,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.
 - Keep route forms, hook inputs, and shared type names aligned with the current backend contract.
 - Workflow Package authoring types are frontend mirrors for package artifacts; do not promote them back into global `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` route contracts.
-- Do not expand `extension.ts`; backend extension state is removed and this file is a Task 5.3 deletion target.
 - Scheduled Task types use structured recurrence, IANA timezone strings, JSON object templates/vars, `scheduled` or `manual` fire reasons, and schedule-linked run metadata; do not introduce raw cron or finance-owned fields here.
 - There is no vector activation/search, embeddings browser, wildcard memory browser, namespace-grant authoring shape, bulk-delete selection shape, runtime delete shape, tombstone/recycle/undo/delete-reason shape, or report-history promotion shape.
 

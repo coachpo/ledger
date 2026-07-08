@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/components/` contains the layout shell, theme system, shared component library, small cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, while `src/components/shared/docs/README.md` defines the shared UI contract these components implement.
 
-Extension model: backend extensions are statically installed; frontend extension runtime nav groups and state are stale Task 5.3 cleanup scope.
+Extension model: backend extensions are statically installed; layout and shared components consume static route metadata and backend-owned tool catalogs.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -64,7 +64,7 @@ src/components/
 - `platform-authoring/` is reserved for reusable agent-platform authoring widgets driven by `src/lib/platform-authoring/**`.
 - `templates/` is reserved for template-editor support widgets such as placeholder browsing and runtime-input row controls.
 - Preserved product and agent-platform routes stay page-centric and reuse shared components; platform-authoring widgets are the exception because schema/value/ref/workflow UIs are shared across package-local agents, output schemas, capability profiles, MCP configs, and workflow graphs.
-- `Layout` consumes route metadata plus extension runtime nav groups/state; shell mode, width mode, breadcrumbs, and sidebar composition belong there, not in leaf pages or sidebar primitives.
+- `Layout` consumes route metadata for shell mode, width mode, breadcrumbs, and sidebar composition; keep that logic there, not in leaf pages or sidebar primitives.
 - Shared route-shell patterns such as inventory stacks, workspace shells, and split inspectors belong in `shared/`, not in `ui/` or copied page-local wrappers.
 - Shared form validation belongs beside the current routed form unless it has real cross-route reuse.
 - Theme state lives in `theme-provider.tsx`; leaf components should consume the existing context instead of creating new theme state.
@@ -91,6 +91,6 @@ pnpm build
 
 ## NOTES
 - `Layout` switches between scroll and full-height outlet treatment from route metadata, not hard-coded feature checks; template editor, workflow package editor/import/launch, run detail, and model-connection editor routes all rely on that contract.
-- `Layout` renders the current sidebar entries plus metadata-backed breadcrumb labels, shell mode, width mode, and routed main framing for dashboard, extension-gated finance routes, `/extensions`, and agent-platform routes.
+- `Layout` renders the current sidebar entries plus metadata-backed breadcrumb labels, shell mode, width mode, and routed main framing for dashboard, finance routes, and agent-platform routes.
 - `layout.tsx` owns route labels and nav composition; `ui/sidebar.tsx` and `ui/sidebar-context.ts` stay generic primitives.
 - Page components stay thin; the real complexity lives in hooks, shared components, forms, and feature folders.

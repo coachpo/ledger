@@ -28,7 +28,7 @@ Keep platform-core versus extension-owned boundaries explicit. Decide intentiona
 - `.github/workflows/AGENTS.md` — CI gates and container publishing workflow rules
 - `docs/AGENTS.md` — live docs ownership, obsolete-content rules, and platform/extension documentation boundary
 - `frontend/AGENTS.md`, `frontend/src/components/shared/docs/README.md`, `frontend/e2e/AGENTS.md` — frontend shell, design system, browser tests, and startup conventions
-- `frontend/src/{extensions,hooks,lib,components,pages}/**/AGENTS.md` — extension runtime, hooks, shared UI, API/types, platform-authoring, and routed page-family rules
+- `frontend/src/{hooks,lib,components,pages}/**/AGENTS.md` — hooks, shared UI, API/types, platform-authoring, and routed page-family rules
 
 ## STRUCTURE
 ```text
@@ -54,9 +54,8 @@ signaldeck/
 | Backend extension ownership | `backend/app/extensions/AGENTS.md`, `backend/app/extensions/contract.py`, `backend/app/extensions/registry.py`, `backend/app/extensions/signaldeck_finance/AGENTS.md`, `backend/app/extensions/signaldeck_digital_oracle/AGENTS.md` | static `Extension` contract plus installed Finance Workspace and Digital Oracle extension declarations |
 | Backend runtime tools, MCP, schedules, and traces | `backend/app/agents/AGENTS.md`, `backend/app/agents/{tool_catalog,runtime_tools,mcp}/AGENTS.md`, `backend/app/services/agent_execution_service.py`, `backend/app/services/run_service.py`, `backend/app/services/workflow_package_schedule_service.py`, `backend/app/workers/run_scheduler.py`, `backend/app/core/telemetry.py` | server-declared tools, native runtime tools, due schedule materialization, MCP snapshots/dispatch, Logfire trace ids/spans |
 | Backend preserved v1 flow | `backend/app/extensions/signaldeck_finance/__init__.py`, `backend/app/api/templates.py`, `backend/app/api/reports.py` | preserved template/report finance routes registered through the static `signaldeck.finance` extension declaration |
-| Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/routes.metadata.ts`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, extension route assembly, and theme toggle |
+| Frontend app shell | `frontend/src/App.tsx`, `frontend/src/routes.ts`, `frontend/src/routes.metadata.ts`, `frontend/src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, static finance routes, and theme toggle |
 | Frontend shared route shells and design system | `frontend/src/components/shared/docs/README.md`, `frontend/src/components/shared/AGENTS.md`, `frontend/src/hooks/AGENTS.md` | UI/UX standards, inventory/workspace/split-inspector shells, management-list actions/selection, and reusable view/filter/selection/inspector state hooks |
-| Frontend extension runtime | `frontend/src/extensions/AGENTS.md`, `frontend/src/pages/extensions/AGENTS.md`, `frontend/src/extensions/runtime.tsx`, `frontend/src/extensions/runtime-helpers.ts`, `frontend/src/hooks/use-extensions.ts` | frontend route/nav filtering and management UI scheduled for removal in Task 5.3 |
 | Frontend agent-platform UI | `frontend/src/pages/workflow-packages/AGENTS.md`, `frontend/src/pages/scheduled-tasks/AGENTS.md`, `frontend/src/pages/model-connections/AGENTS.md`, `frontend/src/pages/runs/AGENTS.md` | Workflow Packages, Scheduled Tasks, Model Connections, and Runs; Tools appear as package-authoring metadata, not a standalone browser route |
 | Frontend preserved product UI | `frontend/src/pages/templates/AGENTS.md`, `frontend/src/pages/reports/AGENTS.md` | preserved template and report routes |
 | Frontend reports and templates | `frontend/src/components/templates/AGENTS.md`, `frontend/src/components/forms/AGENTS.md`, `frontend/src/lib/runtime-inputs.ts`, `frontend/src/lib/report-grouping.ts` | runtime inputs, placeholder browsing, grouping, upload, and report generation UI |
@@ -73,9 +72,8 @@ signaldeck/
 | `platform_router` | `backend/app/api/platform_router.py` | mounts live `/api/*` routers for model connections, tools, workflow packages, schedules, and runs |
 | `INSTALLED_EXTENSIONS` | `backend/app/extensions/registry.py` | declares statically installed extension instances, validates unique extension/tool keys, and builds provider bundles |
 | `Extension` | `backend/app/extensions/contract.py` | static backend extension contribution contract for API routers, tool declarations/specs, providers, and dependency surfaces |
-| `router` | `frontend/src/routes.ts` | flat route table for `/`, `/extensions`, finance routes, `/workflow-packages`, `/scheduled-tasks`, `/model-connections`, and `/runs` |
-| `assembleFinanceWorkspaceRoutes` | `frontend/src/extensions/runtime-helpers.ts` | converts Finance Workspace route entries into guarded React Router entries |
-| `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, extension-aware nav groups, template/package editor full-height layout |
+| `router` | `frontend/src/routes.ts` | flat route table for `/`, finance routes, `/workflow-packages`, `/scheduled-tasks`, `/model-connections`, and `/runs` |
+| `Layout` | `frontend/src/components/layout.tsx` | sidebar shell, breadcrumbs, route labels, static nav groups, and template/package editor full-height layout |
 | `configure_logfire` | `backend/app/core/telemetry.py` | optional Logfire setup plus trace/span id formatting used by package run execution |
 
 ## CONVENTIONS

@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/lib/` owns the frontend API contract, query-key naming, formatting helpers, report grouping helpers, runtime-input row helpers, and shared type definitions for templates, reports, Scheduled Tasks, and the current agent-platform domains.
 
-Extension model: backend extensions are statically installed; frontend extension state helpers are transitional Task 5.3 cleanup targets.
+Extension model: backend extensions are statically installed and expose package-authoring tools through `/api/tools`; frontend routes are static.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -43,7 +43,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `api-client.ts` falls back to `http://127.0.0.1:8000/api/v1` only when `VITE_API_BASE_URL` is absent; `start.sh` and Playwright override that value for real runs.
 - Domain-specific API functions live in `api/*.ts` modules, organized by resource type.
 - Wire decimals remain strings until shared format helpers convert them for display math.
-- `query-keys.ts` normalizes ids as strings, extension keys as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and history params so cache keys stay stable across callers.
+- `query-keys.ts` normalizes ids as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and history params so cache keys stay stable across callers.
 - Reports and platform resources use dedicated query-key namespaces.
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.

@@ -1,3 +1,15 @@
+import {
+  Briefcase,
+  ClipboardList,
+  Database,
+  FileText,
+  LayoutDashboard,
+  Link2,
+  PlayCircle,
+  Puzzle,
+  Workflow,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 import {
@@ -25,12 +37,49 @@ import {
 } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar-context";
 
-import { assembleNavGroups, type NavItem } from "@/extensions/runtime-helpers";
-import { useExtensions } from "@/hooks/use-extensions";
 import {
+  getSidebarRouteMetadataGroups,
   getRouteMetadataForPathname,
+  type RouteNavIconName,
   type RouteWidthMode,
 } from "@/routes.metadata";
+
+type NavItem = {
+  icon: LucideIcon;
+  label: string;
+  testId: string;
+  to: string;
+};
+
+const navIconByName: Record<RouteNavIconName, LucideIcon> = {
+  Briefcase,
+  ClipboardList,
+  Database,
+  FileText,
+  LayoutDashboard,
+  Link2,
+  PlayCircle,
+  Puzzle,
+  Workflow,
+};
+
+function assembleNavGroups() {
+  return getSidebarRouteMetadataGroups().map((group) => ({
+    items: group.items.map((metadata) => {
+      if (!metadata.nav.path) {
+        throw new Error(`Sidebar route metadata is missing a nav path: ${metadata.pattern}`);
+      }
+
+      return {
+        icon: navIconByName[metadata.nav.iconName],
+        label: metadata.nav.label,
+        testId: metadata.nav.testId,
+        to: metadata.nav.path,
+      };
+    }),
+    label: group.label,
+  }));
+}
 
 function isNavItemActive(pathname: string, item: NavItem) {
   return item.to === "/"
@@ -40,8 +89,7 @@ function isNavItemActive(pathname: string, item: NavItem) {
 
 function AppSidebar() {
   const location = useLocation();
-  const extensionsQuery = useExtensions();
-  const navGroups = assembleNavGroups(extensionsQuery.data);
+  const navGroups = assembleNavGroups();
   const { isMobile, open, setOpenMobile } = useSidebar();
   const showExpandedContent = open || isMobile;
 

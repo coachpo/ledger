@@ -4,7 +4,6 @@
 
 ## CHILD DOCS
 
-- `extensions/AGENTS.md` — stale `/extensions` route family scheduled for Task 5.3 removal
 - `model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test route family
 - `reports/AGENTS.md` — report inventory/detail, upload, generation, and markdown-edit route family
 - `templates/AGENTS.md` — stored-template inventory/editor route family
@@ -16,13 +15,13 @@
 
 `src/pages/` contains routed screen components that map directly to `src/routes.ts`. The shipped route families are the dashboard, template/report pages, and the package-first platform pages for Workflow Packages, Scheduled Tasks, Model Connections, and Runs. Digital Oracle is visible only as backend tool metadata, not as a route or nav surface.
 
-Extension model: backend extensions are statically installed; remaining frontend extension-gated route code is transitional Task 5.3 cleanup scope.
+Extension model: backend extensions are statically installed; template and report routes are static frontend pages, while Digital Oracle remains backend tool metadata only.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
 Platform invariant: SignalDeck is a universal agents workflow/pipeline platform. Executable agent workflows must enter and run as Workflow Packages only; standalone global agents, workflows, capabilities, MCP servers, output schemas, skills, Studio, Tryout, orchestration, or runtime-v2 surfaces are removed or non-goal surfaces, not live acceptance paths.
 
-This parent guide delegates Model Connections, Scheduled Tasks, Reports, Templates, Workflow Packages, and Runs route families to child AGENTS files. The stale Extensions child doc exists only until Task 5.3 removes that route family. Dashboard and shared route helpers stay here.
+This parent guide delegates Model Connections, Scheduled Tasks, Reports, Templates, Workflow Packages, and Runs route families to child AGENTS files. Dashboard and shared route helpers stay here.
 
 Trusted single-user scope: Inherit the root trusted single-user invariant. Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 
@@ -37,7 +36,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ```text
 src/pages/
 ├── dashboard.tsx                # home route summary
-├── extensions/                  # stale extension state/toggle route removed in Task 5.3
 ├── workflow-packages/           # package list and editor/launch routes
 ├── scheduled-tasks/             # scheduled package-run list, create, and detail routes
 ├── model-connections/           # saved model connection list and editor routes
@@ -51,7 +49,6 @@ src/pages/
 | Task                         | Location                                                                                | Notes                                                                                                       |
 | ---------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Dashboard landing            | `dashboard.tsx`                                                                         | home route summary and retry state                                                                          |
-| Transitional extension route | `extensions/AGENTS.md`, `../extensions/AGENTS.md`, `../hooks/use-extensions.ts`         | stale frontend extension route and hooks removed in Task 5.3                                                           |
 | Workflow Package pages       | `workflow-packages/AGENTS.md`                                                           | package authoring, validation, preflight, launch, import, and export                                        |
 | Scheduled Task pages         | `scheduled-tasks/AGENTS.md`, `../hooks/use-scheduled-tasks.ts`                          | scheduled package-run inventory, create/detail editors, preview, fire history, delete, and run-now          |
 | Model connection pages       | `model-connections/AGENTS.md`, `../hooks/use-model-connections.ts`                      | saved connection inventory, write-only secrets, delete flow, and connection-test UI                         |
@@ -70,7 +67,7 @@ src/pages/
 - Link versus button semantics are required. Use links for navigation to real URLs, including row/card open actions. Use buttons for mutations, dialogs, menus, sorting, toggles, and transient UI state.
 - Static tables stay static. Row, cell, sort, selection, and trailing actions must be explicit links, checkboxes, or buttons inside the table, never pointer-only row or cell widgets.
 - Search, filter, and form controls need programmatic labels. Placeholder-only labeling is not enough for route-critical controls.
-- Extension-owned route gates are stale cleanup scope. After Task 5.3, template/report routes are static, platform/system routes remain available, and Digital Oracle contributes backend tools only.
+- Template/report routes are static frontend pages. Digital Oracle contributes backend tools only.
 - Route shells must be mobile contained. Long keys, hashes, URLs, JSON, markdown, tables, and badges need `min-w-0`, wrapping, clipping, or internal scroll so the document does not gain horizontal overflow.
 - Light and dark themes share the same route semantics. Theme checks should verify representative route chrome and content remain visible without adding route-local color-mode state.
 
@@ -83,7 +80,6 @@ src/pages/
 - Detail routes keep route identity and back navigation explicit. Use `text-xl font-semibold tracking-tight` for the route title, keep secondary actions before destructive or primary save actions, and do not truncate the entity identity.
 - Editor routes use metadata-owned `fullHeight` shell mode when they need split panes or persistent action bars. They must expose a labeled route shell, labeled inputs, save/cancel hierarchy, and mobile containment.
 - Console routes such as package launch, Scheduled Task detail, and run detail use metadata-owned `fullHeight` shell mode. Preserve evidence, preflight, backend progress/queue/readiness payloads, scheduled input previews, trace, payload, and rerun controls with internal scrolling for wide data.
-- System-state routes stay narrow and contract-bound. `/extensions` is no longer backed by a live backend contract and is removed in Task 5.3.
 - Loading, error, empty, filtered-empty, not-found, creating, editing, saving, importing, validating, launching, and polling states must match the route's `stateVariants` metadata and have targeted test coverage when they are visible user states.
 
 ## REGRESSION COVERAGE MATRIX
@@ -91,7 +87,6 @@ src/pages/
 - `src/routes.test.tsx` guards metadata coverage for every registered route, route archetypes, state variants, shell mode ownership, and product-owned 404/error routing.
 - `src/components/layout.test.tsx` guards sidebar grouping, breadcrumb labels, the single page `<main>`, and metadata-owned full-height wrapping.
 - `e2e/navigation.spec.ts` covers primary nav, route shell metadata in the browser, unknown-route 404 shell, link/button semantics, mobile overflow, and representative dark-mode chrome.
-- `e2e/extensions.spec.ts` is stale coverage removed in Task 5.3 with the frontend plugin host.
 - `e2e/reports.spec.ts` covers seeded report flows plus representative empty and API-error list states for the finance inventory archetype.
 - `e2e/workflow-packages.spec.ts` covers package-first authoring, import/export, launch, run provenance, and wide payload overflow in the run-detail console.
 - `e2e/scheduled-tasks.spec.ts` covers scheduled package-run automation, fire history, delete confirmation and post-delete absence states, and run-now links into run detail.
@@ -109,7 +104,7 @@ src/pages/
 - Do not add nested `Package Inventory`/`Resource Inventory` card shells, route-local summary-card bands, or oversized search/filter controls to new list pages unless the product requirement explicitly calls for that hierarchy.
 - Do not duplicate report request logic in page components when `use-reports.ts` and the template editor already own the server-side workflow.
 - Do not add dead routes or stale route docs that are not wired into `src/routes.ts`.
-- Do not bypass extension route gates or duplicate Finance Workspace visibility rules in page components.
+- Do not reintroduce route gates or extension-state dependencies into page components.
 - Do not create additional child route-family AGENTS files beyond the current set unless a folder grows an independent contract surface that the parent can no longer cover cleanly.
 
 ## VALIDATION
@@ -126,4 +121,4 @@ pnpm test:e2e
 ## NOTES
 
 - Pages are thin route-layer components; the real complexity lives in hooks, shared components, and nearby page helpers.
-- The live router exposes dashboard, `/extensions`, extension-gated template/report routes, Workflow Packages, Scheduled Tasks, Model Connections, and Runs.
+- The live router exposes dashboard, static template/report routes, Workflow Packages, Scheduled Tasks, Model Connections, and Runs.

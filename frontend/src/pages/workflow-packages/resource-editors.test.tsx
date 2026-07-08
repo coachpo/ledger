@@ -346,7 +346,7 @@ describe("WorkflowPackageEditorPage resource editors", () => {
     expect(screen.getByText(/Package-local transport values/i)).toBeVisible();
   });
 
-  it("hides disabled extension-owned tools from authoring discovery and restores them", () => {
+  it("updates authoring discovery from the installed tool catalog", () => {
     useToolsMock.mockReturnValue({
       data: { items: [] },
       error: null,

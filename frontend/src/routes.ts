@@ -2,7 +2,6 @@ import type { ComponentType } from "react";
 import { createBrowserRouter } from "react-router";
 
 import { Layout } from "./components/layout";
-import { assembleFinanceWorkspaceRoutes } from "./extensions/runtime-helpers";
 import { RouteErrorPage } from "./pages/route-error";
 import { assertRouteMetadataCoverage } from "./routes.metadata";
 
@@ -12,19 +11,41 @@ type AppRouteDefinition = {
   path?: string;
 };
 
-const financeWorkspaceRoutes: AppRouteDefinition[] =
-  assembleFinanceWorkspaceRoutes();
-const platformRoutes: AppRouteDefinition[] = [
+const appRouteChildren: AppRouteDefinition[] = [
+  {
+    path: "templates",
+    lazy: async () => ({
+      Component: (await import("@/pages/templates/list")).TemplateListPage,
+    }),
+  },
+  {
+    path: "templates/new",
+    lazy: async () => ({
+      Component: (await import("@/pages/templates/editor")).TemplateEditorPage,
+    }),
+  },
+  {
+    path: "templates/:templateId/edit",
+    lazy: async () => ({
+      Component: (await import("@/pages/templates/editor")).TemplateEditorPage,
+    }),
+  },
+  {
+    path: "reports",
+    lazy: async () => ({
+      Component: (await import("@/pages/reports/list")).ReportListPage,
+    }),
+  },
+  {
+    path: "reports/:slug",
+    lazy: async () => ({
+      Component: (await import("@/pages/reports/detail")).ReportDetailPage,
+    }),
+  },
   {
     index: true,
     lazy: async () => ({
       Component: (await import("./pages/dashboard")).Dashboard,
-    }),
-  },
-  {
-    path: "extensions",
-    lazy: async () => ({
-      Component: (await import("./pages/extensions/list")).ExtensionsListPage,
     }),
   },
   {
@@ -122,11 +143,6 @@ const platformRoutes: AppRouteDefinition[] = [
       Component: (await import("./pages/not-found")).NotFoundPage,
     }),
   },
-];
-
-const appRouteChildren: AppRouteDefinition[] = [
-  ...financeWorkspaceRoutes,
-  ...platformRoutes,
 ];
 
 assertRouteMetadataCoverage(appRouteChildren);

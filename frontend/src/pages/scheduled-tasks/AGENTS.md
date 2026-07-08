@@ -57,7 +57,7 @@ scheduled-tasks/
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
 - Do not fetch schedules directly from pages; use `use-scheduled-tasks.ts`.
 - Do not store schedule query keys outside `queryKeys.platform.schedules`.
-- Do not treat Scheduled Tasks as extension-gated finance UI.
+- Do not treat Scheduled Tasks as finance-owned UI.
 - Do not reintroduce removed search/status filters, soft-delete mutations, or read-only deleted branches.
 - Do not derive run execution state from fire status when the linked run payload is available.
 

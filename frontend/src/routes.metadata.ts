@@ -1,13 +1,9 @@
 import { matchPath } from "react-router";
 
-import {
-  financeWorkspaceFrontendExtension,
-  FINANCE_WORKSPACE_LABEL,
-} from "@/extensions/signaldeck-finance";
-
 export const UNKNOWN_ROUTE_PATTERN = "*" as const;
 export const AGENT_PLATFORM_NAV_GROUP = "Agent Platform" as const;
-export const FINANCE_WORKSPACE_NAV_GROUP = FINANCE_WORKSPACE_LABEL;
+export const FINANCE_WORKSPACE_EXTENSION_KEY = "signaldeck.finance" as const;
+export const FINANCE_WORKSPACE_NAV_GROUP = "Finance Workspace" as const;
 export const SYSTEM_NAV_GROUP = "System" as const;
 
 export type AbsoluteRoutePath = `/${string}`;
@@ -51,7 +47,6 @@ export type RouteStateVariant =
   | "error"
   | "empty"
   | "filteredEmpty"
-  | "disabledExtension"
   | "unauthorized"
   | "notFound"
   | "creating"
@@ -66,8 +61,8 @@ export type RouteOwnership =
   | { kind: "platform" }
   | { kind: "system" }
   | {
-      extensionKey: string;
-      extensionLabel: string;
+      extensionKey: typeof FINANCE_WORKSPACE_EXTENSION_KEY;
+      extensionLabel: typeof FINANCE_WORKSPACE_NAV_GROUP;
       kind: "extension";
     }
   | { kind: "unknown" };
@@ -106,18 +101,126 @@ export type RouteNavGroupMetadata = {
   label: RouteNavGroup;
 };
 
-const financeRouteMetadata: RouteMetadata[] =
-  financeWorkspaceFrontendExtension.routeContributions.map((contribution) => ({
-    ...contribution.routeMetadata,
+export const liveRouteMetadata: readonly RouteMetadata[] = [
+  {
+    archetype: "inventory",
+    breadcrumb: { title: "Templates" },
+    nav: {
+      group: FINANCE_WORKSPACE_NAV_GROUP,
+      iconName: "FileText",
+      label: "Templates",
+      path: "/templates",
+      sidebar: true,
+      testId: "nav-templates",
+    },
     owner: {
-      extensionKey: contribution.requiredExtensionKey,
-      extensionLabel: FINANCE_WORKSPACE_LABEL,
+      extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      extensionLabel: FINANCE_WORKSPACE_NAV_GROUP,
       kind: "extension",
     },
-    pattern: contribution.path,
-  }));
-
-const platformAndSystemRouteMetadata = [
+    pattern: "/templates",
+    shellMode: "scroll",
+    widthMode: "wide",
+    stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
+    testId: "route-templates-list",
+  },
+  {
+    archetype: "editor",
+    breadcrumb: {
+      parent: { href: "/templates", title: "Templates" },
+      title: "New Template",
+    },
+    nav: {
+      group: FINANCE_WORKSPACE_NAV_GROUP,
+      iconName: "FileText",
+      label: "Templates",
+      path: "/templates",
+      sidebar: false,
+      testId: "nav-templates",
+    },
+    owner: {
+      extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      extensionLabel: FINANCE_WORKSPACE_NAV_GROUP,
+      kind: "extension",
+    },
+    pattern: "/templates/new",
+    shellMode: "fullHeight",
+    widthMode: "full",
+    stateVariants: ["creating", "saving", "error"],
+    testId: "route-template-new",
+  },
+  {
+    archetype: "editor",
+    breadcrumb: {
+      parent: { href: "/templates", title: "Templates" },
+      title: "Edit Template",
+    },
+    nav: {
+      group: FINANCE_WORKSPACE_NAV_GROUP,
+      iconName: "FileText",
+      label: "Templates",
+      path: "/templates",
+      sidebar: false,
+      testId: "nav-templates",
+    },
+    owner: {
+      extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      extensionLabel: FINANCE_WORKSPACE_NAV_GROUP,
+      kind: "extension",
+    },
+    pattern: "/templates/:templateId/edit",
+    shellMode: "fullHeight",
+    widthMode: "full",
+    stateVariants: ["loading", "editing", "saving", "error", "notFound"],
+    testId: "route-template-edit",
+  },
+  {
+    archetype: "inventory",
+    breadcrumb: { title: "Reports" },
+    nav: {
+      group: FINANCE_WORKSPACE_NAV_GROUP,
+      iconName: "ClipboardList",
+      label: "Reports",
+      path: "/reports",
+      sidebar: true,
+      testId: "nav-reports",
+    },
+    owner: {
+      extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      extensionLabel: FINANCE_WORKSPACE_NAV_GROUP,
+      kind: "extension",
+    },
+    pattern: "/reports",
+    shellMode: "scroll",
+    widthMode: "wide",
+    stateVariants: ["loading", "ready", "error", "empty", "filteredEmpty"],
+    testId: "route-reports-list",
+  },
+  {
+    archetype: "detail",
+    breadcrumb: {
+      parent: { href: "/reports", title: "Reports" },
+      title: "Report Detail",
+    },
+    nav: {
+      group: FINANCE_WORKSPACE_NAV_GROUP,
+      iconName: "ClipboardList",
+      label: "Reports",
+      path: "/reports",
+      sidebar: false,
+      testId: "nav-reports",
+    },
+    owner: {
+      extensionKey: FINANCE_WORKSPACE_EXTENSION_KEY,
+      extensionLabel: FINANCE_WORKSPACE_NAV_GROUP,
+      kind: "extension",
+    },
+    pattern: "/reports/:slug",
+    shellMode: "scroll",
+    widthMode: "wide",
+    stateVariants: ["loading", "editing", "saving", "error", "notFound"],
+    testId: "route-report-detail",
+  },
   {
     archetype: "dashboard",
     breadcrumb: { title: "Dashboard" },
@@ -135,24 +238,6 @@ const platformAndSystemRouteMetadata = [
     widthMode: "wide",
     stateVariants: ["loading", "ready", "error"],
     testId: "route-dashboard",
-  },
-  {
-    archetype: "systemState",
-    breadcrumb: { title: "Extensions" },
-    nav: {
-      group: SYSTEM_NAV_GROUP,
-      iconName: "Puzzle",
-      label: "Extensions",
-      path: "/extensions",
-      sidebar: true,
-      testId: "nav-extensions",
-    },
-    owner: { kind: "system" },
-    pattern: "/extensions",
-    shellMode: "scroll",
-    widthMode: "wide",
-    stateVariants: ["loading", "ready", "error", "empty"],
-    testId: "route-extensions",
   },
   {
     archetype: "inventory",
@@ -438,11 +523,6 @@ const platformAndSystemRouteMetadata = [
     stateVariants: ["loading", "ready", "error", "notFound", "polling"],
     testId: "route-run-detail",
   },
-] as const satisfies readonly RouteMetadata[];
-
-export const liveRouteMetadata: readonly RouteMetadata[] = [
-  ...financeRouteMetadata,
-  ...platformAndSystemRouteMetadata,
 ];
 
 export const unknownRouteMetadata: RouteMetadata = {

@@ -77,7 +77,7 @@ Don't move a one-off route widget into `components/shared` before there is real 
 Don't document removed route families as active migration targets.
 Don't put report-only, template-only, package-only, run-only, or extension-only request logic into shared components.
 
-Don't change API field names, query keys, route paths, or extension gates as part of a UI-only migration.
+Don't change API field names, query keys, route paths, or backend-owned tool contracts as part of a UI-only migration.
 
 Don't hide accessibility regressions behind visual parity. Search, filters, dialogs, tables, cards, and inspector panes still need labels, keyboard access, and visible focus.
 

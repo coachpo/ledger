@@ -39,7 +39,6 @@ const primaryShellNavTestIds = [
   "nav-model-connections",
   "nav-scheduled-tasks",
   "nav-runs",
-  "nav-extensions",
 ] as const;
 
 async function expectSingleRouteMain(

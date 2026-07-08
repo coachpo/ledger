@@ -279,14 +279,6 @@ test.describe("Unified shell responsive regression matrix", () => {
         widthMode: "wide",
       },
       {
-        archetype: "systemState",
-        pageTestId: "extensions-list-page",
-        routeTestId: "route-extensions",
-        shellMode: "scroll",
-        url: "/extensions",
-        widthMode: "wide",
-      },
-      {
         archetype: "inventory",
         pageTestId: "workflow-packages-list-page",
         routeTestId: "route-workflow-packages-list",
@@ -367,7 +359,6 @@ test.describe("Unified shell responsive regression matrix", () => {
         "editor",
         "detail",
         "console",
-        "systemState",
       ]),
     );
 

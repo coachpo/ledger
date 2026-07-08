@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for templates, reports, Workflow Packages, Scheduled Tasks, read-only Tools metadata for package authoring, Model Connections, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
 
-Extension model: backend extensions are statically installed. The remaining `use-extensions.ts` hook is a transitional cleanup target for Task 5.3, not a live backend state contract.
+Extension model: backend extensions are statically installed. Hooks consume backend-owned tool metadata directly from `/api/tools`; there is no frontend extension-state contract.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -24,7 +24,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 |---|---|---|
 | Template flows | `use-templates.ts` | list/detail CRUD, inline compile with runtime inputs, placeholder tree |
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
-| Transitional extension hook | `use-extensions.ts` | stale frontend host hook scheduled for Task 5.3 removal; do not add new callers |
 | Workflow Package flows | `use-workflow-packages.ts` | package list/detail, manifest CRUD, import, export, secret bindings, validation, preflight, launch, and installed tool reads |
 | Scheduled Task flows | `use-scheduled-tasks.ts` | schedule list/detail/fire queries plus create/update/delete/preview/run-now mutations and linked-run invalidation |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
@@ -41,7 +40,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Package-first platform hooks invalidate `queryKeys.platform.*` namespaces. Package mutations also refresh launch, preflight, and manifest/detail scopes so run-creation surfaces converge after edits/imports/deletes.
 - Scheduled Task hooks use `queryKeys.platform.schedules.*`; create/update/delete/run-now mutations refresh schedule lists/details/fire history and linked run keys so fire history and run detail converge after materialization or deletion.
 - Model-connection connection tests invalidate persisted last-test metadata after save/test flows.
-- Do not add new `useToggleExtension()` flows; backend extension toggles are removed and the existing hook is a Task 5.3 deletion target.
 - UI state hooks such as `useResourceFilterState()`, `useResourceSelectionState()`, and `useSplitInspectorState()` stay presentational and page-local; they coordinate shared shells but never fetch or invalidate server data.
 - `useCompileInline()` is a mutation because it represents explicit compile work rather than cached resource fetching; it accepts both template content and optional runtime inputs for `{{inputs...}}` preview resolution.
 - `useCompileReport()` is a mutation because report generation is a write that creates a persisted snapshot from a template and may include runtime inputs.
@@ -56,7 +54,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not mutate cache state ad hoc when invalidation helpers already model the scope.
 - Do not hide API errors in hooks; let the caller decide how to surface them.
 - Do not special-case report uploads or downloads in pages when the hooks/API modules already own the request behavior.
-- Do not add new `use-extensions.ts` dependencies; package flows should consume installed tool metadata through `useTools()`.
+- Do not reintroduce extension-state hooks; package flows should consume installed tool metadata through `useTools()`.
 - Do not move route-local UI state into this layer just because a page is busy.
 
 ## VALIDATION

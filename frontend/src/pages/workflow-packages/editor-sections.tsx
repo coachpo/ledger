@@ -1080,7 +1080,7 @@ export function CapabilityProfilesTab(props: {
           Add Profile
         </Button>
       }
-      description="Local capability profiles collect extension-filtered server-declared tool keys for package agents."
+      description="Local capability profiles collect installed server-declared tool keys for package agents."
       issues={issues}
       tab="capability-profiles"
       testId="workflow-package-capability-profiles-tab"

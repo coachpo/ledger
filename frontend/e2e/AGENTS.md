@@ -3,9 +3,7 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This directory owns Playwright browser coverage only.
 
 ## OVERVIEW
-Playwright specs exercise the built frontend against dedicated test servers. Coverage is route-family based across smoke/navigation, shell regression, templates/reports, Extensions, Workflow Packages, Scheduled Tasks, Model Connections, Runs, package regression/mock flows, and TradingAgents smoke.
-
-Extension model: statically resident extension gates.
+Playwright specs exercise the built frontend against dedicated test servers. Coverage is route-family based across smoke/navigation, shell regression, templates/reports, Workflow Packages, Scheduled Tasks, Model Connections, Runs, package regression/mock flows, and TradingAgents smoke.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -25,7 +23,6 @@ e2e/
 |-- smoke.spec.ts
 |-- navigation.spec.ts
 |-- shell-regression.spec.ts
-|-- extensions.spec.ts
 |-- reports.spec.ts
 |-- model-connections.spec.ts
 |-- runs.spec.ts

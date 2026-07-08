@@ -75,12 +75,11 @@ describe("query keys", () => {
     expect(queryKeys.platform.workflowPackages.all).not.toEqual(
       queryKeys.templates.all,
     );
-    expect(queryKeys.platform.extensions.detail("signaldeck.finance")).toEqual([
+    expect(queryKeys.platform.tools.list()).toEqual([
       "api",
       "platform",
-      "extensions",
-      "detail",
-      "signaldeck.finance",
+      "tools",
+      "list",
     ]);
   });
 

@@ -31,19 +31,16 @@ async function loadApiModule(baseUrl: string = "") {
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", baseUrl);
   const [
     apiClient,
-    extensionsApi,
     modelConnectionsApi,
     templatesApi,
   ] = await Promise.all([
     import("./api-client"),
-    import("./api/extensions"),
     import("./api/model-connections"),
     import("./api/templates"),
   ]);
 
   return {
     ...apiClient,
-    ...extensionsApi,
     ...modelConnectionsApi,
     ...templatesApi,
   };
@@ -133,11 +130,11 @@ describe("api client", () => {
             { field: "name", issue: "Required" },
             { field: "content", issue: "Required" },
             {
-              code: "extension_disabled",
-              extensionKey: "signaldeck.finance",
-              surface: "tool.marketQuote",
+              code: "provider_unavailable",
+              providerKey: "market-data",
+              surface: "tool.quoteLookup",
               retryAfterSeconds: 30,
-              enabled: false,
+              recoverable: true,
               optional: null,
             },
             {
@@ -172,11 +169,11 @@ describe("api client", () => {
         { field: "name", issue: "Required" },
         { field: "content", issue: "Required" },
         {
-          code: "extension_disabled",
-          extensionKey: "signaldeck.finance",
-          surface: "tool.marketQuote",
+          code: "provider_unavailable",
+          providerKey: "market-data",
+          surface: "tool.quoteLookup",
           retryAfterSeconds: 30,
-          enabled: false,
+          recoverable: true,
           optional: null,
         },
         { field: "credentials", issue: "Invalid credentials" },
@@ -256,32 +253,6 @@ describe("api client", () => {
 
     const { url } = getLastFetchCall(fetchMock);
     expect(url).toBe("https://signaldeck.example.com/api/model-connections");
-  });
-
-  it("lists and toggles extensions through the unversioned api base", async () => {
-    const { listExtensions, toggleExtension } = await loadApiModule(
-      "https://signaldeck.example.com/api/v1/",
-    );
-    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
-
-    await expect(listExtensions()).resolves.toEqual({ items: [] });
-    expect(getLastFetchCall(fetchMock).url).toBe(
-      "https://signaldeck.example.com/api/extensions",
-    );
-
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ key: "signaldeck.finance", enabled: false }, 200),
-    );
-    await expect(
-      toggleExtension("signaldeck.finance", { enabled: false }),
-    ).resolves.toMatchObject({ enabled: false, key: "signaldeck.finance" });
-
-    const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe(
-      "https://signaldeck.example.com/api/extensions/signaldeck.finance",
-    );
-    expect(init?.method).toBe("PATCH");
-    expect(init?.body).toBe(JSON.stringify({ enabled: false }));
   });
 
   it("encodes v1 path segments against the derived base URL", async () => {

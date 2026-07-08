@@ -167,17 +167,6 @@ const platformQueryKeys = {
         normalizeModelConnectionListParams(params),
       ] as const,
   },
-  extensions: {
-    all: [...platformApiRoot, "extensions"] as const,
-    detail: (extensionKey: IdParam) =>
-      [
-        ...platformApiRoot,
-        "extensions",
-        "detail",
-        normalizeId(extensionKey),
-      ] as const,
-    list: () => [...platformApiRoot, "extensions", "list"] as const,
-  },
   tools: {
     all: [...platformApiRoot, "tools"] as const,
     list: () => [...platformApiRoot, "tools", "list"] as const,

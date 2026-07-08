@@ -13,7 +13,6 @@ const reactQueryState = vi.hoisted(() => ({
 
 const toolDiscoveryState = vi.hoisted(() => ({
   listToolsMock: vi.fn(),
-  useExtensionsMock: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -49,18 +48,10 @@ vi.mock("@/lib/api/workflow-packages", () => ({
   validateWorkflowPackageManifest: vi.fn(),
 }));
 
-vi.mock("@/hooks/use-extensions", () => ({
-  useExtensions: () => toolDiscoveryState.useExtensionsMock(),
-}));
-
 vi.mock("@/lib/api/tools", () => ({
   listTools: (...args: unknown[]) => toolDiscoveryState.listToolsMock(...args),
 }));
 
-import {
-  DIGITAL_ORACLE_EXTENSION_KEY,
-  FINANCE_WORKSPACE_EXTENSION_KEY,
-} from "@/extensions";
 import {
   deleteWorkflowPackage,
   preflightWorkflowPackage,
@@ -93,32 +84,12 @@ describe("useWorkflowPackages", () => {
     reactQueryState.useQueryMock.mockReset();
     reactQueryState.capturedMutationOptions = null;
     toolDiscoveryState.listToolsMock.mockReset();
-    toolDiscoveryState.useExtensionsMock.mockReset();
-    toolDiscoveryState.useExtensionsMock.mockReturnValue({
-      data: {
-        items: [
-          {
-            enabled: true,
-            key: FINANCE_WORKSPACE_EXTENSION_KEY,
-            label: "Finance Workspace",
-          },
-          {
-            enabled: true,
-            key: DIGITAL_ORACLE_EXTENSION_KEY,
-            label: "Digital Oracle Runtime",
-          },
-        ],
-      },
-      error: null,
-      isError: false,
-      isPending: false,
-    });
     vi.mocked(deleteWorkflowPackage).mockReset();
     vi.mocked(preflightWorkflowPackage).mockReset();
     vi.mocked(validateWorkflowPackageManifest).mockReset();
   });
 
-  it("filters finance and Digital Oracle tools independently through extension state", () => {
+  it("returns installed tools without frontend extension filtering", () => {
     const toolCatalog = {
       items: [
         {
@@ -191,62 +162,6 @@ describe("useWorkflowPackages", () => {
         queryKey: queryKeys.platform.tools.list(),
       }),
     );
-
-    toolDiscoveryState.useExtensionsMock.mockReturnValue({
-      data: {
-        items: [
-          {
-            enabled: true,
-            key: FINANCE_WORKSPACE_EXTENSION_KEY,
-            label: "Finance Workspace",
-          },
-          {
-            enabled: false,
-            key: DIGITAL_ORACLE_EXTENSION_KEY,
-            label: "Digital Oracle Runtime",
-          },
-        ],
-      },
-      error: null,
-      isError: false,
-      isPending: false,
-    });
-
-    expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
-      "signaldeck.finance.reports.lookup",
-      "core.echo",
-    ]);
-
-    toolDiscoveryState.useExtensionsMock.mockReturnValue({
-      data: {
-        items: [
-          {
-            enabled: false,
-            key: FINANCE_WORKSPACE_EXTENSION_KEY,
-            label: "Finance Workspace",
-          },
-          {
-            enabled: true,
-            key: DIGITAL_ORACLE_EXTENSION_KEY,
-            label: "Digital Oracle Runtime",
-          },
-        ],
-      },
-      error: null,
-      isError: false,
-      isPending: false,
-    });
-
-    expect(useTools().data?.items.map((tool) => tool.key)).toEqual([
-      "signaldeck.digital_oracle.prediction_markets.lookup",
-      "signaldeck.digital_oracle.sec_filings.lookup",
-      "signaldeck.digital_oracle.market_sentiment.lookup",
-      "signaldeck.digital_oracle.macro_rates.lookup",
-      "signaldeck.digital_oracle.crypto_derivatives.lookup",
-      "signaldeck.digital_oracle.cftc_positioning.lookup",
-      "signaldeck.digital_oracle.options.lookup",
-      "core.echo",
-    ]);
   });
 
   it("uses package list and detail keys without live status filters", () => {
