@@ -12,6 +12,14 @@ _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
 _AGENT_PLATFORM_PENDING_SKIP_MESSAGE = (
     "Runtime row skipped during startup recovery because the parent run failed before it started."
 )
+_STALE_RUNNING_RUN_PREDICATE = """
+status = 'running'
+AND (
+    lease_owner IS NULL
+    OR lease_expires_at IS NULL
+    OR lease_expires_at < NOW()
+)
+"""
 
 
 def fail_inflight_runs(engine: Engine) -> int:
@@ -28,7 +36,9 @@ def fail_inflight_runs(engine: Engine) -> int:
                     error = COALESCE(NULLIF(error, ''), :restart_failure_message),
                     finished_at = COALESCE(finished_at, NOW()),
                     updated_at = NOW()
-                WHERE status = 'running'
+                WHERE """
+                + _STALE_RUNNING_RUN_PREDICATE
+                + """
                 """
             ),
             {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
@@ -37,12 +47,15 @@ def fail_inflight_runs(engine: Engine) -> int:
             connection.execute(
                 text(
                     """
-                    UPDATE run_steps
+                    UPDATE run_steps AS step
                     SET status = 'failed',
-                        error = COALESCE(NULLIF(error, ''), :restart_failure_message),
-                        finished_at = COALESCE(finished_at, NOW()),
+                        error = COALESCE(NULLIF(step.error, ''), :restart_failure_message),
+                        finished_at = COALESCE(step.finished_at, NOW()),
                         updated_at = NOW()
-                    WHERE status = 'running'
+                    FROM runs AS run
+                    WHERE step.run_id = run.id
+                      AND run.status = 'failed'
+                      AND step.status = 'running'
                     """
                 ),
                 {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
@@ -67,16 +80,22 @@ def fail_inflight_runs(engine: Engine) -> int:
             connection.execute(
                 text(
                     """
-                    UPDATE run_agent_invocations
+                    UPDATE run_agent_invocations AS invocation
                     SET status = 'failed',
-                        error_code = COALESCE(NULLIF(error_code, ''), 'startup_recovery'),
+                        error_code = COALESCE(
+                            NULLIF(invocation.error_code, ''),
+                            'startup_recovery'
+                        ),
                         error_message = COALESCE(
-                            NULLIF(error_message, ''),
+                            NULLIF(invocation.error_message, ''),
                             :restart_failure_message
                         ),
-                        finished_at = COALESCE(finished_at, NOW()),
+                        finished_at = COALESCE(invocation.finished_at, NOW()),
                         updated_at = NOW()
-                    WHERE status = 'running'
+                    FROM runs AS run
+                    WHERE invocation.run_id = run.id
+                      AND run.status = 'failed'
+                      AND invocation.status = 'running'
                     """
                 ),
                 {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
@@ -108,16 +127,22 @@ def fail_inflight_runs(engine: Engine) -> int:
             connection.execute(
                 text(
                     """
-                    UPDATE run_operation_invocations
+                    UPDATE run_operation_invocations AS operation
                     SET status = 'failed',
-                        error_code = COALESCE(NULLIF(error_code, ''), 'startup_recovery'),
+                        error_code = COALESCE(
+                            NULLIF(operation.error_code, ''),
+                            'startup_recovery'
+                        ),
                         error_message = COALESCE(
-                            NULLIF(error_message, ''),
+                            NULLIF(operation.error_message, ''),
                             :restart_failure_message
                         ),
-                        finished_at = COALESCE(finished_at, NOW()),
+                        finished_at = COALESCE(operation.finished_at, NOW()),
                         updated_at = NOW()
-                    WHERE status = 'running'
+                    FROM runs AS run
+                    WHERE operation.run_id = run.id
+                      AND run.status = 'failed'
+                      AND operation.status = 'running'
                     """
                 ),
                 {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
