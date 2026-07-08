@@ -4,16 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastapi import APIRouter
-from fastapi.params import Depends as DependsMarker
-
-
-@dataclass(frozen=True, slots=True)
-class BundledApiRouterContribution:
-    router: APIRouter
-    surface: str
-    dependencies: tuple[DependsMarker, ...] = ()
-
 
 @dataclass(frozen=True, slots=True)
 class BundledServerDeclaredToolContribution:
@@ -25,6 +15,5 @@ class BundledServerDeclaredToolContribution:
 
 
 __all__ = [
-    "BundledApiRouterContribution",
     "BundledServerDeclaredToolContribution",
 ]

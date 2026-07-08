@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers Pydantic schema rules.
 
 ## OVERVIEW
-`app/schemas/` defines request and response contracts with validation, serialization, camelCase aliasing, patch-payload semantics, preserved product payloads, extension state payloads, and current agent-platform payloads. Schemas inherit `CamelModel` for automatic snake_case ↔ camelCase conversion.
+`app/schemas/` defines request and response contracts with validation, serialization, camelCase aliasing, patch-payload semantics, preserved product payloads, and current agent-platform payloads. Schemas inherit `CamelModel` for automatic snake_case ↔ camelCase conversion.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -23,7 +23,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Market data schemas | `market_data.py` | quote/history payloads plus warning fields |
 | Template schemas | `text_template.py` | CRUD, inline compile, stored compile, placeholder tree |
 | Report schemas | `report.py` | read/update payloads plus metadata envelope |
-| Extension schemas | `extension.py` | statically resident extension list/read/toggle payloads with slim public state |
 | Agent-platform schemas | `workflow_package.py`, `workflow_package_manifest.py`, `schedule.py`, `model_connection.py`, `tool.py`, `run.py` | current `/api/*` request and response models |
 | Base/shared schema helpers | `common.py` | `CamelModel`, `TradingSide`, `OperationType`, shared validators |
 
@@ -35,7 +34,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Enums use string values such as `TradingSide.BUY.value == "BUY"` and `OperationType.DEPOSIT.value == "DEPOSIT"`.
 - Extra fields are forbidden to catch typos and unsupported payloads early.
 - Update schemas rely on `model_fields_set` to distinguish omitted fields from explicit null or empty updates.
-- `extension.py` keeps statically resident extension state aligned with `/api/extensions` and frontend route/tool gating. Public reads expose only `key`, `label`, and `enabled`; toggles accept only `enabled`.
 - Agent-platform schemas keep current package artifacts, typed package-local wiring, schedule recurrence/fire payloads, secret-safe model bindings, run-owned snapshots, and persisted run detail aligned with live `/api/*` contracts and frontend callers.
 
 ## ANTI-PATTERNS
@@ -45,8 +43,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not use `float` for money or quantity; keep `Decimal`, `int`, or `str` depending on the contract.
 - Do not bypass `CamelModel` aliasing; external JSON must stay camelCase.
 - Do not change template placeholder or compile payload shapes without updating the frontend types and editor.
-- Do not change preserved-product, extension, or agent-platform payload shapes without updating the corresponding backend routes, frontend types, and regression tests together.
-- Do not add plugin-manifest metadata to extension reads or run dependency records. Registry and scaffold data stay outside public schemas.
+- Do not change preserved-product or agent-platform payload shapes without updating the corresponding backend routes, frontend types, and regression tests together.
+- Do not add plugin-manifest metadata to run dependency records. Registry and scaffold data stay outside public schemas.
 
 ## VALIDATION
 ```bash
@@ -64,7 +62,6 @@ uv run pytest tests/test_api.py tests/test_workflow_package_runtime_api.py tests
 - `workflow_package.py` and `workflow_package_manifest.py` carry current package authoring, validation, import/export, preflight, launch, and artifact payloads.
 - `schedule.py` carries Scheduled Task list/detail/create/update/delete, structured recurrence, preview, fire history, and run-now contracts; raw cron is not a live schema shape.
 - `model_connection.py` normalizes OpenAI-family base URLs, rejects empty/null API-key updates, and keeps read payloads secret-safe.
-- `extension.py` exposes statically resident extension state and enable/disable toggle payloads only.
 - `tool.py` exposes read-only server-declared tool metadata.
 - `run.py` carries global run list/detail, backend-owned `progress` and nullable `queue` read models, package provenance, rerun, and per-step execution payloads.
 - Template schemas expose both inline compile (`POST /templates/compile`) and placeholder-tree browsing (`GET /templates/placeholders`), including report entries in `PlaceholderTreeRead`.

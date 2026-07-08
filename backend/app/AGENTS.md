@@ -37,10 +37,10 @@ app/
 | Task | Location | Notes |
 |---|---|---|
 | App bootstrap | `main.py` | `create_app()`, Logfire setup, health/readiness, `/api` and `/api/v1` mounting |
-| Current platform APIs | `api/platform_router.py`, `api/{workflow_packages,schedules,model_connections,extensions,tools,runs}.py` | live package-first platform routes under `/api` |
-| Preserved finance APIs | `api/router.py`, `extensions/signaldeck_finance/api_routers.py`, `api/{templates,reports}.py` | extension-contributed `/api/v1` routes gated by `signaldeck.finance` |
-| Dependency composition | `api/dependencies.py` | request-scoped sessions, extension service, ToolCatalog, provider bundles, run services |
-| Extension state and registrars | `extensions/registry.py`, `services/extension_service.py` | statically resident extension identity plus enabled-route/tool/provider filtering |
+| Current platform APIs | `api/platform_router.py`, `api/{workflow_packages,schedules,model_connections,tools,runs}.py` | live package-first platform routes under `/api` |
+| Preserved finance APIs | `api/router.py`, `api/{templates,reports}.py` | extension-contributed `/api/v1` routes from `INSTALLED_EXTENSIONS` |
+| Dependency composition | `api/dependencies.py` | request-scoped sessions, ToolCatalog, provider bundles, run services |
+| Extension contract | `extensions/{contract,registry}.py` | statically resident extension identity, routes, tools, runtime specs, and provider factories |
 | Runtime execution | `services/run_service.py`, `services/agent_execution_service.py`, `agents/runtime_tools/`, `agents/mcp/` | queued package execution, model calls, native tools, MCP dispatch, trace ids |
 | Scheduler process | `workers/run_scheduler.py` | separate worker entrypoint; not FastAPI lifespan work |
 | DB bootstrap | `db/session.py`, `db/seed.py`, `db/startup_recovery.py` | `create_all`, bundled package seeding, and stale-run recovery; no live Alembic path |
@@ -51,14 +51,14 @@ app/
 - Routers validate request shape and delegate. Services own business rules, readiness checks, transactions, provider orchestration, runtime execution, and rollback behavior.
 - Repositories own SQLAlchemy query mechanics only. Models own persistence shape and constraints. Schemas own external camelCase contracts through `CamelModel`.
 - Shared formatting, `ApiError`, settings, constants, and Logfire helpers belong in `core/`; do not duplicate them in routes or services.
-- Extension-owned behavior enters through `extensions/registry.py` registrar loaders and `ExtensionService` enabled-state filtering. Finance and Digital Oracle tool keys stay owner-qualified.
+- Extension-owned behavior enters through `extensions/registry.py` and each extension's static `EXTENSION` contract. Finance and Digital Oracle tool keys stay owner-qualified.
 - Workflow Package manifests, schedules, runs, and package-private MCP remain platform-core app contracts; global authoring surfaces stay removed.
 - The scheduler worker calls `init_db()` and executes queued runs in a separate process. FastAPI startup should not claim runs or materialize schedules inline.
 - Application LLM calls stay behind official SDK clients and gateway services, not raw HTTP helpers.
 
 ## ANTI-PATTERNS
 - Do not add auth, RBAC, tenant/account ownership, login/session, or account-management app plumbing unless product scope changes.
-- Do not bypass `ExtensionService`, registry loaders, or extension gates to expose routes, tools, or providers.
+- Do not bypass `INSTALLED_EXTENSIONS` or extension-owned factories to expose routes, tools, or providers.
 - Do not move Finance Workspace or Digital Oracle behavior into generic app services without an explicit shared-contract decision and coordinated tests/docs.
 - Do not resurrect global agents, workflows, capabilities, standalone MCP servers, output schemas, skills, Studio, Tryout, orchestration, runtime-v2, or simulations routes.
 - Do not treat Alembic scaffolds, docs, frontend output, or cache directories as backend app source of truth.

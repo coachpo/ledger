@@ -38,7 +38,6 @@ class ToolFailureClass(StrEnum):
     AUTH = "auth"
     PERMISSION = "permission"
     GRANT = "grant"
-    EXTENSION_DISABLED = "extension_disabled"
     SECRET_CONTEXT = "secret_context"
     UNSUPPORTED_TOOL = "unsupported_tool"
     PROVIDER_NETWORK = "provider_network"
@@ -137,11 +136,6 @@ GRANT_FAILURE = ToolFailureClassification(
     source=ToolFailureSource.PLATFORM,
     phase=ToolFailurePhase.DISPATCH,
 )
-EXTENSION_DISABLED_FAILURE = ToolFailureClassification(
-    failure_class=ToolFailureClass.EXTENSION_DISABLED,
-    source=ToolFailureSource.PLATFORM,
-    phase=ToolFailurePhase.DISPATCH,
-)
 SECRET_CONTEXT_FAILURE = ToolFailureClassification(
     failure_class=ToolFailureClass.SECRET_CONTEXT,
     source=ToolFailureSource.MODEL_CONNECTION,
@@ -208,7 +202,6 @@ _ERROR_CODE_CLASSIFICATIONS: Final[dict[str, ToolFailureClassification]] = {
     "agent_provider_timeout": PROVIDER_NETWORK_FAILURE,
     "agent_result_invalid": EXECUTOR_FAILURE,
     "capability_tool_keys_invalid": GRANT_FAILURE,
-    "extension_disabled": EXTENSION_DISABLED_FAILURE,
     "mcp_runtime_transport_error": MCP_TRANSPORT_FAILURE,
     "mcp_runtime_transport_unavailable": MCP_TRANSPORT_FAILURE,
     "mcp_server_disabled": MCP_TRANSPORT_FAILURE,
@@ -278,7 +271,6 @@ __all__ = [
     "AUTH_FAILURE",
     "BUSINESS_RULE_FAILURE",
     "EXECUTOR_FAILURE",
-    "EXTENSION_DISABLED_FAILURE",
     "GRANT_FAILURE",
     "MCP_TOOL_ARGUMENT_JSON_INVALID",
     "MCP_TOOL_ARGUMENT_SCHEMA_INVALID",

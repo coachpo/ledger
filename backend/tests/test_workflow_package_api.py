@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.formatting import utcnow
-from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackage
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
@@ -259,23 +258,11 @@ def test_validate_manifest_accepts_private_mcp_and_http_demo_variants(
         assert metadata["key"] == package_key
 
 
-def test_default_enabled_finance_extension_keeps_smoke_package_tools_unchanged(
+def test_static_finance_extension_keeps_smoke_package_tools_unchanged(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
     _seed_model_connection(session_factory)
-
-    extensions_response = client.get("/api/extensions")
-    assert extensions_response.status_code == 200, extensions_response.json()
-    extension_items = cast(list[dict[str, object]], extensions_response.json()["items"])
-    finance_extension = next(
-        item for item in extension_items if item["key"] == FINANCE_WORKSPACE_EXTENSION_KEY
-    )
-    assert finance_extension == {
-        "key": FINANCE_WORKSPACE_EXTENSION_KEY,
-        "label": "Finance Workspace",
-        "enabled": True,
-    }
 
     created = _create_package(client)
     manifest_response = client.get(f"/api/workflow-packages/{created['id']}/manifest")

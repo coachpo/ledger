@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 from sqlalchemy.orm import Session
 
-from app.agents import get_default_tool_catalog
 from app.extensions.signaldeck_finance.ownership import (
     FINANCE_WORKSPACE_DENIED_CODE,
     FINANCE_WORKSPACE_DENIED_MESSAGES,
@@ -16,11 +15,11 @@ from app.extensions.signaldeck_finance.runtime_types import (
 )
 from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
 
-REPORT_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
+REPORT_LOOKUP_ACCESS_DENIED_CODE: str = FINANCE_WORKSPACE_DENIED_CODE
 MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
 MARKET_DATA_HISTORY_LOOKUP_ACCESS_DENIED_CODE = FINANCE_WORKSPACE_DENIED_CODE
 
-REPORT_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[REPORT_LOOKUP_TOOL_KEY]
+REPORT_LOOKUP_ACCESS_DENIED_MESSAGE: str = FINANCE_WORKSPACE_DENIED_MESSAGES[REPORT_LOOKUP_TOOL_KEY]
 MARKET_DATA_QUOTE_LOOKUP_ACCESS_DENIED_MESSAGE = FINANCE_WORKSPACE_DENIED_MESSAGES[
     MARKET_DATA_QUOTE_LOOKUP_TOOL_KEY
 ]
@@ -51,6 +50,8 @@ def require_finance_runtime_tool_grant(
     capability_references: Sequence[dict[str, object]],
     grant_policy: RuntimeToolGrantPolicy,
 ) -> None:
+    from app.agents import get_default_tool_catalog
+
     RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
         capability_references=capability_references,
         grant_policy=grant_policy,

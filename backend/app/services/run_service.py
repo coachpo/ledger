@@ -75,8 +75,7 @@ from app.services.execution_plan import (
     PackageRuntimeAgentSpec,
 )
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.extension_dependency_service import ExtensionDependencyService
-from app.services.extension_service import ExtensionService
+from app.services.extension_dependencies import normalize_extension_dependency_payloads
 from app.services.http_operation_execution_service import (
     HttpOperationExecutionError,
     HttpOperationExecutionResult,
@@ -192,8 +191,6 @@ class RunService:
         preflight_service_factory: Callable[
             [Session], WorkflowPackagePreflightService
         ] = WorkflowPackagePreflightService,
-        extension_service: ExtensionService | None = None,
-        extension_service_factory: Callable[[Session], ExtensionService] = ExtensionService,
         queue_service_factory: RunQueueServiceFactory = _default_run_queue_service_factory,
     ) -> None:
         self.session = session
@@ -201,9 +198,6 @@ class RunService:
         self.provider_bundle: ExecutionProviderBundle = provider_bundle or ExecutionProviderBundle()
         self.preflight_service: WorkflowPackagePreflightService = (
             preflight_service or preflight_service_factory(session)
-        )
-        self.extension_service: ExtensionService = extension_service or extension_service_factory(
-            session
         )
         self.queue_service_factory: RunQueueServiceFactory = queue_service_factory
         self.run_repository = RunRepository(session)
@@ -575,9 +569,7 @@ class RunService:
     ) -> list[dict[str, Any]]:
         if workflow_package is None:
             return []
-        return ExtensionDependencyService.normalize_dependency_payloads(
-            workflow_package.extension_dependencies
-        )
+        return normalize_extension_dependency_payloads(workflow_package.extension_dependencies)
 
     def _workflow_package_snapshot_for_plan(
         self,
@@ -617,48 +609,11 @@ class RunService:
             preflight_summary=self._preflight_summary_payload(preflight),
         )
 
-    def _assert_run_extension_dependencies_enabled(self, run: Run) -> None:
-        if run.target_kind != RunTargetKind.WORKFLOW_PACKAGE.value:
-            return
-        dependencies = ExtensionDependencyService.normalize_dependency_payloads(
-            run.extension_dependencies
-        )
-        if not dependencies:
-            return
-        for dependency in dependencies:
-            extension_key = str(dependency.get("extensionKey") or "")
-            if not extension_key:
-                continue
-            _ = self.extension_service.require_enabled(
-                extension_key,
-                surface=self._preferred_extension_dependency_surface(
-                    dependency,
-                    fallback=f"workflowPackage.{run.target_key}",
-                ),
-            )
-
-    @staticmethod
-    def _preferred_extension_dependency_surface(
-        dependency: dict[str, Any],
-        *,
-        fallback: str,
-    ) -> str:
-        surfaces = dependency.get("surfaces")
-        if not isinstance(surfaces, list):
-            return fallback
-        for prefix in ("tool.", "runtime.tool.", "mcp.", "provider."):
-            for surface in surfaces:
-                if isinstance(surface, str) and surface.startswith(prefix):
-                    return surface
-        return str(surfaces[0]) if surfaces else fallback
-
     @staticmethod
     def _run_extension_dependency_keys(run: Run) -> set[str]:
         return {
             str(dependency.get("extensionKey") or "")
-            for dependency in ExtensionDependencyService.normalize_dependency_payloads(
-                run.extension_dependencies
-            )
+            for dependency in normalize_extension_dependency_payloads(run.extension_dependencies)
             if str(dependency.get("extensionKey") or "")
         }
 
@@ -985,7 +940,7 @@ class RunService:
             scheduled_for=None,
             schedule_reason=None,
             schedule_provenance=None,
-            extension_dependencies=ExtensionDependencyService.normalize_dependency_payloads(
+            extension_dependencies=normalize_extension_dependency_payloads(
                 source_run.extension_dependencies
             ),
             input=validated_input,
@@ -1168,7 +1123,6 @@ class RunService:
         run = self.run_repository.get_detail(run_id)
         if run is None or not self._run_claim_is_active(run, lease_owner=lease_owner):
             return
-        self._assert_run_extension_dependencies_enabled(run)
         if run.started_at is None:
             run.started_at = utcnow()
             self.session.commit()

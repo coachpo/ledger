@@ -4,7 +4,7 @@ from collections.abc import ItemsView, Iterator, ValuesView
 from functools import lru_cache
 
 from app.extensions import BundledServerDeclaredToolContribution as ServerDeclaredToolSpec
-from app.extensions.registry import get_bundled_extension_registry
+from app.extensions.registry import INSTALLED_EXTENSIONS
 
 CORE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = ()
 
@@ -12,7 +12,11 @@ CORE_SERVER_DECLARED_TOOL_SPECS: tuple[ServerDeclaredToolSpec, ...] = ()
 def _load_server_declared_tool_specs() -> tuple[ServerDeclaredToolSpec, ...]:
     return (
         *CORE_SERVER_DECLARED_TOOL_SPECS,
-        *get_bundled_extension_registry().list_server_declared_tool_contributions(),
+        *(
+            declaration
+            for extension in INSTALLED_EXTENSIONS
+            for declaration in extension.tool_declarations
+        ),
     )
 
 
@@ -35,17 +39,6 @@ def get_server_declared_tool_specs() -> tuple[ServerDeclaredToolSpec, ...]:
 @lru_cache(maxsize=1)
 def get_server_declared_tool_registry() -> dict[str, ServerDeclaredToolSpec]:
     return _registry_by_key(get_server_declared_tool_specs())
-
-
-def enabled_server_declared_tool_registry(
-    *,
-    enabled_extension_keys: set[str],
-) -> dict[str, ServerDeclaredToolSpec]:
-    return {
-        key: spec
-        for key, spec in get_server_declared_tool_registry().items()
-        if spec.owner_extension_key is None or spec.owner_extension_key in enabled_extension_keys
-    }
 
 
 class _LazyServerDeclaredToolSpecs:
@@ -87,7 +80,6 @@ __all__ = [
     "SERVER_DECLARED_TOOL_REGISTRY",
     "SERVER_DECLARED_TOOL_SPECS",
     "ServerDeclaredToolSpec",
-    "enabled_server_declared_tool_registry",
     "get_server_declared_tool_registry",
     "get_server_declared_tool_specs",
 ]

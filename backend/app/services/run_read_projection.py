@@ -26,7 +26,7 @@ from app.schemas.run import (
     RunStepStatus,
     RunTargetKind,
 )
-from app.services.extension_dependency_service import ExtensionDependencyService
+from app.services.extension_dependencies import normalize_extension_dependency_payloads
 
 _WorkflowPackageSnapshotResolver = Callable[[Run], RunWorkflowPackageSnapshot]
 
@@ -166,7 +166,7 @@ class RunReadProjection:
                         key=lambda item: (item.step_index, item.id),
                     )
                 ],
-                "extensionDependencies": ExtensionDependencyService.normalize_dependency_payloads(
+                "extensionDependencies": normalize_extension_dependency_payloads(
                     run.extension_dependencies
                 ),
                 "packageProvenance": self._package_provenance_payload(run),

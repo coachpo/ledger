@@ -8,7 +8,7 @@
 
 `docs/` has six canonical live owner documents: `prd.md`, `requirements.md`, `spec.md`, `data-model.md`, `test-plan.md`, and this `AGENTS.md`. Live code remains source of truth; these docs mirror the mounted browser/API surfaces and current persistence/runtime contracts, including package-first execution, backend-owned capability and runtime-profile truth, and finance-owned report history.
 
-Extension model: docs mirror the core app plus statically resident extensions; they should describe state-gated exposure, not marketplace installation or hot-loading.
+Extension model: docs mirror the core app plus statically installed extensions; they should describe static contracts, not marketplace installation, hot-loading, or runtime enable/disable state.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import Settings, get_settings
 from app.db.engine import get_session_factory
 from app.db.session import init_db
-from app.services.extension_service import ExtensionService
+from app.extensions.registry import build_execution_provider_bundle
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
 from app.services.workflow_package_schedule_materializer import WorkflowPackageScheduleMaterializer
@@ -170,14 +170,11 @@ class RunSchedulerWorker:
         return recovered_count
 
     def _run_executor(self, session: Session) -> RunService:
-        extension_service_class = ExtensionService
-        extension_service = extension_service_class(session)
         run_service_class = RunService
         return run_service_class(
             session,
             self.session_factory,
-            provider_bundle=extension_service.get_execution_provider_bundle(),
-            extension_service=extension_service,
+            provider_bundle=build_execution_provider_bundle(),
         )
 
     def _execute_claimed_run(self, scheduled_run: ScheduledRun) -> None:

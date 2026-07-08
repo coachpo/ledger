@@ -27,9 +27,7 @@ from app.agents.runtime_tools.failure_taxonomy import (
     MCP_TRANSPORT_FAILURE,
 )
 from app.agents.runtime_tools.types import RuntimeToolError
-from app.core.errors import ApiError
 from app.schemas.mcp_server import McpToolSnapshot
-from app.services.extension_service import ExtensionService
 
 _MAX_MCP_OUTPUT_LENGTH = 16_384
 
@@ -163,23 +161,15 @@ class McpRuntimeResolver:
     ) -> McpRuntimeDispatcher:
         if not enabled or not mcp_server_refs:
             return McpRuntimeDispatcher(tools=[], client=client, timeout_seconds=timeout_seconds)
-        with self.session_factory() as session:
-            extension_service = ExtensionService(session)
-            tools: list[McpRuntimeTool] = []
-            seen_functions: set[str] = set(reserved_function_names or ())
-            for ref in mcp_server_refs:
-                if not _is_package_private_ref(ref):
-                    raise RuntimeToolError(
-                        code="mcp_global_server_ref_removed",
-                        message="Global MCP server references are not supported at runtime.",
-                    )
-                tools.extend(
-                    _package_private_tools_from_ref(
-                        ref,
-                        seen_functions=seen_functions,
-                        extension_service=extension_service,
-                    )
+        tools: list[McpRuntimeTool] = []
+        seen_functions: set[str] = set(reserved_function_names or ())
+        for ref in mcp_server_refs:
+            if not _is_package_private_ref(ref):
+                raise RuntimeToolError(
+                    code="mcp_global_server_ref_removed",
+                    message="Global MCP server references are not supported at runtime.",
                 )
+            tools.extend(_package_private_tools_from_ref(ref, seen_functions=seen_functions))
         return McpRuntimeDispatcher(tools=tools, client=client, timeout_seconds=timeout_seconds)
 
 
@@ -191,7 +181,6 @@ def _package_private_tools_from_ref(
     ref: Mapping[str, object],
     *,
     seen_functions: set[str],
-    extension_service: ExtensionService,
 ) -> list[McpRuntimeTool]:
     key = str(ref.get("key") or "").strip().lower()
     if not key:
@@ -234,7 +223,6 @@ def _package_private_tools_from_ref(
         descriptor = _package_private_descriptor_for_tool(
             tool_name,
             descriptors=descriptors,
-            extension_service=extension_service,
         )
         _remember_openai_function(descriptor.openai_function_name, seen_functions)
         snapshot = _snapshot_from_descriptor(descriptor)
@@ -305,7 +293,6 @@ def _package_private_descriptor_for_tool(
     tool_name: str,
     *,
     descriptors: Mapping[str, ExecutionToolDescriptor],
-    extension_service: ExtensionService,
 ) -> ExecutionToolDescriptor:
     normalized_tool_name = tool_name.strip().lower()
     try:
@@ -320,7 +307,6 @@ def _package_private_descriptor_for_tool(
         )
     _require_package_private_descriptor_owner(
         descriptor,
-        extension_service=extension_service,
         tool_name=normalized_tool_name,
     )
     return descriptor
@@ -329,7 +315,6 @@ def _package_private_descriptor_for_tool(
 def _require_package_private_descriptor_owner(
     descriptor: ExecutionToolDescriptor,
     *,
-    extension_service: ExtensionService,
     tool_name: str,
 ) -> None:
     owner_extension_key = descriptor.owner_extension_key
@@ -338,17 +323,6 @@ def _require_package_private_descriptor_owner(
             code="mcp_tool_owner_missing",
             message=f"Package-private MCP tool {tool_name!r} is missing extension ownership.",
         )
-    try:
-        _ = extension_service.require_enabled(
-            owner_extension_key,
-            surface=f"mcp.packagePrivate.{tool_name}",
-        )
-    except ApiError as exc:
-        raise RuntimeToolError(
-            code=exc.code,
-            message=exc.message,
-            details=[dict(detail) for detail in exc.details],
-        ) from exc
 
 
 def _snapshot_from_descriptor(descriptor: ExecutionToolDescriptor) -> McpToolSnapshot:

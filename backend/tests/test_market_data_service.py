@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
+from app.extensions.registry import INSTALLED_EXTENSIONS
 from app.extensions.signaldeck_finance import provider_factories
 from app.extensions.signaldeck_finance.config import FinanceWorkspaceSettings
 from app.extensions.signaldeck_finance.services.market_data_service import MarketDataService
@@ -68,15 +69,15 @@ class _NewsProvider:
 
 
 @pytest.fixture()
-def news_service_factory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Callable[[object], MarketDataService]:
-    monkeypatch.setattr(MarketDataService, "_require_enabled", lambda self: None)
+def news_service_factory() -> Callable[[object], MarketDataService]:
     return _service
 
 
 def test_market_data_provider_factories_are_extension_owned() -> None:
-    registrations = dict(provider_factories.register())
+    finance = next(
+        extension for extension in INSTALLED_EXTENSIONS if extension.key == "signaldeck.finance"
+    )
+    registrations = finance.provider_factories
 
     assert "quote_provider" in registrations
     assert "news_providers" in registrations

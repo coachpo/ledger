@@ -53,3 +53,9 @@ def test_finance_extension_declares_static_api_routers() -> None:
         "/reports",
         "/templates",
     }
+
+
+def test_extension_management_api_is_not_mounted(client) -> None:
+    response = client.get("/api/extensions")
+
+    assert response.status_code == 404

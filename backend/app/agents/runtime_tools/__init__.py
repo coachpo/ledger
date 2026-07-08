@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from functools import lru_cache
-from importlib import import_module
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 from app.agents.runtime_tools.declarations import (
     SignalDeckToolDeclaration,
@@ -12,22 +10,16 @@ from app.agents.runtime_tools.declarations import (
 from app.agents.runtime_tools.registry import RuntimeToolRegistry
 from app.agents.runtime_tools.types import RuntimeToolContext, RuntimeToolError, RuntimeToolSpec
 
-
-class _RuntimeContributionRegistry(Protocol):
-    def list_runtime_tool_contributions(self) -> tuple[RuntimeToolSpec, ...]: ...
-
-
 if TYPE_CHECKING:
     RUNTIME_TOOL_SPECS: tuple[RuntimeToolSpec, ...]
 
 
 def _load_runtime_tool_specs() -> tuple[RuntimeToolSpec, ...]:
-    registry_module = import_module("app.extensions.registry")
-    get_registry = cast(
-        Callable[[], _RuntimeContributionRegistry],
-        registry_module.__dict__["get_bundled_extension_registry"],
+    from app.extensions.registry import INSTALLED_EXTENSIONS
+
+    return tuple(
+        spec for extension in INSTALLED_EXTENSIONS for spec in extension.runtime_tool_specs
     )
-    return get_registry().list_runtime_tool_contributions()
 
 
 @lru_cache

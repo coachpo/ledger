@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.agents.runtime_tools import get_default_runtime_tool_registry
 from app.core.errors import ApiError
 from app.extensions.signaldeck_digital_oracle.ownership import DIGITAL_ORACLE_EXTENSION_KEY
 from app.extensions.signaldeck_digital_oracle.runtime_types import (
@@ -34,7 +35,6 @@ from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
     WorkflowPackageScheduleFire,
 )
-from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.model_connection import (
     ModelConnectionProtocolProfile,
     default_model_connection_capabilities,
@@ -50,7 +50,6 @@ from app.schemas.schedule import (
     ScheduleStatus,
 )
 from app.services.agent_execution_service import AgentExecutionService
-from app.services.extension_service import ExtensionService
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.run_queue_service import RunQueueService
 from app.services.run_service import RunService
@@ -872,9 +871,8 @@ def test_digital_oracle_package_local_system_prompt_receives_runtime_tool_guidan
     }
     assert granted_tool_keys == set(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS)
 
-    with session_factory() as session:
-        registry = ExtensionService(session).get_runtime_tool_registry()
-        guidance = registry.get_guidance(granted_tool_keys)
+    registry = get_default_runtime_tool_registry()
+    guidance = registry.get_guidance(granted_tool_keys)
 
     instructions = AgentExecutionService._build_model_instructions(
         runtime_agent,
@@ -908,10 +906,9 @@ def test_digital_oracle_researcher_demo_builds_execution_plan_with_package_local
         tool_key for profile in runtime_agent.capability_profiles for tool_key in profile.tool_keys
     }
 
-    with session_factory() as session:
-        registry = ExtensionService(session).get_runtime_tool_registry()
-        guidance = registry.get_guidance(granted_tool_keys)
-        declarations = registry.get_tool_declarations(granted_tool_keys)
+    registry = get_default_runtime_tool_registry()
+    guidance = registry.get_guidance(granted_tool_keys)
+    declarations = registry.get_tool_declarations(granted_tool_keys)
 
     instructions = AgentExecutionService._build_model_instructions(
         runtime_agent,
@@ -965,10 +962,9 @@ def test_digital_oracle_guidance_respects_capability_profile_tool_grants(
     }
     assert granted_tool_keys == set(granted_profile_tool_keys)
 
-    with session_factory() as session:
-        registry = ExtensionService(session).get_runtime_tool_registry()
-        guidance = registry.get_guidance(granted_tool_keys)
-        declarations = registry.get_tool_declarations(granted_tool_keys)
+    registry = get_default_runtime_tool_registry()
+    guidance = registry.get_guidance(granted_tool_keys)
+    declarations = registry.get_tool_declarations(granted_tool_keys)
 
     instructions = AgentExecutionService._build_model_instructions(
         runtime_agent,
@@ -2192,14 +2188,6 @@ spec:
 """
 
 
-def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
-    with session_factory() as session:
-        _ = ExtensionService(session).set_extension_enabled(
-            FINANCE_WORKSPACE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False),
-        )
-
-
 def test_digital_oracle_guidance_launch_persists_digital_oracle_extension_dependencies(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -2323,99 +2311,6 @@ def test_run_dependency_snapshot_is_copied_from_current_package(
     stable_detail_response = client.get(f"/api/runs/{run_id}")
     assert stable_detail_response.status_code == 200, stable_detail_response.json()
     assert stable_detail_response.json()["extensionDependencies"] == frozen_dependencies
-
-
-def test_package_private_mcp_dependency_snapshot_blocks_disabled_extension_runtime(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_tradingagents_model_connection(session_factory)
-    create_response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _mcp_only_package_source("mcp_dependency_package")},
-    )
-    assert create_response.status_code == 201, create_response.json()
-    package = cast(dict[str, Any], create_response.json())
-    launch_response = client.post(
-        f"/api/workflow-packages/{package['id']}/launches",
-        json={"workflowKey": "mcp_flow", "parameters": {}},
-    )
-    assert launch_response.status_code == 201, launch_response.json()
-    run_id = int(launch_response.json()["id"])
-    queued_detail = client.get(f"/api/runs/{run_id}")
-    assert queued_detail.status_code == 200, queued_detail.json()
-    dependency = cast(list[dict[str, object]], queued_detail.json()["extensionDependencies"])[0]
-    surfaces = set(cast(list[str], dependency["surfaces"]))
-    assert "mcp.packagePrivate.web_search_exa" in surfaces
-    assert "tool.signaldeck.finance.market_data.quote_lookup" not in surfaces
-
-    _disable_finance_extension(session_factory)
-    with session_factory() as session:
-        RunService(session, session_factory).execute_run(run_id)
-
-    failed_detail = client.get(f"/api/runs/{run_id}")
-    assert failed_detail.status_code == 200, failed_detail.json()
-    assert failed_detail.json()["status"] == "failed"
-    assert failed_detail.json()["error"] == "Extension is disabled"
-
-
-def test_tradingagents_advisory_research_launch_blocks_extension_disabled(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_tradingagents_model_connection(session_factory)
-    package = _create_tradingagents_package(client)
-    _disable_finance_extension(session_factory)
-
-    launch_response = client.post(
-        f"/api/workflow-packages/{package['id']}/launches",
-        json={
-            "workflowKey": "advisory_research",
-            "parameters": _tradingagents_parameters(),
-        },
-    )
-
-    assert launch_response.status_code == 422, launch_response.json()
-    body = launch_response.json()
-    assert body["code"] == "validation_error"
-    details = cast(list[dict[str, object]], body["details"])
-    assert any(
-        detail.get("code") == "extension_disabled"
-        and detail.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        for detail in details
-    )
-
-
-def test_tradingagents_advisory_research_runtime_fails_when_extension_disabled_after_launch(
-    client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_tradingagents_model_connection(session_factory)
-    package = _create_tradingagents_package(client)
-    launch_response = client.post(
-        f"/api/workflow-packages/{package['id']}/launches",
-        json={
-            "workflowKey": "advisory_research",
-            "parameters": _tradingagents_parameters(),
-        },
-    )
-    assert launch_response.status_code == 201, launch_response.json()
-    run_id = int(launch_response.json()["id"])
-    _disable_finance_extension(session_factory)
-
-    with session_factory() as session:
-        RunService(session, session_factory).execute_run(run_id)
-
-    detail_response = client.get(f"/api/runs/{run_id}")
-    assert detail_response.status_code == 200, detail_response.json()
-    detail = detail_response.json()
-    assert detail["status"] == "failed"
-    assert detail["error"] == "Extension is disabled"
-    dependencies = cast(list[dict[str, object]], detail["extensionDependencies"])
-    assert set(dependencies[0]) == {"extensionKey", "surfaces", "fields"}
 
 
 def test_tradingagents_materializer_persists_workflow_key_snapshots_for_canonical_schedules(

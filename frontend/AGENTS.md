@@ -3,9 +3,9 @@
 > Inherits root rules from `/AGENTS.md`. Local frontend docs live in `src/components/shared/docs/`, `e2e/`, and throughout the high-signal `src/**/AGENTS.md` boundaries.
 
 ## OVERVIEW
-React 19 + Vite frontend with a flat, metadata-driven route shell, TanStack Query for server state, extension-assembled Finance Workspace routes, routed workspace areas for Extensions, Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus shared inventory/workspace UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface; Scheduled Tasks are the package-first automation surface for recurring runs.
+React 19 + Vite frontend with a flat, metadata-driven route shell, TanStack Query for server state, Finance Workspace template/report routes, routed workspace areas for Workflow Packages, Scheduled Tasks, Model Connections, and Runs, plus shared inventory/workspace UI that keeps route logic thin. Workflow Packages are the only live executable agent workflow authoring and launch surface; Scheduled Tasks are the package-first automation surface for recurring runs.
 
-Extension model: SignalDeck Core ships statically resident extensions in code, while frontend state and gates decide which routes, nav items, and tool pickers are exposed.
+Extension model: SignalDeck Core ships statically installed backend extensions in code. The remaining frontend extension host/state files are transitional cleanup targets for Task 5.3; do not add new route gates, tool filters, or extension-management UI around them.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -25,14 +25,14 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `DESIGN.md` — source of truth for frontend page layout, shared shells, tokens, and management UI patterns
 - `src/components/shared/docs/README.md` — frontend token, layout, shared-component, and migration rules
 - `e2e/AGENTS.md` — Playwright fixed-port startup, route-family specs, and E2E conventions
-- `src/extensions/AGENTS.md` — frontend extension registry, route/nav/tool filtering, Finance Workspace scaffold, and Digital Oracle tool-only scaffold
+- `src/extensions/AGENTS.md` — transitional frontend extension host scheduled for Task 5.3 removal
 - `src/lib/AGENTS.md` — API client, query keys, formatting, runtime-input helpers, platform-authoring helpers, and shared types
 - `src/lib/api/AGENTS.md` — resource API modules for uploads, downloads, and route helpers
 - `src/lib/types/AGENTS.md` — shared frontend wire contracts mirroring backend schemas
 - `src/lib/platform-authoring/AGENTS.md` and child docs — pure schema/value/ref/manifest authoring helpers
 - `src/hooks/AGENTS.md` — TanStack Query wrappers and invalidation patterns
 - `src/pages/AGENTS.md` — routed page components and route-family orchestration patterns
-- `src/pages/extensions/AGENTS.md` — `/extensions` system state route, slim statically resident extension contract, and toggle behavior
+- `src/pages/extensions/AGENTS.md` — transitional `/extensions` route scheduled for Task 5.3 removal
 - `src/pages/model-connections/AGENTS.md` — global model endpoint inventory/editor, write-only secrets, and connection-test flows
 - `src/pages/reports/AGENTS.md` — report inventory/detail, upload, generation, grouping, batch actions, and markdown editing
 - `src/pages/templates/AGENTS.md` — stored-template inventory/editor, inline compile preview, runtime inputs, and saved-template report generation
@@ -52,7 +52,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ```text
 frontend/
 ├── src/components/shared/docs/ # frontend design-system rules for tokens, shared UI, and route migration
-├── src/extensions/     # frontend extension registry, route/nav assembly, and tool filtering
+├── src/extensions/     # transitional frontend extension host; removed in Task 5.3
 ├── src/lib/            # API contract, query keys, formatting, grouping, types, platform-authoring helpers
 ├── src/hooks/          # TanStack Query hooks wrapping lib/api modules
 ├── src/pages/          # dashboard, extensions, finance workspace, Scheduled Tasks, and agent-platform routes
@@ -66,8 +66,8 @@ frontend/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/routes.metadata.ts`, `src/extensions/runtime-helpers.ts`, `src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, extension route assembly, theme toggle, and sidebar navigation |
-| Extension runtime and state | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | bundled frontend extensions, finance route/nav filtering, extension-owned tool filtering, and `/extensions` state UI |
+| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/routes.metadata.ts`, `src/extensions/runtime-helpers.ts`, `src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, transitional extension route assembly, theme toggle, and sidebar navigation |
+| Transitional extension host | `src/extensions/AGENTS.md`, `src/pages/extensions/AGENTS.md`, `src/extensions/runtime.tsx`, `src/extensions/runtime-helpers.ts`, `src/hooks/use-extensions.ts` | stale frontend extension host and `/extensions` UI scheduled for Task 5.3 removal; do not extend |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
 | Shared route shells and UI state | `DESIGN.md`, `src/components/shared/docs/README.md`, `src/components/shared/AGENTS.md`, `src/hooks/AGENTS.md` | design-system source of truth, inventory/workspace/split-inspector shells, resource chrome, table/action/selection framing, and reusable filter/selection/inspector state helpers |
 | Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
@@ -94,10 +94,10 @@ frontend/
 - Report inventory grouping/search/sort logic lives in `src/lib/report-grouping.ts`; the route composes that derived view state instead of re-implementing grouping inline.
 - `GenerateReportDialog` is the shared surface for parameterized report creation from both the template editor and the report list.
 - Workflow package editors are authoring-only YAML-manifest editors with local package-resource editing, backend validation, package secret bindings, import, and export. Launch, preflight gating, runtime parameters, and create-run state belong to the dedicated `/workflow-packages/:packageId/run` page labeled `Launch Workflow Package`.
-- Agent-platform pages use dedicated hooks and route params to keep package CRUD, Scheduled Task automation, extension-filtered global Tools reads for package authoring, global Model Connections, backend-provided run progress/queue/readiness payloads, and Run inspection inside the routed page layer.
+- Agent-platform pages use dedicated hooks and route params to keep package CRUD, Scheduled Task automation, global Tools reads for package authoring, global Model Connections, backend-provided run progress/queue/readiness payloads, and Run inspection inside the routed page layer.
 - Scheduled Task screens are platform-owned. Keep structured recurrence, scheduled input preview, fire history, delete confirmation and redirect behavior, and run-now links aligned with `use-scheduled-tasks.ts` and `queryKeys.platform.schedules`.
-- `useExtensions()` drives Finance Workspace route/nav visibility, `/extensions` state UI, and extension-owned tool filtering for package capability profiles. Digital Oracle contributes tool filtering only and has no route or nav surface in this upgrade.
-- The `/extensions` page is a system state surface only; render only the backend contract (`key`, `label`, `enabled`) and keep marketplace/install/remove behavior out of phase 1.
+- `useExtensions()`, `/extensions`, and frontend extension filtering are stale surfaces after backend Task 5.2; keep changes minimal until Task 5.3 deletes them and inlines template/report routes.
+- Package capability-profile pickers use installed tool metadata from `/api/tools`; there is no frontend extension-availability filtering or backend extension toggle contract.
 - Model connection editors keep credentials write-only in the UI: blank edit submissions preserve the stored key, and inline connection tests run against the persisted backend connection only after save.
 - This parent guide owns `src/styles/`, `src/test/`, and `scripts/` because those folders are still small. Split them back out only if they gain independent ownership or materially different rules.
 - `src/styles/` owns global Tailwind/theme entrypoints only; keep one-off layout and feature styling in components instead of growing the global layer.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Protocol
@@ -54,21 +54,15 @@ class ToolCatalog:
     def __init__(
         self,
         tool_registry: Mapping[str, ServerDeclaredToolSpec] | None = None,
-        *,
-        enabled_extension_keys: Collection[str] | None = None,
     ) -> None:
         self.tool_registry: dict[str, ServerDeclaredToolSpec] = dict(
             tool_registry if tool_registry is not None else get_server_declared_tool_registry()
-        )
-        self.enabled_extension_keys: frozenset[str] | None = (
-            None if enabled_extension_keys is None else frozenset(enabled_extension_keys)
         )
 
     def list_registered_tools(self) -> tuple[ResolvedTool, ...]:
         return tuple(
             self._to_resolved_tool(tool)
             for tool in sorted(self.tool_registry.values(), key=lambda item: item.key)
-            if self._is_enabled_tool(tool)
         )
 
     def list_known_tools(self) -> tuple[ResolvedTool, ...]:
@@ -101,11 +95,6 @@ class ToolCatalog:
                         "field": f"toolKeys.{index}",
                         "issue": f"Unknown server-declared tool {tool_key!r}",
                     }
-                )
-                continue
-            if not self._is_enabled_tool(tool_spec):
-                details.append(
-                    self._disabled_tool_detail(field=f"toolKeys.{index}", tool_spec=tool_spec)
                 )
                 continue
             resolved_tools.append(self._to_resolved_tool(tool_spec))
@@ -142,14 +131,6 @@ class ToolCatalog:
                         "field": f"toolGrants.{index}.tool",
                         "issue": f"Unknown server-declared tool {tool_key!r}",
                     }
-                )
-                continue
-            if not self._is_enabled_tool(tool_spec):
-                details.append(
-                    self._disabled_tool_detail(
-                        field=f"toolGrants.{index}.tool",
-                        tool_spec=tool_spec,
-                    )
                 )
                 continue
             resolved_tools.append(self._to_resolved_tool(tool_spec))
@@ -230,29 +211,6 @@ class ToolCatalog:
             )
             return None
         return normalized_tool_key
-
-    def _is_enabled_tool(self, tool_spec: ServerDeclaredToolSpec) -> bool:
-        if self.enabled_extension_keys is None or tool_spec.owner_extension_key is None:
-            return True
-        return tool_spec.owner_extension_key in self.enabled_extension_keys
-
-    @staticmethod
-    def _disabled_tool_detail(
-        *,
-        field: str,
-        tool_spec: ServerDeclaredToolSpec,
-    ) -> dict[str, object]:
-        extension_key = tool_spec.owner_extension_key or "unknown"
-        return {
-            "field": field,
-            "issue": (
-                f"Server-declared tool {tool_spec.key!r} is disabled because extension "
-                f"{extension_key!r} is disabled"
-            ),
-            "code": "extension_disabled",
-            "extensionKey": extension_key,
-            "surface": f"tool.{tool_spec.key}",
-        }
 
     @staticmethod
     def _to_resolved_tool(tool_spec: ServerDeclaredToolSpec) -> ResolvedTool:

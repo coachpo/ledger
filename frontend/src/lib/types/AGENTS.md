@@ -3,9 +3,9 @@
 > Inherits `/AGENTS.md`, `/frontend/AGENTS.md`, and `/frontend/src/lib/AGENTS.md`.
 
 ## OVERVIEW
-`src/lib/types/` mirrors the backend wire contracts for templates, reports, Extensions, Workflow Packages, Scheduled Tasks, Tools, Model Connections, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
+`src/lib/types/` mirrors the backend wire contracts for templates, reports, Workflow Packages, Scheduled Tasks, Tools, Model Connections, and Runs. Treat these files as the shared schema boundary between frontend UI and backend API.
 
-Extension model: statically resident extension state.
+Extension model: backend extensions are statically installed; frontend extension state types are stale Task 5.3 cleanup targets.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -25,7 +25,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Template contract | `text-template.ts` | template CRUD, compile payloads, runtime-input maps, and placeholder tree |
 | Report contract | `report.ts` | slug-based report reads, metadata, and update input |
 | Shared helpers | `common.ts` | common ids and timestamps |
-| Extension state contract | `extension.ts` | statically resident extension `key`, `label`, `enabled`, and toggle payloads |
+| Transitional extension state contract | `extension.ts` | stale frontend extension-state types scheduled for Task 5.3 removal |
 | Workflow Package contracts | `workflow-package.ts` | package manifests, secret bindings, versions, diagnostics, preflight, launch, import, and export payloads |
 | Workflow Package authoring contracts | `workflow-package.ts`, `../platform-authoring/schema/types.ts` | package manifest API payloads and local schema-builder IR |
 | Scheduled Task contracts | `schedule.ts` | recurrence, status, preview, fire history, run-now, and schedule-linked run payloads |
@@ -38,9 +38,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Model enum-like values as exact string unions so invalid report sources and platform status values fail at compile time.
 - Use these files for API shapes only; derive view models separately when the UI needs extra formatting or enrichment.
 - Unknown report metadata keys are allowed by the backend; preserve extensibility in `report.ts` instead of narrowing metadata too aggressively.
-- Keep route forms, hook inputs, extension-state consumers, and shared type names aligned with the current backend contract.
+- Keep route forms, hook inputs, and shared type names aligned with the current backend contract.
 - Workflow Package authoring types are frontend mirrors for package artifacts; do not promote them back into global `/agents*`, `/capabilities*`, `/mcp-servers*`, `/output-schemas*`, or `/workflows*` route contracts.
-- Extension state types must stay slim. Do not add plugin-manifest fields, scaffold data, reason text, categories, version policy, or state counters to `extension.ts`.
+- Do not expand `extension.ts`; backend extension state is removed and this file is a Task 5.3 deletion target.
 - Scheduled Task types use structured recurrence, IANA timezone strings, JSON object templates/vars, `scheduled` or `manual` fire reasons, and schedule-linked run metadata; do not introduce raw cron or finance-owned fields here.
 - There is no vector activation/search, embeddings browser, wildcard memory browser, namespace-grant authoring shape, bulk-delete selection shape, runtime delete shape, tombstone/recycle/undo/delete-reason shape, or report-history promotion shape.
 
@@ -49,8 +49,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not declare ad-hoc wire types inside hooks or page components.
 - Do not collapse backend distinctions such as slug-based report lookup vs versioned platform references.
 - Do not convert decimal strings to numbers at the type layer.
-- Do not change template, report, extension, Scheduled Task, or agent-platform payload shapes without coordinating backend schemas, hooks, and tests.
+- Do not change template, report, Scheduled Task, or agent-platform payload shapes without coordinating backend schemas, hooks, and tests.
 
 ## NOTES
 - These files cover the preserved product routes plus the current agent-platform routes; retired orchestration, Studio, Tryout, and runtime-v2 types do not ship here.
-- Keep route forms, hook inputs, extension-state consumers, and shared type names in sync when preserved product or platform fields change.
+- Keep route forms, hook inputs, and shared type names in sync when preserved product or platform fields change.

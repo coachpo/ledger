@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -10,12 +9,6 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db_session
 from app.extensions.signaldeck_finance.config import get_finance_workspace_settings
 from app.extensions.signaldeck_finance.provider_factories import create_quote_provider
-from app.extensions.signaldeck_finance.service_gate import (
-    MARKET_DATA_SERVICE_SURFACE,
-    REPORT_SERVICE_SURFACE,
-    TEMPLATE_COMPILER_SURFACE,
-    TEXT_TEMPLATE_SERVICE_SURFACE,
-)
 from app.services.quote_provider import QuoteProvider
 
 if TYPE_CHECKING:
@@ -25,58 +18,6 @@ if TYPE_CHECKING:
         TemplateCompilerService,
     )
     from app.extensions.signaldeck_finance.services.text_template_service import TextTemplateService
-
-FinanceSharedServiceClassification = Literal[
-    "move-now",
-    "wrapped-by-finance-factory",
-]
-
-
-@dataclass(frozen=True, slots=True)
-class FinanceSharedServiceOwnership:
-    service_name: str
-    module_path: str
-    classification: FinanceSharedServiceClassification
-    surface: str
-    rationale: str
-
-
-_FINANCE_OWNED_SERVICE_RATIONALE = (
-    "Finance behavior lives in extension-owned service implementations; "
-    "construction is supplied through finance-owned factories and every direct entrypoint "
-    "blocks when the extension is disabled."
-)
-
-FINANCE_SHARED_SERVICE_OWNERSHIP_MAP: tuple[FinanceSharedServiceOwnership, ...] = (
-    FinanceSharedServiceOwnership(
-        "MarketDataService",
-        "app.extensions.signaldeck_finance.services.market_data_service",
-        "move-now",
-        MARKET_DATA_SERVICE_SURFACE,
-        _FINANCE_OWNED_SERVICE_RATIONALE,
-    ),
-    FinanceSharedServiceOwnership(
-        "TextTemplateService",
-        "app.extensions.signaldeck_finance.services.text_template_service",
-        "move-now",
-        TEXT_TEMPLATE_SERVICE_SURFACE,
-        _FINANCE_OWNED_SERVICE_RATIONALE,
-    ),
-    FinanceSharedServiceOwnership(
-        "ReportService",
-        "app.extensions.signaldeck_finance.services.report_service",
-        "move-now",
-        REPORT_SERVICE_SURFACE,
-        _FINANCE_OWNED_SERVICE_RATIONALE,
-    ),
-    FinanceSharedServiceOwnership(
-        "TemplateCompilerService",
-        "app.extensions.signaldeck_finance.services.template_compiler_service",
-        "move-now",
-        TEMPLATE_COMPILER_SURFACE,
-        _FINANCE_OWNED_SERVICE_RATIONALE,
-    ),
-)
 
 
 def get_finance_workspace_session() -> Iterator[Session]:
@@ -164,9 +105,6 @@ else:
 
 
 __all__ = [
-    "FINANCE_SHARED_SERVICE_OWNERSHIP_MAP",
-    "FinanceSharedServiceClassification",
-    "FinanceSharedServiceOwnership",
     "MarketDataServiceDependency",
     "ReportServiceDependency",
     "TemplateCompilerServiceDependency",

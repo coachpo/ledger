@@ -1,10 +1,8 @@
 from fastapi import APIRouter
 
-from app.extensions.registry import get_bundled_extension_registry
+from app.extensions.registry import INSTALLED_EXTENSIONS
 
 api_router = APIRouter(prefix="/api/v1")
-for contribution in get_bundled_extension_registry().list_api_router_contributions():
-    api_router.include_router(
-        contribution.router,
-        dependencies=list(contribution.dependencies),
-    )
+for extension in INSTALLED_EXTENSIONS:
+    for router in extension.api_routers:
+        api_router.include_router(router)

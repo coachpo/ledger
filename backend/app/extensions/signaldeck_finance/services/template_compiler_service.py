@@ -7,10 +7,6 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.formatting import decimal_to_string, to_utc
-from app.extensions.signaldeck_finance.service_gate import (
-    TEMPLATE_COMPILER_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.models.report import Report
 from app.repositories.report import ReportRepository
 
@@ -42,17 +38,12 @@ class TemplateCompilerService:
         self._report_resolve_stack: set[str] = set()
         self._inputs: dict[str, str] = {}
 
-    def _require_enabled(self) -> None:
-        _ = require_finance_workspace_enabled(self.session, surface=TEMPLATE_COMPILER_SURFACE)
-
     def compile(self, content: str, inputs: dict[str, str] | None = None) -> str:
-        self._require_enabled()
         self._report_resolve_stack = set()
         self._inputs = inputs or {}
         return _PLACEHOLDER_RE.sub(lambda match: self._resolve(match.group(1).strip()), content)
 
     def get_placeholder_tree(self) -> dict[str, list[dict[str, object]]]:
-        self._require_enabled()
         return {
             "reports": [
                 {

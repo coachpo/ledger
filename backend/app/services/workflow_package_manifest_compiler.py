@@ -14,7 +14,7 @@ from app.agents.mcp.tool_adapter import (
     build_package_private_mcp_tool_descriptor,
     execution_tool_descriptor_to_payload,
 )
-from app.extensions.registry import BundledExtensionRegistry, get_bundled_extension_registry
+from app.extensions.registry import package_private_mcp_tool_owners
 from app.schemas.workflow_package_manifest import (
     WorkflowPackageAgent,
     WorkflowPackageCapabilityProfile,
@@ -31,7 +31,7 @@ from app.schemas.workflow_package_manifest import (
     WorkflowPackageStepNode,
     WorkflowPackageWorkflow,
 )
-from app.services.extension_dependency_service import ExtensionDependencyService
+from app.services.extension_dependencies import compiled_plan_extension_dependency_payloads
 from app.services.workflow_package_manifest_parser import (
     locate_workflow_package_manifest_path,
     parse_workflow_package_manifest,
@@ -105,11 +105,11 @@ def compile_workflow_package_manifest(
     compiled_plan = _compile_plan(
         manifest,
         tool_catalog=resolved_tool_catalog,
-        registry=get_bundled_extension_registry(),
     )
-    extension_dependencies = ExtensionDependencyService(
-        tool_catalog=resolved_tool_catalog
-    ).compiled_plan_dependency_payloads(compiled_plan)
+    extension_dependencies = compiled_plan_extension_dependency_payloads(
+        compiled_plan,
+        tool_catalog=resolved_tool_catalog,
+    )
     return {
         "packageDefinition": package_definition,
         "compiledPlan": compiled_plan,
@@ -314,10 +314,9 @@ def _compile_plan(
     manifest: WorkflowPackageManifest,
     *,
     tool_catalog: ToolCatalog,
-    registry: BundledExtensionRegistry,
 ) -> dict[str, object]:
     mcp_descriptor_context = _PackagePrivateMcpDescriptorContext(
-        tool_owners=registry.package_private_mcp_tool_owners()
+        tool_owners=package_private_mcp_tool_owners()
     )
     return {
         "packageKey": manifest.metadata.key,

@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/lib/api/` contains resource-specific request helpers layered on top of `../api-client.ts`. These modules are the only frontend code that should know endpoint paths, the preserved `/api/v1` versus current `/api/*` split, multipart upload details, and download URL construction.
 
-Extension model: statically resident extension state.
+Extension model: backend extensions are statically installed; `extensions.ts` is stale frontend host code scheduled for Task 5.3 removal.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative old paths.
 
@@ -24,7 +24,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 src/lib/api/
 ├── templates.ts           # template CRUD, compile, placeholder tree
 ├── reports.ts             # list/detail, compile, upload, download URL
-├── extensions.ts          # statically resident extension list/toggle state
+├── extensions.ts          # stale frontend extension-state helper; removed in Task 5.3
 ├── workflow-packages.ts   # package manifest, version, secret bindings, preflight, launch, import, export
 ├── schedules.ts           # Scheduled Task CRUD, preview, fire history, and run-now requests
 ├── tools.ts               # read-only server-declared tool catalog
@@ -37,7 +37,7 @@ src/lib/api/
 |---|---|---|
 | Shared fetch/error behavior | `../api-client.ts` | base URL, error envelope parsing, query encoding, v1 and platform helpers |
 | Preserved product contracts | `templates.ts`, `reports.ts` | browser-facing `/api/v1` helpers |
-| Agent-platform contracts | `extensions.ts`, `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for extension state, package authoring, package secret bindings, Scheduled Tasks, read-only tool metadata, model bindings, and run inspection |
+| Agent-platform contracts | `workflow-packages.ts`, `schedules.ts`, `tools.ts`, `model-connections.ts`, `runs.ts` | package-first `/api/*` helpers for package authoring, package secret bindings, Scheduled Tasks, read-only tool metadata, model bindings, and run inspection |
 | Report download helper | `reports.ts` | builds the absolute markdown download URL |
 
 ## CONVENTIONS
@@ -59,5 +59,5 @@ src/lib/api/
 
 ## NOTES
 - The frontend does not ship v2, Studio, Tryout, or orchestration API helpers in this folder.
-- Platform resources, including extension state, Scheduled Tasks, and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while templates and reports stay on `/api/v1`.
+- Platform resources, including Scheduled Tasks and global tool discovery for package authoring, use the unversioned `/api/*` helpers, while templates and reports stay on `/api/v1`.
 - Keep this file aligned with `src/hooks/AGENTS.md`, `src/lib/types/AGENTS.md`, and the live files under `src/lib/api/`.

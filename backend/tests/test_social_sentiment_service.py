@@ -8,13 +8,11 @@ from typing import cast
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.agents.runtime_tools import RuntimeToolContext, RuntimeToolRegistry
+from app.extensions.registry import INSTALLED_EXTENSIONS
 from app.extensions.signaldeck_finance.execution_dependencies import (
     finance_execution_provider_bundle_from_parts,
 )
 from app.extensions.signaldeck_finance.provider_factories import create_social_sentiment_adapters
-from app.extensions.signaldeck_finance.provider_factories import (
-    register as register_finance_workspace_provider_factories,
-)
 from app.extensions.signaldeck_finance.runtime_market_data import (
     SOCIAL_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
     SOCIAL_SENTIMENT_LOOKUP_TOOL_SPEC,
@@ -689,10 +687,14 @@ def test_social_sentiment_service_degrades_malformed_stocktwits_source() -> None
 
 
 def test_social_sentiment_provider_factories_are_extension_owned() -> None:
-    registrations = dict(register_finance_workspace_provider_factories())
+    finance = next(
+        extension for extension in INSTALLED_EXTENSIONS if extension.key == "signaldeck.finance"
+    )
     adapters = create_social_sentiment_adapters()
 
-    assert registrations["social_sentiment_adapters"] is create_social_sentiment_adapters
+    assert (
+        finance.provider_factories["social_sentiment_adapters"] is create_social_sentiment_adapters
+    )
     assert [adapter.source for adapter in adapters] == ["reddit", "stocktwits"]
 
 

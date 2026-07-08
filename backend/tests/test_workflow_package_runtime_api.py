@@ -28,7 +28,6 @@ from app.models.workflow_package_schedule import (
     WorkflowPackageSchedule,
     WorkflowPackageScheduleFire,
 )
-from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.run import RunAgentInvocationRead, RunPackageProvenanceRead
 from app.schemas.schedule import (
     DailyRecurrence,
@@ -41,7 +40,6 @@ from app.schemas.schedule import (
     ScheduleCreate,
 )
 from app.schemas.workflow_package import WorkflowPackageRead
-from app.services.extension_service import ExtensionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import (
     ModelCapabilityProbeRequest,
@@ -606,22 +604,6 @@ def _package_source_with_report_lookup(*, package_key: str) -> str:
     )
 
 
-def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
-    return [
-        {
-            "field": f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]",
-            "issue": (
-                f"Server-declared tool {tool_key!r} is disabled because extension "
-                f"{DIGITAL_ORACLE_EXTENSION_KEY!r} is disabled"
-            ),
-            "code": "extension_disabled",
-            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
-            "surface": f"tool.{tool_key}",
-        }
-        for index, tool_key in enumerate(sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
-    ]
-
-
 def _package_source_with_digital_oracle_phase1_tools(*, package_key: str) -> str:
     return f"""apiVersion: signaldeck.workflowPackage/v1
 kind: WorkflowPackage
@@ -888,22 +870,6 @@ def _chat_model_gateway_connection_config(
         timeout_seconds=31,
         api_key=api_key,
     )
-
-
-def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
-    with session_factory() as session:
-        _ = ExtensionService(session).set_extension_enabled(
-            FINANCE_WORKSPACE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False),
-        )
-
-
-def _disable_digital_oracle_extension(session_factory: sessionmaker[Session]) -> None:
-    with session_factory() as session:
-        _ = ExtensionService(session).set_extension_enabled(
-            DIGITAL_ORACLE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False),
-        )
 
 
 def _drain_run_queue(session_factory: sessionmaker[Session]) -> None:
@@ -2911,7 +2877,7 @@ def test_workflow_package_runtime_tool_policy_forbid_blocks_tool_dependent_packa
     assert _RuntimeRecordingChatCompletionsClient.create_calls == []
 
 
-def test_runtime_digital_oracle_toolKeys_dependency_snapshot_when_finance_disabled(
+def test_runtime_digital_oracle_toolKeys_dependency_snapshot(
     client: TestClient,
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -2922,8 +2888,6 @@ def test_runtime_digital_oracle_toolKeys_dependency_snapshot_when_finance_disabl
             package_key="runtime_digital_oracle_dependency_package"
         ),
     )
-    _disable_finance_extension(session_factory)
-
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
         json={
@@ -2950,34 +2914,6 @@ def test_runtime_digital_oracle_toolKeys_dependency_snapshot_when_finance_disabl
         *[f"tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
         *[f"runtime.tool.{tool_key}" for tool_key in _DIGITAL_ORACLE_PHASE1_TOOL_KEYS],
     }
-
-
-def test_workflow_package_runtime_digital_oracle_toolKeys_disabled_extension_shape(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package_from_source(
-        client,
-        manifest_source=_package_source_with_digital_oracle_phase1_tools(
-            package_key="runtime_digital_oracle_disabled_extension_package"
-        ),
-    )
-    _disable_digital_oracle_extension(session_factory)
-
-    launch = client.post(
-        f"/api/workflow-packages/{created['id']}/launches",
-        json={
-            "workflowKey": "runtime_workflow",
-            "parameters": {"researchQuestion": "Will rates fall this quarter?"},
-        },
-    )
-
-    assert launch.status_code == 422, launch.json()
-    body = launch.json()
-    assert body["code"] == "validation_error"
-    assert body["message"] == "Workflow package launch validation failed"
-    assert body["details"] == _expected_digital_oracle_disabled_tool_errors()
 
 
 def test_workflow_package_runtime_chat_completions_adapter_normalizes_empty_response_error(
@@ -3048,7 +2984,7 @@ def test_workflow_package_launch_blocks_secretless_provider_without_openai(
     ]
 
 
-def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_finance_disabled(
+def test_workflow_package_runtime_without_finance_dependencies_succeeds(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     session_factory: sessionmaker[Session],
@@ -3063,8 +2999,6 @@ def test_workflow_package_runtime_without_finance_dependencies_succeeds_when_fin
         model_id="provider-runtime-model",
     )
     created = _create_package(client, package_key="runtime_core_no_finance_package")
-    _disable_finance_extension(session_factory)
-
     launch = client.post(
         f"/api/workflow-packages/{created['id']}/launches",
         json={

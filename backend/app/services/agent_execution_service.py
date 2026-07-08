@@ -15,6 +15,7 @@ from app.agents.runtime_tools import (
     RuntimeToolError,
     RuntimeToolRegistry,
     SignalDeckToolDeclaration,
+    get_default_runtime_tool_registry,
 )
 from app.agents.runtime_tools.failure_taxonomy import (
     ToolFailureClassification,
@@ -26,7 +27,6 @@ from app.repositories.model_connection import ModelConnectionRepository
 from app.services.execution_ownership import PackageExecutionOwnership
 from app.services.execution_plan import PackageRuntimeAgentSpec
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.extension_service import ExtensionService
 from app.services.model_connection_resolution import ModelConnectionResolutionService
 from app.services.model_gateway import ModelExecutionGateway
 from app.services.model_gateway_dto import (
@@ -270,8 +270,7 @@ class AgentExecutionService:
         ]
 
     def _runtime_tool_registry(self) -> RuntimeToolRegistry:
-        with self.session_factory() as session:
-            return ExtensionService(session).get_runtime_tool_registry()
+        return get_default_runtime_tool_registry()
 
     def _invoke_saved_model_connection_agent(
         self,

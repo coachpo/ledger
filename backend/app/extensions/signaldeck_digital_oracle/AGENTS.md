@@ -16,8 +16,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| Extension identity | `ownership.py` | key, label, denied codes/messages, owned tool keys |
-| Registrar wiring | `registrars.py`, `tool_specs.py`, `runtime_executors.py` | private contribution loaders for server metadata and runtime tools |
+| Extension contract | `__init__.py`, `ownership.py` | `EXTENSION` export, key, denied codes/messages, owned tool keys |
+| Tool wiring | `tool_specs.py`, `runtime_executors.py` | static server metadata and runtime tools |
 | Provider config/factories | `config.py`, `factory.py` | provider toggles, item limits, runtime secret requirements, optional FRED/yfinance safety, disabled-provider failures |
 | Runtime services | `service.py`, `types.py`, `mappers.py`, `warnings.py` | normalized provider queries/results, runtime result mapping, structured warnings |
 | Prediction markets | `runtime_prediction_markets.py` | Polymarket/Kalshi adapters, parser, executor, OpenAI function name |
@@ -27,7 +27,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Crypto derivatives | `runtime_crypto_derivatives.py` | crypto derivatives parser, executor, normalized market data, provider warning paths |
 | CFTC positioning | `runtime_cftc_positioning.py` | CFTC parser, executor, normalized positioning summaries, stale/unavailable warning paths |
 | Options | `runtime_options.py` | options parser, executor, normalized option-chain data, missing optional yfinance warning path |
-| Coverage | `../../../../tests/test_runtime_tools.py`, `../../../../tests/fixtures/digital_oracle/` | tool keys, disabled-extension behavior, mocked native runtime dispatch |
+| Coverage | `../../../../tests/test_runtime_tools.py`, `../../../../tests/fixtures/digital_oracle/` | tool keys and mocked native runtime dispatch |
 
 ## CONVENTIONS
 - Tool keys use the canonical `signaldeck.<owner>.<tool_collection>.<tool>` contract and are the only public keys for this extension: `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup`. OpenAI function names are the mechanical underscore mappings of those keys.
@@ -47,5 +47,5 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## VALIDATION
 ```bash
 cd backend
-uv run pytest tests/test_runtime_tools.py tests/test_tool_catalog_api.py tests/test_extension_lifecycle_matrix.py
+uv run pytest tests/test_extension_contract.py tests/test_tool_catalog_api.py tests/test_runtime_tools.py
 ```

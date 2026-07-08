@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file only covers service-layer rules.
 
 ## OVERVIEW
-`app/services/` holds backend business workflows plus stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, `ExtensionService` owns statically resident extension state/filtering, finance services keep the `signaldeck.finance` product flows intact, and platform services own Workflow Packages, Scheduled Tasks, Model Connections, Extensions, Tools, and Runs.
+`app/services/` holds backend business workflows plus stateless integration boundaries. Persistence-backed domain services own repository orchestration and transactions, static extension contracts own installed extension contributions, finance services keep the `signaldeck.finance` product flows intact, and platform services own Workflow Packages, Scheduled Tasks, Model Connections, Tools, and Runs.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -25,7 +25,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Stored template CRUD | `text_template_service.py` | unique-name checks, CRUD, compile lookup |
 | Report workflows | `report_service.py` | compile from template, external create, upload markdown, slug/name generation, filters, CRUD, download lookup |
 | Quote/social provider contracts | `quote_provider.py`, `social_sentiment_provider.py`, `social_sentiment_service.py` | provider protocols, Yahoo/deterministic quotes, Reddit/StockTwits sentiment adapters, degraded warnings |
-| Extension state/filtering | `extension_service.py`, `extension_dependency_service.py`, `extension_gate.py`, `../extensions/signaldeck_finance/provider_factories.py` | slim statically resident extension state, surface gating, ToolCatalog/runtime registry filtering, dependency-only run extension records, and finance provider factory wiring |
+| Extension composition | `../extensions/registry.py`, `extension_dependencies.py`, `../extensions/signaldeck_finance/provider_factories.py` | installed extension contracts, dependency-only run extension records, and finance provider factory wiring |
 | Model gateway / connection truth | `model_gateway.py`, `model_gateway_dto.py`, `model_gateway_openai.py`, `model_gateway_openai_responses.py`, `model_gateway_output_validation.py`, `model_gateway_policy_strategy.py`, `model_gateway_provider_retry.py`, `model_gateway_tool_strategy.py`, `model_gateway_tool_retry.py`, `model_connection_service.py`, `model_connection_probe_service.py`, `model_connection_resolution.py` | persisted model-connection state, capability/probe truth, official-SDK execution, provider retry metadata, tool/schema validation, responses/policy adapters, and protocol DTOs |
 | Workflow package services | `workflow_package_service.py`, `workflow_package_preflight.py`, `workflow_package_export.py`, `workflow_package_manifest_parser.py`, `workflow_package_manifest_compiler.py`, `run_input_validation.py` | package-first authoring, validation, import/export, launch input validation, preflight, and immutable package artifacts |
 | Scheduled task services | `workflow_package_schedule_service.py`, `workflow_package_schedule_materializer.py` | structured recurrence, IANA timezone occurrence math, scheduled input rendering, idempotent fires, delete cleanup rules, due materialization into queued runs |
@@ -33,7 +33,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | MCP runtime boundary | `../agents/mcp/boundaries.py`, `../agents/mcp/runtime.py`, `../agents/mcp/AGENTS.md` | saved config boundary construction and package-private MCP runtime dispatch; active MCP support, not legacy quarantine |
 | Output-schema compiler | `output_schema_compiler.py` | locked schema-subset validation and runtime model compilation |
 | DI entrypoint | `../api/dependencies.py` | service construction + provider wiring |
-| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extensions_api.py`, `../../tests/test_extension_lifecycle_matrix.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_social_sentiment_service.py` | preserved-product regressions, extension state, platform execution, provider warnings, and run artifacts |
+| Service test hotspots | `../../tests/test_api.py`, `../../tests/test_extension_contract.py`, `../../tests/test_workflow_package_preflight.py`, `../../tests/test_workflow_package_runtime_api.py`, `../../tests/test_workflow_package_runtime_artifacts.py`, `../../tests/test_workflow_package_run_contracts.py`, `../../tests/test_social_sentiment_service.py` | preserved-product regressions, extension contract, platform execution, provider warnings, and run artifacts |
 
 ## CONVENTIONS
 - Persistence-backed domain services are constructed with a `Session` and compose repositories or dependent services in `__init__`.
@@ -47,7 +47,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - `model_gateway*.py` owns provider-protocol execution, output/tool validation, and official-SDK adapter behavior; persisted connection state, capability probes, and capability and runtime-profile truth stay in the `model_connection_*` services.
 - Workflow package services keep one mutable current package artifact, validate typed contracts before save, treat private MCP `env`, `headers`, and `query` values as secret-bearing authoring/runtime config that is omitted from browser-visible manifest reads and exports, and keep run persistence detailed enough for snapshot provenance, rerun source links, and the run monitor.
 - Scheduled task services keep recurrence and fire semantics backend-owned: structured recurrence only, IANA timezone conversion, placeholder allowlist, preview-before-save validation, idempotent manual fires, delete that removes the schedule and fire rows, stops future automation, preserves existing run history through `scheduleProvenance`, and scheduled or manual fires materialized as ordinary queued package runs.
-- `ExtensionService` is the service-layer authority for enabled extension keys, `/api/extensions` toggles, extension-filtered ToolCatalog/runtime registries, and execution provider bundles.
 - `RunService` creates optional Logfire spans, stores formatted top-level trace ids and per-invocation span ids, records dependency-only extension requirements, and falls back to trace-free execution when telemetry setup fails.
 - API launch/rerun paths create durable queued rows only; `RunSchedulerWorker` and `RunQueueService` own later claim, lease heartbeat, stale-lease recovery, and claimed execution.
 - Tools are global read-only server-declared metadata; package-local capability profiles store only canonical `signaldeck.<owner>.<tool_collection>.<tool>` `toolKeys` and validate against the extension-aware `ToolCatalog`.
@@ -61,8 +60,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not treat quote-provider failures as fatal if the existing cache and warning path should keep the request usable.
 - Do not change template placeholder paths or compile payloads without updating backend tests, frontend types, and the template editor.
 - Do not change report compile/upload/download contracts, slug generation, or `reports.<name>.content` cycle handling without updating backend tests and frontend callers.
-- Do not bypass `ExtensionService` or extension-owned factories to expose finance tools/providers when `signaldeck.finance` is disabled.
-- Do not add public extension metadata fields to service read models or run dependency records. Keep public state limited to `key`, `label`, and `enabled`.
+- Do not bypass static extension contracts or extension-owned factories to expose finance tools/providers.
+- Do not add public extension metadata fields to service read models or run dependency records.
 - Do not reintroduce retired service surfaces or compatibility adapters into this folder.
 - Do not introduce raw `httpx`/`requests` LLM calling paths in service code.
 
@@ -73,7 +72,7 @@ uv run ruff check app tests
 uv run black --check app tests
 uv run isort --check-only app tests
 uv run mypy app
-uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extension_lifecycle_matrix.py tests/test_workflow_package_preflight.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py
+uv run pytest tests/test_api.py tests/test_extension_contract.py tests/test_tool_catalog_api.py tests/test_workflow_package_preflight.py tests/test_mcp_runtime.py tests/test_social_sentiment_service.py tests/test_workflow_package_runtime_api.py tests/test_workflow_package_runtime_artifacts.py tests/test_workflow_package_run_contracts.py
 ```
 
 ## NOTES
@@ -81,5 +80,4 @@ uv run pytest tests/test_api.py tests/test_extensions_api.py tests/test_extensio
 - `ModelConnectionService` preserves stored keys on blank edit, records last connection-test results, archives instead of hard-deleting, and masks secrets in user-facing messages.
 - `RunService` persists run status, totals, package provenance, optional Logfire trace/span identifiers, scheduled run/fire metadata, rerun lineage, dependency-only extension records, and per-step/per-agent detail for the run monitor.
 - `ReportService` lists newest-first, accepts markdown uploads up to 2 MB, supports direct external JSON creation, and stores optional author/description/tags/analysis metadata in JSONB.
-- `ExtensionService` reads private bundled registry wiring, persists slim toggle state when changed, and keeps tool discovery/runtime dispatch aligned with enabled extensions.
 - `backend/app/services/providers/` is effectively reserved right now; keep provider/runtime seams in provider factories and gateway services until a real subpackage boundary exists.

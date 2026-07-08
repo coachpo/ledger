@@ -59,6 +59,7 @@ from app.extensions.signaldeck_digital_oracle.config import (
     reset_digital_oracle_settings_cache,
 )
 from app.extensions.signaldeck_digital_oracle.factory import (
+    DigitalOracleProviderFailure,
     DigitalOracleProviderSecrets,
     create_digital_oracle_phase1_provider_bundle,
     create_prediction_markets_provider_bundle,
@@ -2038,12 +2039,11 @@ def test_digital_oracle_configured_provider_factory_construction_uses_defaults()
             fred_api_key="fred-key",
         ),
     )
-    prediction_markets = bundle.prediction_markets.provider
-    sec_filings = bundle.sec_filings.provider
-    market_sentiment = bundle.market_sentiment.provider
+    prediction_markets = bundle.prediction_markets
+    sec_filings = bundle.sec_filings
+    market_sentiment = bundle.market_sentiment
 
-    assert bundle.prediction_markets.configured is True
-    assert prediction_markets is not None
+    assert not isinstance(prediction_markets, DigitalOracleProviderFailure)
     assert prediction_markets.venues == ("polymarket", "kalshi")
     assert prediction_markets.default_item_limit == 6
     assert [provider.key for provider in prediction_markets.providers] == [
@@ -2052,55 +2052,48 @@ def test_digital_oracle_configured_provider_factory_construction_uses_defaults()
     ]
     assert {provider.timeout_seconds for provider in prediction_markets.providers} == {2.5}
 
-    assert bundle.sec_filings.configured is True
-    assert sec_filings is not None
+    assert not isinstance(sec_filings, DigitalOracleProviderFailure)
     assert sec_filings.provider.key == "edgar"
     assert sec_filings.provider.default_item_limit == 12
     assert sec_filings.edgar_contact_email == "sec-contact@example.test"
 
-    assert bundle.market_sentiment.configured is True
-    assert market_sentiment is not None
+    assert not isinstance(market_sentiment, DigitalOracleProviderFailure)
     assert market_sentiment.provider.key == "fear_greed"
     assert market_sentiment.indicator == "fear_greed"
 
-    assert bundle.macro_rates.configured is True
-    assert bundle.macro_rates.provider is not None
-    assert bundle.macro_rates.provider.default_item_limit == 13
-    assert [provider.key for provider in bundle.macro_rates.provider.providers] == [
+    assert not isinstance(bundle.macro_rates, DigitalOracleProviderFailure)
+    assert bundle.macro_rates.default_item_limit == 13
+    assert [provider.key for provider in bundle.macro_rates.providers] == [
         "treasury",
         "bis",
         "worldbank",
         "cme_fedwatch",
         "fred",
     ]
-    assert bundle.macro_rates.provider.source_failures == ()
+    assert bundle.macro_rates.source_failures == ()
 
-    assert bundle.crypto_derivatives.configured is True
-    assert bundle.crypto_derivatives.provider is not None
-    assert bundle.crypto_derivatives.provider.default_item_limit == 14
-    assert [provider.key for provider in bundle.crypto_derivatives.provider.providers] == [
+    assert not isinstance(bundle.crypto_derivatives, DigitalOracleProviderFailure)
+    assert bundle.crypto_derivatives.default_item_limit == 14
+    assert [provider.key for provider in bundle.crypto_derivatives.providers] == [
         "deribit",
         "coingecko",
     ]
 
-    assert bundle.cftc_positioning.configured is True
-    assert bundle.cftc_positioning.provider is not None
-    assert bundle.cftc_positioning.provider.default_item_limit == 15
-    assert [provider.key for provider in bundle.cftc_positioning.provider.providers] == [
+    assert not isinstance(bundle.cftc_positioning, DigitalOracleProviderFailure)
+    assert bundle.cftc_positioning.default_item_limit == 15
+    assert [provider.key for provider in bundle.cftc_positioning.providers] == [
         "cftc",
     ]
 
-    assert bundle.options.configured is True
-    assert bundle.options.provider is not None
-    assert bundle.options.provider.default_item_limit == 16
-    assert {provider.key for provider in bundle.options.provider.providers} >= {"yahoo"}
+    assert not isinstance(bundle.options, DigitalOracleProviderFailure)
+    assert bundle.options.default_item_limit == 16
+    assert {provider.key for provider in bundle.options.providers} >= {"yahoo"}
 
     disabled_prediction = create_prediction_markets_provider_bundle(
         DigitalOracleSettings.model_validate({"DIGITAL_ORACLE_PREDICTION_MARKETS_ENABLED": "false"})
     )
-    assert disabled_prediction.configured is False
-    assert disabled_prediction.failure is not None
-    assert disabled_prediction.failure.message == (
+    assert isinstance(disabled_prediction, DigitalOracleProviderFailure)
+    assert disabled_prediction.message == (
         "Digital Oracle prediction markets provider is disabled by backend configuration."
     )
 
@@ -2117,26 +2110,21 @@ def test_digital_oracle_provider_bundle_disabled_new_sources_return_structured_f
         )
     )
 
-    assert bundle.macro_rates.configured is False
-    assert bundle.macro_rates.failure is not None
-    assert bundle.macro_rates.failure.details == {"provider": "macro_rates"}
-    assert bundle.crypto_derivatives.configured is False
-    assert bundle.crypto_derivatives.failure is not None
-    assert bundle.crypto_derivatives.failure.details == {"provider": "crypto_derivatives"}
-    assert bundle.cftc_positioning.configured is False
-    assert bundle.cftc_positioning.failure is not None
-    assert bundle.cftc_positioning.failure.details == {"provider": "cftc_positioning"}
-    assert bundle.options.configured is False
-    assert bundle.options.failure is not None
-    assert bundle.options.failure.details == {"provider": "options"}
+    assert isinstance(bundle.macro_rates, DigitalOracleProviderFailure)
+    assert bundle.macro_rates.details == {"provider": "macro_rates"}
+    assert isinstance(bundle.crypto_derivatives, DigitalOracleProviderFailure)
+    assert bundle.crypto_derivatives.details == {"provider": "crypto_derivatives"}
+    assert isinstance(bundle.cftc_positioning, DigitalOracleProviderFailure)
+    assert bundle.cftc_positioning.details == {"provider": "cftc_positioning"}
+    assert isinstance(bundle.options, DigitalOracleProviderFailure)
+    assert bundle.options.details == {"provider": "options"}
 
 
 def test_digital_oracle_provider_bundle_missing_fred_key_is_source_scoped_failure() -> None:
     bundle = create_digital_oracle_phase1_provider_bundle(DigitalOracleSettings())
 
-    assert bundle.macro_rates.configured is True
-    assert bundle.macro_rates.provider is not None
-    assert [failure.details for failure in bundle.macro_rates.provider.source_failures] == [
+    assert not isinstance(bundle.macro_rates, DigitalOracleProviderFailure)
+    assert [failure.details for failure in bundle.macro_rates.source_failures] == [
         {
             "provider": "fred",
             "secret": FRED_API_KEY_SECRET,
@@ -2151,9 +2139,8 @@ def test_digital_oracle_optional_dependency_missing_yfinance_is_source_scoped_fa
 
     bundle = create_digital_oracle_phase1_provider_bundle(DigitalOracleSettings())
 
-    assert bundle.options.configured is True
-    assert bundle.options.provider is not None
-    assert [failure.details for failure in bundle.options.provider.source_failures] == [
+    assert not isinstance(bundle.options, DigitalOracleProviderFailure)
+    assert [failure.details for failure in bundle.options.source_failures] == [
         {
             "dependency": "yfinance",
             "provider": "yfinance",
@@ -2164,12 +2151,10 @@ def test_digital_oracle_optional_dependency_missing_yfinance_is_source_scoped_fa
 def test_digital_oracle_edgar_missing_config_returns_structured_failure() -> None:
     result = create_sec_filings_provider(DigitalOracleSettings())
 
-    assert result.configured is False
-    assert result.provider is None
-    assert result.failure is not None
-    assert result.failure.code == EDGAR_CONTACT_EMAIL_MISSING_CODE
-    assert result.failure.message == EDGAR_CONTACT_EMAIL_MISSING_MESSAGE
-    assert result.failure.details == {
+    assert isinstance(result, DigitalOracleProviderFailure)
+    assert result.code == EDGAR_CONTACT_EMAIL_MISSING_CODE
+    assert result.message == EDGAR_CONTACT_EMAIL_MISSING_MESSAGE
+    assert result.details == {
         "provider": "edgar",
         "secret": EDGAR_CONTACT_EMAIL_SECRET,
     }
@@ -3288,19 +3273,12 @@ def test_news_lookup_parser_supports_bounded_global_scope_without_social_mutatio
         )
 
 
-def test_news_lookup_dispatch_uses_injected_finance_news_providers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_news_lookup_dispatch_uses_injected_finance_news_providers() -> None:
     quote_provider = _RecordingQuoteProvider()
     news_provider = _FinancialContractProvider(provider_name="runtime_news", news_count=3)
     registry = RuntimeToolRegistry([NEWS_LOOKUP_TOOL_SPEC])
     start_date = datetime(2026, 1, 1, tzinfo=UTC)
     end_date = datetime(2026, 1, 3, tzinfo=UTC)
-    monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.services.market_data_service.require_finance_workspace_enabled",
-        lambda session, *, surface: None,
-    )
-
     payload = registry.dispatch(
         name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
         arguments_json=json.dumps(
@@ -3386,10 +3364,6 @@ def test_news_lookup_uses_context_alpha_vantage_secret_when_provider_order_prefe
     monkeypatch.setattr(
         "app.extensions.signaldeck_finance.provider_factories.AlphaVantageNewsProvider",
         RecordingAlphaVantageNewsProvider,
-    )
-    monkeypatch.setattr(
-        "app.extensions.signaldeck_finance.services.market_data_service.require_finance_workspace_enabled",
-        lambda session, *, surface: None,
     )
     monkeypatch.setenv("QUOTE_PROVIDER_BACKEND", "yahoo")
     monkeypatch.setenv("FINANCE_NEWS_PROVIDER_ORDER", "alpha_vantage")
@@ -4279,90 +4253,6 @@ def test_model_facing_runtime_tool_declarations_keep_provider_secrets_internal()
         assert forbidden_name not in serialized_declarations
 
 
-def test_runtime_tool_registry_hides_disabled_extension_tools_and_dispatches_typed_error() -> None:
-    registry = RuntimeToolRegistry(RUNTIME_TOOL_SPECS, enabled_extension_keys=set())
-    context = _runtime_context(fail_on_session=True)
-
-    assert registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY, NEWS_LOOKUP_TOOL_KEY}) == []
-    assert registry.get_guidance({REPORT_LOOKUP_TOOL_KEY}) == ""
-
-    with pytest.raises(RuntimeToolError) as finance_exc_info:
-        _ = registry.dispatch(
-            name=NEWS_LOOKUP_OPENAI_FUNCTION_NAME,
-            arguments_json=(
-                '{"symbols":null,"query":"macro","scope":"global",'
-                '"startDate":null,"endDate":null,"itemLimit":5}'
-            ),
-            granted_tool_keys={NEWS_LOOKUP_TOOL_KEY},
-            context=context,
-        )
-
-    assert finance_exc_info.value.code == "extension_disabled"
-    assert finance_exc_info.value.message == "Extension is disabled"
-    assert finance_exc_info.value.details == [
-        {
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": f"runtime.tool.{NEWS_LOOKUP_TOOL_KEY}",
-        }
-    ]
-
-    digital_oracle_disabled_registry = RuntimeToolRegistry(
-        RUNTIME_TOOL_SPECS,
-        enabled_extension_keys={FINANCE_WORKSPACE_EXTENSION_KEY},
-    )
-    digital_oracle_disabled_cases = (
-        (
-            PREDICTION_MARKETS_LOOKUP_OPENAI_FUNCTION_NAME,
-            PREDICTION_MARKETS_LOOKUP_TOOL_KEY,
-            '{"query":"NVDA earnings","includeOrderBook":true,"depthLimit":2}',
-        ),
-        (
-            SEC_FILINGS_LOOKUP_OPENAI_FUNCTION_NAME,
-            SEC_FILINGS_LOOKUP_TOOL_KEY,
-            '{"ticker":"NVDA"}',
-        ),
-        (
-            MARKET_SENTIMENT_LOOKUP_OPENAI_FUNCTION_NAME,
-            MARKET_SENTIMENT_LOOKUP_TOOL_KEY,
-            '{"indicator":"fear_greed"}',
-        ),
-    )
-    assert (
-        digital_oracle_disabled_registry.get_openai_tools(set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS))
-        == []
-    )
-    assert len(digital_oracle_disabled_registry.get_openai_tools({REPORT_LOOKUP_TOOL_KEY})) == 1
-    for function_name, tool_key, arguments_json in digital_oracle_disabled_cases:
-        with pytest.raises(RuntimeToolError) as digital_oracle_exc_info:
-            _ = digital_oracle_disabled_registry.dispatch(
-                name=function_name,
-                arguments_json=arguments_json,
-                granted_tool_keys={tool_key},
-                context=context,
-            )
-
-        assert digital_oracle_exc_info.value.code == "extension_disabled"
-        assert digital_oracle_exc_info.value.message == "Extension is disabled"
-        assert digital_oracle_exc_info.value.details == [
-            {
-                "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
-                "surface": f"runtime.tool.{tool_key}",
-            }
-        ]
-
-
-def test_runtime_tool_registry_descriptor_listing_respects_extension_state() -> None:
-    registry = RuntimeToolRegistry(
-        cast(Sequence[RuntimeToolSpec], RUNTIME_TOOL_SPECS),
-        enabled_extension_keys=set(),
-    )
-    descriptor_keys = {descriptor.tool_key for descriptor in registry.list_execution_descriptors()}
-
-    assert descriptor_keys == set()
-    assert not descriptor_keys & set(FINANCE_WORKSPACE_RUNTIME_TOOL_KEYS)
-    assert not descriptor_keys & set(DIGITAL_ORACLE_RUNTIME_TOOL_KEYS)
-
-
 def test_digital_oracle_runtime_registry_denies_ungranted_tools_before_parsing() -> None:
     registry = get_default_runtime_tool_registry()
     context = _runtime_context(fail_on_session=True)
@@ -4704,12 +4594,9 @@ def test_failure_taxonomy_marks_mcp_invalid_json_and_schema_retryable_before_tra
     assert client.calls == []
 
 
-def test_failure_taxonomy_auth_secret_extension_disabled_provider_network_classes_are_fatal() -> (
-    None
-):
+def test_failure_taxonomy_auth_secret_provider_network_classes_are_fatal() -> None:
     expected = {
         "agent_model_connection_api_key_missing": ToolFailureClass.SECRET_CONTEXT,
-        "extension_disabled": ToolFailureClass.EXTENSION_DISABLED,
         "agent_execution_access_denied": ToolFailureClass.PERMISSION,
         "agent_provider_connection_error": ToolFailureClass.PROVIDER_NETWORK,
         "mcp_runtime_transport_unavailable": ToolFailureClass.MCP_TRANSPORT,

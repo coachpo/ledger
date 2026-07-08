@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter
 
 if TYPE_CHECKING:
+    from app.agents.runtime_tools.types import RuntimeToolSpec
     from app.extensions import BundledServerDeclaredToolContribution as ToolDeclaration
 
 
@@ -17,7 +18,10 @@ class Extension:
     key: str
     api_routers: tuple[APIRouter, ...] = ()
     tool_declarations: tuple[ToolDeclaration, ...] = ()
+    runtime_tool_specs: tuple[RuntimeToolSpec, ...] = ()
     provider_factories: Mapping[str, Callable[..., object]] = field(default_factory=dict)
+    runtime_dependency_surfaces: tuple[str, ...] = ()
+    package_private_mcp_tool_keys: tuple[str, ...] = ()
 
 
 __all__ = ["Extension"]

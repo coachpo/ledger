@@ -19,11 +19,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.errors import ApiError
 from app.db.session import init_db, validate_supported_database_engine
-from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
 from app.extensions.signaldeck_finance.services.report_service import ReportService
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
-from app.models.text_template import TextTemplate
 from app.schemas.model_connection import (
     ModelConnectionCapabilities,
     ModelConnectionCapabilityStatus,
@@ -333,97 +331,6 @@ def test_finance_workspace_product_routes_remain_mounted_for_templates_and_repor
         "/api/v1/templates",
         "/api/v1/reports",
     } <= route_paths
-
-
-@pytest.mark.parametrize(
-    ("path", "surface"),
-    [
-        ("/api/v1/templates", "/api/v1/templates"),
-        ("/api/v1/reports", "/api/v1/reports"),
-    ],
-)
-def test_disabled_finance_workspace_template_report_routes_return_403(
-    client: TestClient,
-    path: str,
-    surface: str,
-) -> None:
-    toggle_response = client.patch(
-        f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": False},
-    )
-    assert toggle_response.status_code == 200, toggle_response.json()
-
-    response = client.get(path)
-
-    assert response.status_code == 403, response.json()
-    assert response.json() == {
-        "code": "extension_disabled",
-        "message": "Extension is disabled",
-        "details": [
-            {
-                "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                "surface": surface,
-            }
-        ],
-    }
-
-
-def test_disabled_finance_workspace_preserves_template_and_report_rows(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    template = create_template(
-        client,
-        name="Disabled Data Safety",
-        content="# Data safety\n\n{{reports}}",
-    )
-    report_response = client.post(f"/api/v1/reports/compile/{template['id']}")
-    assert report_response.status_code == 201, report_response.json()
-    report = report_response.json()
-
-    toggle_response = client.patch(
-        f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": False},
-    )
-    assert toggle_response.status_code == 200, toggle_response.json()
-
-    blocked_paths = (
-        "/api/v1/templates",
-        "/api/v1/templates/placeholders",
-        f"/api/v1/templates/{template['id']}/compile",
-        "/api/v1/reports",
-        f"/api/v1/reports/{report['slug']}",
-        f"/api/v1/reports/{report['slug']}/download",
-    )
-    for path in blocked_paths:
-        response = client.get(path)
-        assert response.status_code == 403, response.json()
-        assert response.json()["code"] == "extension_disabled"
-
-    mutation_response = client.patch(
-        f"/api/v1/reports/{report['slug']}",
-        json={"content": "# Mutated while disabled"},
-    )
-    assert mutation_response.status_code == 403, mutation_response.json()
-
-    with session_factory() as session:
-        persisted_template = session.get(TextTemplate, template["id"])
-        persisted_report = session.get(Report, report["id"])
-        assert persisted_template is not None
-        assert persisted_report is not None
-        assert persisted_template.content == "# Data safety\n\n{{reports}}"
-        assert persisted_report.content == report["content"]
-        assert persisted_report.slug == report["slug"]
-        assert persisted_report.source == "compiled"
-
-    reenable_response = client.patch(
-        f"/api/extensions/{FINANCE_WORKSPACE_EXTENSION_KEY}",
-        json={"enabled": True},
-    )
-    assert reenable_response.status_code == 200, reenable_response.json()
-    restored_response = client.get(f"/api/v1/reports/{report['slug']}")
-    assert restored_response.status_code == 200, restored_response.json()
-    assert restored_response.json()["content"] == report["content"]
 
 
 def _model_connection_create_payload(

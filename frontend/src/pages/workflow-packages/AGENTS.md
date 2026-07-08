@@ -6,7 +6,7 @@
 
 `src/pages/workflow-packages/` owns the package-first route family: package inventory, a full-height authoring-only YAML/resource editor, a dedicated import workspace for pasted manifest YAML, and the saved-package launch console at `/workflow-packages/:packageId/run`. This folder is where package-local agents, output schemas, capability profiles, private MCP configs, validation, secret bindings, import/export, preflight, runtime inputs, and run creation meet the route layer.
 
-Extension model: statically resident extension state filtering.
+Extension model: capability profiles select statically installed backend tool keys from `/api/tools`; frontend extension-availability filtering is removed scope.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -40,7 +40,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Inventory chrome must not be replaced with `WorkspacePageShell`, route-local page wrappers, custom toolbar/filter cards, dashed empty states, or one-off `rounded-md border bg-muted/*` / `shadow-sm` page chrome.
 - `editor.tsx` is the authoring hotspot; keep request policy in hooks and local draft/resource editing in the page.
 - Package-private resources stay tabbed inside the editor and never call retired global authoring APIs.
-- Capability profile tool pickers use extension-filtered `useTools()` data from hooks; disabled-extension tools must not appear as selectable package capability keys.
+- Capability profile tool pickers use installed `useTools()` data from hooks; there is no frontend extension-availability filtering for selectable package capability keys.
 - During upstream migrations, role prompts/personas belong in package-local agents, orchestration graphs and debates belong in package workflows, upstream tool groups belong in package-local capability profiles, and generic web/page fetch belongs in private MCP resources unless product scope promotes a public extension tool.
 - Backend validation diagnostics should deep-link to package-local editor fields when possible.
 - Import belongs to `import-page.tsx`, not the editor. The import workspace owns pasted manifest YAML, unsaved/active-import navigation blocking, and detailed backend rejection messages.

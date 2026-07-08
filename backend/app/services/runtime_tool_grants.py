@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from app.agents import ResolvedTool, ToolCatalog, ToolCatalogValidationError
+if TYPE_CHECKING:
+    from app.agents import ResolvedTool, ToolCatalog
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,8 @@ class RuntimeToolGrantService:
             )
 
     def _validate_tool_keys(self, tool_keys: set[str]) -> tuple[ResolvedTool, ...]:
+        from app.agents import ToolCatalogValidationError
+
         try:
             return self.tool_catalog.resolve_tool_keys(sorted(tool_keys))
         except ToolCatalogValidationError as exc:

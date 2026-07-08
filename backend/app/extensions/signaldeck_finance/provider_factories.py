@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.extensions.signaldeck_finance.config import (
@@ -128,15 +127,6 @@ def create_execution_provider_bundle(
     )
 
 
-def register() -> tuple[tuple[str, Callable[[], object]], ...]:
-    return (
-        ("quote_provider", create_quote_provider),
-        ("deterministic_quote_provider", create_deterministic_quote_provider),
-        ("social_sentiment_adapters", create_social_sentiment_adapters),
-        ("news_providers", create_news_providers),
-    )
-
-
 __all__ = [
     "FinanceProviderSecrets",
     "create_deterministic_quote_provider",
@@ -145,5 +135,4 @@ __all__ = [
     "create_quote_provider",
     "create_runtime_news_providers",
     "create_social_sentiment_adapters",
-    "register",
 ]

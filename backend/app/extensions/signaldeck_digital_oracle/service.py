@@ -24,7 +24,11 @@ from .config import (
     MacroRatesSource,
     PredictionMarketVenue,
 )
-from .factory import DigitalOraclePhase1ProviderBundle, create_digital_oracle_phase1_provider_bundle
+from .factory import (
+    DigitalOraclePhase1ProviderBundle,
+    DigitalOracleProviderFailure,
+    create_digital_oracle_phase1_provider_bundle,
+)
 from .types import (
     DigitalOracleCftcPositioningProvider,
     DigitalOracleCftcPositioningProviderQuery,
@@ -162,25 +166,18 @@ class DigitalOraclePhase1Service:
     ) -> DigitalOraclePredictionMarketsResult:
         normalized_query = _normalize_text(query.query, field_name="query")
         construction = self._provider_bundle.prediction_markets
-        if construction.failure is not None:
+        if isinstance(construction, DigitalOracleProviderFailure):
             return DigitalOraclePredictionMarketsResult(
                 query=normalized_query,
                 events=(),
                 warnings=(
                     warning_from_provider_failure(
-                        construction.failure,
+                        construction,
                         operation=_PREDICTION_MARKETS_OPERATION,
                     ),
                 ),
             )
-        provider_bundle = construction.provider
-        if provider_bundle is None:
-            return DigitalOraclePredictionMarketsResult(
-                query=normalized_query,
-                events=(),
-                warnings=(unavailable_result_warning(operation=_PREDICTION_MARKETS_OPERATION),),
-            )
-
+        provider_bundle = construction
         venues = _normalize_prediction_venues(query.venues or provider_bundle.venues)
         item_limit = _normalize_limit(
             query.item_limit,
@@ -281,20 +278,20 @@ class DigitalOraclePhase1Service:
         if ticker is None and cik is None:
             raise ValueError("ticker or cik is required")
         construction = self._provider_bundle.sec_filings
-        if construction.failure is not None:
+        if isinstance(construction, DigitalOracleProviderFailure):
             return DigitalOracleSecFilingsResult(
                 ticker=ticker,
                 query=search_query,
                 cik=cik,
                 warnings=(
                     warning_from_provider_failure(
-                        construction.failure,
+                        construction,
                         operation=_SEC_FILINGS_OPERATION,
                     ),
                 ),
             )
-        provider_bundle = construction.provider
-        if provider_bundle is None or self._sec_filings_provider is None:
+        provider_bundle = construction
+        if self._sec_filings_provider is None:
             return DigitalOracleSecFilingsResult(
                 ticker=ticker,
                 query=search_query,
@@ -416,25 +413,25 @@ class DigitalOraclePhase1Service:
         query: DigitalOracleMarketSentimentQuery,
     ) -> DigitalOracleMarketSentimentResult:
         construction = self._provider_bundle.market_sentiment
-        if construction.failure is not None:
+        if isinstance(construction, DigitalOracleProviderFailure):
             return DigitalOracleMarketSentimentResult(
                 indicator=query.indicator,
                 provider="fear_greed",
                 as_of_date=query.as_of_date,
                 warnings=(
                     warning_from_provider_failure(
-                        construction.failure,
+                        construction,
                         operation=_MARKET_SENTIMENT_OPERATION,
                     ),
                 ),
             )
-        provider_bundle = construction.provider
-        if provider_bundle is None or self._market_sentiment_provider is None:
+        provider_bundle = construction
+        if self._market_sentiment_provider is None:
             return DigitalOracleMarketSentimentResult(
                 indicator=query.indicator,
                 provider="fear_greed",
                 as_of_date=query.as_of_date,
-                source_url=provider_bundle.source_url if provider_bundle is not None else None,
+                source_url=provider_bundle.source_url,
                 warnings=(
                     provider_unavailable_warning(
                         operation=_MARKET_SENTIMENT_OPERATION,
@@ -514,23 +511,17 @@ class DigitalOraclePhase1Service:
     ) -> DigitalOracleMacroRatesResult:
         normalized_query = _normalize_optional_text(query.query, field_name="query")
         construction = self._provider_bundle.macro_rates
-        if construction.failure is not None:
+        if isinstance(construction, DigitalOracleProviderFailure):
             return DigitalOracleMacroRatesResult(
                 query=normalized_query,
                 warnings=(
                     warning_from_provider_failure(
-                        construction.failure,
+                        construction,
                         operation=_MACRO_RATES_OPERATION,
                     ),
                 ),
             )
-        provider_bundle = construction.provider
-        if provider_bundle is None:
-            return DigitalOracleMacroRatesResult(
-                query=normalized_query,
-                warnings=(unavailable_result_warning(operation=_MACRO_RATES_OPERATION),),
-            )
-
+        provider_bundle = construction
         sources = _normalize_macro_sources(query.sources or MACRO_RATES_SOURCES)
         families = _normalize_macro_families(query.families)
         _validate_date_bounds(query.start_date, query.end_date)
@@ -647,23 +638,17 @@ class DigitalOraclePhase1Service:
     ) -> DigitalOracleCryptoDerivativesResult:
         construction = self._provider_bundle.crypto_derivatives
         assets = _normalize_crypto_assets(query.assets)
-        if construction.failure is not None:
+        if isinstance(construction, DigitalOracleProviderFailure):
             return DigitalOracleCryptoDerivativesResult(
                 assets=assets,
                 warnings=(
                     warning_from_provider_failure(
-                        construction.failure,
+                        construction,
                         operation=_CRYPTO_DERIVATIVES_OPERATION,
                     ),
                 ),
             )
-        provider_bundle = construction.provider
-        if provider_bundle is None:
-            return DigitalOracleCryptoDerivativesResult(
-                assets=assets,
-                warnings=(unavailable_result_warning(operation=_CRYPTO_DERIVATIVES_OPERATION),),
-            )
-
+        provider_bundle = construction
         venues = _normalize_crypto_venues(query.venues or CRYPTO_DERIVATIVES_VENUES)
         data_types = _normalize_crypto_data_types(query.data_types)
         item_limit = _normalize_limit(
@@ -766,21 +751,16 @@ class DigitalOraclePhase1Service:
     ) -> DigitalOracleCftcPositioningResult:
         construction = self._provider_bundle.cftc_positioning
         markets = _normalize_cftc_markets(query.markets)
-        if construction.failure is not None:
+        if isinstance(construction, DigitalOracleProviderFailure):
             return DigitalOracleCftcPositioningResult(
                 warnings=(
                     warning_from_provider_failure(
-                        construction.failure,
+                        construction,
                         operation=_CFTC_POSITIONING_OPERATION,
                     ),
                 ),
             )
-        provider_bundle = construction.provider
-        if provider_bundle is None:
-            return DigitalOracleCftcPositioningResult(
-                warnings=(unavailable_result_warning(operation=_CFTC_POSITIONING_OPERATION),),
-            )
-
+        provider_bundle = construction
         report_types = _normalize_cftc_report_types(
             query.report_types or CFTC_POSITIONING_REPORT_TYPES
         )
@@ -873,23 +853,17 @@ class DigitalOraclePhase1Service:
         symbols = _normalize_options_symbols(query.symbols)
         result_symbol = ",".join(symbols)
         construction = self._provider_bundle.options
-        if construction.failure is not None:
+        if isinstance(construction, DigitalOracleProviderFailure):
             return DigitalOracleOptionsResult(
                 symbol=result_symbol,
                 warnings=(
                     warning_from_provider_failure(
-                        construction.failure,
+                        construction,
                         operation=_OPTIONS_OPERATION,
                     ),
                 ),
             )
-        provider_bundle = construction.provider
-        if provider_bundle is None:
-            return DigitalOracleOptionsResult(
-                symbol=result_symbol,
-                warnings=(unavailable_result_warning(operation=_OPTIONS_OPERATION),),
-            )
-
+        provider_bundle = construction
         item_limit = _normalize_limit(
             query.item_limit,
             default_limit=provider_bundle.default_item_limit,

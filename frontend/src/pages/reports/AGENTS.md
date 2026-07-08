@@ -38,7 +38,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Upload, generate, single-delete, and batch-delete flows should all resolve back through list invalidation so the grouped table and detail route stay in sync.
 - The detail page may edit only report content; immutable report identity stays in the route header and badges.
 - Keep source badges aligned with the shared grouping helpers so list and detail surfaces agree on labels such as Agent and Uploaded.
-- The report list and detail are extension-owned routes. The list has loading/ready/error/empty/filtered-empty/disabled-extension states, while the slug detail route must also respect disabled Finance Workspace state through the runtime gate.
+- The report list and detail routes should be static after Task 5.3. Keep loading/ready/error/empty/filtered-empty states, but do not add new extension-unavailable route gates.
 - The slug detail route stays metadata `detail` and follows the non-inventory `DESIGN.md` route guidance instead of inventory shell rules.
 - Report table navigation must stay as visible links. Sorting, selection, menus, upload, generate, edit, save, and delete remain buttons or form controls.
 - Browser coverage must include a seeded report flow plus representative empty and API-error list states so finance inventory failures stay user-owned.

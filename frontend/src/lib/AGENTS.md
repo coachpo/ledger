@@ -3,9 +3,9 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/lib/`.
 
 ## OVERVIEW
-`src/lib/` owns the frontend API contract, query-key naming, formatting helpers, report grouping helpers, runtime-input row helpers, and shared type definitions for templates, reports, extensions, Scheduled Tasks, and the current agent-platform domains.
+`src/lib/` owns the frontend API contract, query-key naming, formatting helpers, report grouping helpers, runtime-input row helpers, and shared type definitions for templates, reports, Scheduled Tasks, and the current agent-platform domains.
 
-Extension model: statically resident extension state.
+Extension model: backend extensions are statically installed; frontend extension state helpers are transitional Task 5.3 cleanup targets.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -28,9 +28,9 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Task | Location | Notes |
 |---|---|---|
 | HTTP wrapper / error mapping | `api-client.ts` | `request()`, `requestPlatform()`, `ApiRequestError`, URL helpers |
-| API endpoint functions | `api/*.ts` | domain-specific modules for templates, reports, extensions, Scheduled Tasks, and agent-platform resources |
-| Shared wire types | `types/*.ts` | domain-specific type definitions for preserved product, extension state, Scheduled Tasks, and platform routes |
-| Query key factory | `query-keys.ts` | hierarchical keys, param normalization, and preserved-product plus platform/extension cache namespaces |
+| API endpoint functions | `api/*.ts` | domain-specific modules for templates, reports, Scheduled Tasks, and agent-platform resources |
+| Shared wire types | `types/*.ts` | domain-specific type definitions for preserved product, Scheduled Tasks, and platform routes |
+| Query key factory | `query-keys.ts` | hierarchical keys, param normalization, and preserved-product plus platform cache namespaces |
 | Display formatting | `format.ts` | currency, decimal, percent, date/datetime, compact numbers |
 | Runtime input helpers | `runtime-inputs.ts` | row ids, row-to-map conversion, shared editor/report-generation helpers |
 | Workflow option helpers | `workflow-options.ts` | visible fallback option when a saved selection is missing from package workflows |
@@ -44,12 +44,12 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Domain-specific API functions live in `api/*.ts` modules, organized by resource type.
 - Wire decimals remain strings until shared format helpers convert them for display math.
 - `query-keys.ts` normalizes ids as strings, extension keys as strings, symbol lists as trimmed/deduplicated/sorted arrays where relevant, and history params so cache keys stay stable across callers.
-- Reports, extension state, and platform resources use dedicated query-key namespaces.
+- Reports and platform resources use dedicated query-key namespaces.
 - Report flows use `queryKeys.reports.*`; `downloadReportUrl()` stays in the API layer because it builds the absolute file URL from the configured API base.
 - `runtime-inputs.ts` is the shared translator between editable key/value rows and trimmed `TemplateRuntimeInputs` maps for preview and report generation.
 - `workflow-options.ts` keeps package launch schedule/editor selectors stable when a previously selected workflow is absent from the latest package draft.
 - `report-grouping.ts` is frontend-only derived-view logic; backend report endpoints stay flat while grouping/search/sort are composed locally.
-- Platform flows use `requestPlatform()`-backed helpers and `queryKeys.platform.*`; keep route-specific polling, Scheduled Task invalidation, extension-state filtering, or mutation policy in hooks rather than embedding it in pages.
+- Platform flows use `requestPlatform()`-backed helpers and `queryKeys.platform.*`; keep route-specific polling, Scheduled Task invalidation, and mutation policy in hooks rather than embedding it in pages.
 - Report detail queries are slug-scoped, not numeric-id scoped, even though some shared helper signatures still use generic `IdParam` naming.
 
 ## ANTI-PATTERNS
@@ -59,7 +59,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not create API functions outside the `api/*.ts` domain modules.
 - Do not invent new query-key shapes outside `query-keys.ts`.
 - Do not duplicate backend contract types when `types/*.ts` already exposes them.
-- Do not change template, error-envelope, report, extension, Scheduled Task, or platform contract shapes here without updating the backend contract and the calling hooks/pages.
+- Do not change template, error-envelope, report, Scheduled Task, or platform contract shapes here without updating the backend contract and the calling hooks/pages.
 - Do not change `api/` helpers or `types/` contracts in isolation; keep request helpers and wire shapes in sync.
 - Do not mix presentation-only formatting into API wrapper code.
 

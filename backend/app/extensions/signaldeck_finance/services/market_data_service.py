@@ -5,18 +5,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Literal, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 from sqlalchemy.orm import Session
 
-from app.agents import get_default_tool_catalog
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.core.constants import PORTFOLIO_CURRENCY
 from app.core.formatting import normalize_symbol, to_utc, utcnow
-from app.extensions.signaldeck_finance.service_gate import (
-    MARKET_DATA_SERVICE_SURFACE,
-    require_finance_workspace_enabled,
-)
 from app.models.market_quote import MarketQuote
 from app.repositories.market_quote import MarketQuoteRepository
 from app.schemas.common import to_camel
@@ -80,7 +75,9 @@ from app.services.quote_provider import (
     QuoteProvider,
     QuoteProviderError,
 )
-from app.services.runtime_tool_grants import RuntimeToolGrantPolicy, RuntimeToolGrantService
+
+if TYPE_CHECKING:
+    from app.services.runtime_tool_grants import RuntimeToolGrantPolicy
 
 _ProviderResultT = TypeVar("_ProviderResultT")
 _ProviderT = TypeVar("_ProviderT", QuoteProvider, NewsProvider)
@@ -226,11 +223,7 @@ class MarketDataService:
         self.repository: MarketQuoteRepository = MarketQuoteRepository(session)
         self.quote_stale_after_minutes: int = quote_stale_after_minutes
 
-    def _require_enabled(self) -> None:
-        _ = require_finance_workspace_enabled(self.session, surface=MARKET_DATA_SERVICE_SURFACE)
-
     def get_quotes(self, symbols: list[str]) -> MarketQuoteListRead:
-        self._require_enabled()
         quotes: list[MarketQuoteRead] = []
         warnings: list[str] = []
         updated_cache = False
@@ -255,7 +248,6 @@ class MarketDataService:
         return MarketQuoteListRead(quotes=quotes, warnings=warnings)
 
     def get_history(self, symbols: list[str], range_value: str) -> MarketHistoryRead:
-        self._require_enabled()
         return self._build_history_read(symbols, range_value)
 
     def lookup_quote_snapshot(
@@ -265,7 +257,9 @@ class MarketDataService:
         grant_policy: RuntimeToolGrantPolicy,
         symbol: str,
     ) -> tuple[MarketQuoteRead | None, list[str]]:
-        self._require_enabled()
+        from app.agents import get_default_tool_catalog
+        from app.services.runtime_tool_grants import RuntimeToolGrantService
+
         RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
             capability_references=capability_references,
             grant_policy=grant_policy,
@@ -280,7 +274,9 @@ class MarketDataService:
         symbol: str,
         range_value: str,
     ) -> MarketHistoryRead:
-        self._require_enabled()
+        from app.agents import get_default_tool_catalog
+        from app.services.runtime_tool_grants import RuntimeToolGrantService
+
         RuntimeToolGrantService(get_default_tool_catalog()).require_runtime_tool_grant(
             capability_references=capability_references,
             grant_policy=grant_policy,
@@ -288,7 +284,6 @@ class MarketDataService:
         return self.get_history_snapshot(symbol, range_value)
 
     def get_quote_snapshot(self, symbol: str) -> tuple[MarketQuoteRead | None, list[str]]:
-        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             return None, ["Symbol is required"]
@@ -298,7 +293,6 @@ class MarketDataService:
         return quote, ([warning] if warning is not None else [])
 
     def get_history_snapshot(self, symbol: str, range_value: str) -> MarketHistoryRead:
-        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -311,7 +305,6 @@ class MarketDataService:
         start_date: datetime,
         end_date: datetime,
     ) -> list[MarketClosePoint]:
-        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -341,7 +334,6 @@ class MarketDataService:
         end_date: datetime,
         row_limit: int | None = None,
     ) -> RuntimeOhlcvLookupResult:
-        self._require_enabled()
         normalized_start = to_utc(start_date)
         normalized_end = to_utc(end_date)
         if normalized_start > normalized_end:
@@ -418,7 +410,6 @@ class MarketDataService:
         indicators: Sequence[MarketIndicatorSelection],
         row_limit: int | None = None,
     ) -> RuntimeIndicatorLookupResult:
-        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -470,7 +461,6 @@ class MarketDataService:
         *,
         providers: Sequence[QuoteProvider] | None = None,
     ) -> RuntimeFundamentalsLookupResult:
-        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")
@@ -536,7 +526,6 @@ class MarketDataService:
         item_limit: int | None = None,
         providers: Sequence[NewsProvider] | None = None,
     ) -> RuntimeNewsLookupResult:
-        self._require_enabled()
         normalized_symbols = self._normalize_optional_symbols(symbols or [])
         normalized_query = query.strip() if query is not None and query.strip() else None
         normalized_scope = self._normalize_news_scope(
@@ -627,7 +616,6 @@ class MarketDataService:
         transaction_limit: int | None = None,
         providers: Sequence[QuoteProvider] | None = None,
     ) -> RuntimeInsiderDataLookupResult:
-        self._require_enabled()
         normalized_symbol = normalize_symbol(symbol)
         if not normalized_symbol:
             raise QuoteProviderError("Symbol is required")

@@ -162,10 +162,7 @@ def test_resolve_finance_news_providers_returns_ordered_payload() -> None:
     assert resolve_finance_news_providers(bundle) == providers
 
 
-def test_alpha_news_provider_missing_key_surfaces_service_warning(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(MarketDataService, "_require_enabled", lambda self: None)
+def test_alpha_news_provider_missing_key_surfaces_service_warning() -> None:
     providers = create_news_providers(
         FinanceWorkspaceSettings.model_validate({"FINANCE_NEWS_PROVIDER_ORDER": "alpha_vantage"})
     )

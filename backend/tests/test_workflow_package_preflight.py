@@ -16,7 +16,6 @@ from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENS
 from app.models.model_connection import ModelConnection
 from app.models.workflow_package import WorkflowPackage
 from app.repositories.workflow_package import WorkflowPackageRepository
-from app.schemas.extension import ExtensionToggleRequest
 from app.schemas.model_connection import (
     ModelConnectionCapabilities,
     ModelConnectionCapabilityStatus,
@@ -24,7 +23,6 @@ from app.schemas.model_connection import (
     dump_model_connection_capabilities,
 )
 from app.schemas.schedule import FireReason, MisfirePolicy, OverlapPolicy
-from app.services.extension_service import ExtensionService
 from app.services.package_execution_plan_builder import PackageExecutionPlanBuilder
 from app.services.workflow_package_manifest_compiler import compile_workflow_package_manifest
 from app.services.workflow_package_manifest_parser import parse_workflow_package_manifest
@@ -93,38 +91,6 @@ def _tool_required_package_source() -> str:
 
 def _digital_oracle_researcher_demo_source() -> str:
     return _canonicalize_live_tool_keys(_DIGITAL_ORACLE_RESEARCHER_DEMO_FIXTURE.read_text())
-
-
-def _expected_digital_oracle_disabled_tool_errors() -> list[dict[str, object]]:
-    return [
-        {
-            "field": f"spec.capabilityProfiles.digital_oracle_phase1_tools.toolKeys[{index}]",
-            "issue": (
-                f"Server-declared tool {tool_key!r} is disabled because extension "
-                f"{DIGITAL_ORACLE_EXTENSION_KEY!r} is disabled"
-            ),
-            "code": "extension_disabled",
-            "extensionKey": DIGITAL_ORACLE_EXTENSION_KEY,
-            "surface": f"tool.{tool_key}",
-        }
-        for index, tool_key in enumerate(sorted(_DIGITAL_ORACLE_PHASE1_TOOL_KEYS))
-    ]
-
-
-def _expected_finance_market_context_disabled_tool_errors() -> list[dict[str, object]]:
-    return [
-        {
-            "field": f"spec.capabilityProfiles.finance_market_context_tools.toolKeys[{index}]",
-            "issue": (
-                f"Server-declared tool {tool_key!r} is disabled because extension "
-                f"{FINANCE_WORKSPACE_EXTENSION_KEY!r} is disabled"
-            ),
-            "code": "extension_disabled",
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": f"tool.{tool_key}",
-        }
-        for index, tool_key in enumerate(sorted(_FINANCE_MARKET_CONTEXT_TOOL_KEYS))
-    ]
 
 
 def _digital_oracle_phase1_package_source() -> str:
@@ -816,30 +782,6 @@ def test_validation_projection_hides_blocker_only_facts_but_strict_readiness_pre
             },
         ),
         WorkflowPackageDiagnosticFact(
-            kind="tool_invalid",
-            code="extension_disabled",
-            field="spec.capabilityProfiles.quote_tools.toolKeys[0]",
-            issue=(
-                "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' is "
-                "disabled because "
-                "extension 'signaldeck.finance' is disabled"
-            ),
-            subject="tool.signaldeck.finance.market_data.quote_lookup",
-            metadata={
-                "code": "extension_disabled",
-                "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-                "surface": "tool.signaldeck.finance.market_data.quote_lookup",
-            },
-            levels={
-                WorkflowPackageDiagnosticProjectionContext.LAUNCH_METADATA: (
-                    WorkflowPackageDiagnosticLevel.BLOCKING
-                ),
-                WorkflowPackageDiagnosticProjectionContext.STRICT_READINESS: (
-                    WorkflowPackageDiagnosticLevel.BLOCKING
-                ),
-            },
-        ),
-        WorkflowPackageDiagnosticFact(
             kind="http_secret_missing",
             code="http_secret_missing",
             field="spec.workflows.notify.graph.steps[0].operations[0].request",
@@ -885,17 +827,6 @@ def test_validation_projection_hides_blocker_only_facts_but_strict_readiness_pre
         {
             "field": "spec.outputSchemas[0].jsonSchema",
             "issue": "Schema must be an object",
-        },
-        {
-            "field": "spec.capabilityProfiles.quote_tools.toolKeys[0]",
-            "issue": (
-                "Server-declared tool 'signaldeck.finance.market_data.quote_lookup' is "
-                "disabled because "
-                "extension 'signaldeck.finance' is disabled"
-            ),
-            "code": "extension_disabled",
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "tool.signaldeck.finance.market_data.quote_lookup",
         },
         {
             "field": "spec.workflows.notify.graph.steps[0].operations[0].request",
@@ -1734,51 +1665,6 @@ def test_preflight_reports_unsupported_http_method_and_malformed_step_ref(
     } in errors
 
 
-def _disable_finance_extension(session_factory: sessionmaker[Session]) -> None:
-    with session_factory() as session:
-        _ = ExtensionService(session).set_extension_enabled(
-            FINANCE_WORKSPACE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False),
-        )
-
-
-def _disable_digital_oracle_extension(session_factory: sessionmaker[Session]) -> None:
-    with session_factory() as session:
-        _ = ExtensionService(session).set_extension_enabled(
-            DIGITAL_ORACLE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False),
-        )
-
-
-def test_preflight_allows_digital_oracle_toolKeys_when_finance_extension_disabled(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(
-        session_factory,
-        protocol_profile="openai_chat_completions",
-        capabilities=_capabilities_with_statuses(),
-        last_test_ok=True,
-    )
-    response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _digital_oracle_phase1_package_source()},
-    )
-    assert response.status_code == 201, response.json()
-    _disable_finance_extension(session_factory)
-
-    preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight",
-        json={"workflowKey": "research", "parameters": _digital_oracle_phase1_parameters()},
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    body = preflight.json()
-    assert body["ready"] is True
-    assert body["blockingErrors"] == []
-    assert body["warnings"] == []
-
-
 def test_tradingagents_demo_uses_only_finance_owned_tool_keys() -> None:
     compiled = compile_workflow_package_manifest(_tradingagents_demo_source())
     compiled_plan = cast(dict[str, Any], compiled["compiledPlan"])
@@ -1793,242 +1679,6 @@ def test_tradingagents_demo_uses_only_finance_owned_tool_keys() -> None:
     assert "prediction_market_tools" not in profiles_by_key
     assert "signaldeck.digital_oracle.prediction_markets.lookup" not in all_tool_keys
     assert "signaldeck.finance.prediction_markets.lookup" not in all_tool_keys
-
-
-def test_preflight_tradingagents_demo_stays_ready_when_digital_oracle_disabled(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(
-        session_factory,
-        protocol_profile="openai_chat_completions",
-        capabilities=_capabilities_with_statuses(),
-        last_test_ok=True,
-    )
-    _delete_existing_tradingagents_package(client)
-    response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _tradingagents_demo_source()},
-    )
-    assert response.status_code == 201, response.json()
-    _disable_digital_oracle_extension(session_factory)
-
-    preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight",
-        json={
-            "workflowKey": "advisory_research",
-            "parameters": {
-                "ticker": "NVDA",
-                "asOfDate": "2026-01-02",
-                "horizonDays": 30,
-                "benchmarkSymbol": "SPY",
-            },
-        },
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    body = cast(dict[str, object], preflight.json())
-    errors = cast(list[dict[str, object]], body["blockingErrors"])
-    assert body["ready"] is True
-    assert errors == []
-    assert body["warnings"] == []
-    assert not any(error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY for error in errors)
-
-
-def test_preflight_blocks_only_finance_market_context_toolKeys_when_finance_disabled(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(
-        session_factory,
-        key="mixed_extension_primary_model",
-        protocol_profile="openai_chat_completions",
-        capabilities=_capabilities_with_statuses(),
-        last_test_ok=True,
-    )
-    response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _mixed_extension_research_package_source()},
-    )
-    assert response.status_code == 201, response.json()
-    _disable_finance_extension(session_factory)
-
-    preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight",
-        json={"workflowKey": "research", "parameters": {}},
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    body = cast(dict[str, object], preflight.json())
-    errors = cast(list[dict[str, object]], body["blockingErrors"])
-    assert body["ready"] is False
-    assert errors == _expected_finance_market_context_disabled_tool_errors()
-    assert not any(error.get("extensionKey") == DIGITAL_ORACLE_EXTENSION_KEY for error in errors)
-
-
-def test_preflight_blocks_digital_oracle_toolKeys_when_digital_oracle_extension_disabled(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _digital_oracle_phase1_package_source()},
-    )
-    assert response.status_code == 201, response.json()
-    _disable_digital_oracle_extension(session_factory)
-
-    preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight",
-        json={"workflowKey": "research", "parameters": {}},
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    body = preflight.json()
-    assert body["ready"] is False
-    assert body["blockingErrors"] == _expected_digital_oracle_disabled_tool_errors()
-
-
-def test_preflight_blocks_only_digital_oracle_toolKeys_when_digital_oracle_disabled(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(
-        session_factory,
-        key="mixed_extension_primary_model",
-        protocol_profile="openai_chat_completions",
-        capabilities=_capabilities_with_statuses(),
-        last_test_ok=True,
-    )
-    response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _mixed_extension_research_package_source()},
-    )
-    assert response.status_code == 201, response.json()
-    _disable_digital_oracle_extension(session_factory)
-
-    preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight",
-        json={"workflowKey": "research", "parameters": {}},
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    body = cast(dict[str, object], preflight.json())
-    errors = cast(list[dict[str, object]], body["blockingErrors"])
-    assert body["ready"] is False
-    assert errors == _expected_digital_oracle_disabled_tool_errors()
-    assert not any(error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY for error in errors)
-
-
-def test_save_allows_disabled_extension_dependency_and_preflight_blocks(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    _disable_finance_extension(session_factory)
-    _delete_existing_tradingagents_package(client)
-
-    response = client.post("/api/workflow-packages", json={"manifestSource": _package_source()})
-
-    assert response.status_code == 201, response.json()
-    preflight = client.post(
-        f"/api/workflow-packages/{response.json()['id']}/preflight",
-        json={"workflowKey": None, "parameters": {}},
-    )
-    assert preflight.status_code == 200, preflight.json()
-    body = preflight.json()
-    assert body["ready"] is False
-    errors = cast(list[dict[str, object]], body["blockingErrors"])
-    assert any(
-        error.get("code") == "extension_disabled"
-        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and error.get("surface") == "tool.signaldeck.finance.market_data.quote_lookup"
-        for error in errors
-    )
-
-
-def test_preflight_blocks_tradingagents_advisory_research_when_extension_disabled(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    created = _create_package(client)
-    _disable_finance_extension(session_factory)
-
-    preflight = client.post(
-        f"/api/workflow-packages/{created['id']}/preflight",
-        json={"workflowKey": None, "parameters": {}},
-    )
-
-    assert preflight.status_code == 200, preflight.json()
-    body = preflight.json()
-    assert body["ready"] is False
-    errors = cast(list[dict[str, object]], body["blockingErrors"])
-    assert any(
-        error.get("code") == "extension_disabled"
-        and error.get("extensionKey") == FINANCE_WORKSPACE_EXTENSION_KEY
-        and error.get("surface") == "tool.signaldeck.finance.market_data.quote_lookup"
-        for error in errors
-    )
-
-
-def test_schedule_run_now_surfaces_digital_oracle_extension_disabled_preflight_failure(
-    client: TestClient,
-    session_factory: sessionmaker[Session],
-) -> None:
-    _seed_model_connection(session_factory)
-    response = client.post(
-        "/api/workflow-packages",
-        json={"manifestSource": _digital_oracle_phase1_package_source()},
-    )
-    assert response.status_code == 201, response.json()
-    package_id = int(response.json()["id"])
-    schedule = client.post(
-        "/api/schedules",
-        json={
-            "packageId": package_id,
-            "workflowKey": "research",
-            "name": "Disabled extension scheduled research",
-            "status": "enabled",
-            "timezone": "UTC",
-            "recurrence": {"type": "daily", "atLocalTime": "09:00"},
-            "overlapPolicy": "skip",
-            "misfirePolicy": "catchUpOne",
-            "misfireGraceSeconds": 86400,
-            "inputTemplate": {"researchQuestion": "{{vars.researchQuestion}}"},
-            "templateVars": {"researchQuestion": "What changed in NVDA filings?"},
-        },
-    )
-    assert schedule.status_code == 201, schedule.json()
-    schedule_id = int(schedule.json()["id"])
-    _disable_digital_oracle_extension(session_factory)
-
-    run_now = client.post(
-        f"/api/schedules/{schedule_id}/run-now",
-        json={
-            "idempotencyKey": "disabled-extension-retry",
-            "scheduledFor": "2026-06-01T13:00:00Z",
-        },
-    )
-
-    assert run_now.status_code == 422, run_now.json()
-    body = run_now.json()
-    assert body["code"] == "validation_error"
-    details = cast(list[dict[str, object]], body["details"])
-    assert any(
-        error.get("code") == "extension_disabled"
-        and error.get("extensionKey") == DIGITAL_ORACLE_EXTENSION_KEY
-        and str(error.get("surface", "")).startswith("tool.signaldeck.")
-        for error in details
-    )
-    with session_factory() as session:
-        history = WorkflowPackageScheduleService(session).list_fire_history(schedule_id)
-        assert history.total_count == 1
-        failed_fire = history.items[0]
-        assert failed_fire.status == "failed"
-        assert failed_fire.run_id is None
-        assert failed_fire.error_code == "validation_error"
-        assert failed_fire.error_message == "Workflow package launch validation failed"
 
 
 def _schedule_render_validation_package(session: Session) -> WorkflowPackage:

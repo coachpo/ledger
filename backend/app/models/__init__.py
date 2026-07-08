@@ -1,4 +1,3 @@
-from app.models.extension import ExtensionState
 from app.models.market_quote import MarketQuote
 from app.models.model_connection import ModelConnection
 from app.models.report import Report
@@ -15,7 +14,6 @@ from app.models.workflow_package_schedule import (
 )
 
 __all__ = [
-    "ExtensionState",
     "MarketQuote",
     "ModelConnection",
     "Report",

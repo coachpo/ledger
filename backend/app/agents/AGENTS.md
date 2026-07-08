@@ -3,7 +3,7 @@
 > Inherits `/AGENTS.md` and `/backend/AGENTS.md`. This file covers `app/agents/` only.
 
 ## OVERVIEW
-`app/agents/` owns server-declared tool metadata, native runtime tool dispatch, and MCP execution boundaries. Extension registrars contribute extension-owned tool specs and executors, while `ExtensionService` decides which enabled extension keys reach `ToolCatalog`, `RuntimeToolRegistry`, and execution providers.
+`app/agents/` owns server-declared tool metadata, native runtime tool dispatch, and MCP execution boundaries. Static extension contracts contribute extension-owned tool specs and executors to `ToolCatalog` and `RuntimeToolRegistry`.
 
 Extension model: statically resident extension-contributed tools from Finance Workspace and Digital Oracle Runtime.
 
@@ -36,17 +36,17 @@ app/agents/
 | Task | Location | Notes |
 |---|---|---|
 | Server-declared tools | `tool_catalog/AGENTS.md`, `tool_catalog/server_declared.py`, `../extensions/signaldeck_finance/tool_specs.py`, `../extensions/signaldeck_digital_oracle/tool_specs.py` | extension-contributed tool keys, names, and descriptions |
-| Capability tool-key validation | `tool_catalog/AGENTS.md`, `tool_catalog/__init__.py` | validates `toolKeys` against known server tools after enabled-extension filtering |
+| Capability tool-key validation | `tool_catalog/AGENTS.md`, `tool_catalog/__init__.py` | validates `toolKeys` against known installed server tools |
 | Native registry | `runtime_tools/AGENTS.md`, `runtime_tools/__init__.py`, `runtime_tools/registry.py`, `../extensions/signaldeck_finance/runtime_executors.py`, `../extensions/signaldeck_digital_oracle/runtime_executors.py` | core plus extension OpenAI tool definitions and grant-checked dispatch |
-| Extension runtime tools | `../extensions/signaldeck_finance/runtime_*`, `../extensions/signaldeck_digital_oracle/runtime_*` | Finance Workspace quotes/history/OHLCV/indicators/fundamentals/news/social sentiment/insider data, and report lookup plus Digital Oracle prediction markets, SEC filings, and market sentiment |
+| Extension runtime tools | `../extensions/signaldeck_finance/runtime_*`, `../extensions/signaldeck_digital_oracle/runtime_*` | Finance Workspace quotes/history/OHLCV/indicators/fundamentals/news/social sentiment/insider data, and report lookup plus Digital Oracle prediction markets, SEC filings, market sentiment, macro rates, crypto derivatives, CFTC positioning, and options |
 | MCP runtime | `mcp/AGENTS.md`, `mcp/boundaries.py`, `mcp/security.py`, `mcp/runtime.py`, `mcp/tool_adapter.py` | saved config boundaries, URL/stdio safety, snapshots, dispatch |
-| Integration points | `../services/extension_service.py`, `../services/agent_execution_service.py` | enabled-extension filtering, runtime dispatch, and execution wiring |
+| Integration points | `../extensions/registry.py`, `../services/agent_execution_service.py` | installed extension lookup, runtime dispatch, and execution wiring |
 | Coverage | `../../tests/test_runtime_tools.py`, `../../tests/test_mcp_runtime.py`, `../../tests/test_workflow_package_preflight.py` | tool keys, MCP safety, and package capability validation |
 
 ## CONVENTIONS
-- `ToolCatalog` and `RuntimeToolRegistry` must be built through extension-aware service wiring; do not construct alternate request-local registries that bypass enabled-extension filtering.
-- Server-declared public tool keys use only the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme for extension-owned tools. The live extension keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, and `signaldeck.digital_oracle.market_sentiment.lookup`; OpenAI function names are mechanical underscores derived from those canonical keys.
-- `signaldeck.finance.reports.lookup` remains a finance-owned report lookup anchor. The retired report-backed memory write surface is not a live runtime tool; do not route new core memory behavior through finance registrars.
+- `ToolCatalog` and `RuntimeToolRegistry` must be built from installed extension contracts; do not construct alternate request-local registries with divergent tool sets.
+- Server-declared public tool keys use only the canonical `signaldeck.<owner>.<tool_collection>.<tool>` scheme for extension-owned tools. The live extension keys are `signaldeck.finance.market_data.quote_lookup`, `signaldeck.finance.market_data.history_lookup`, `signaldeck.finance.market_data.ohlcv_lookup`, `signaldeck.finance.indicators.lookup`, `signaldeck.finance.fundamentals.lookup`, `signaldeck.finance.news.lookup`, `signaldeck.finance.social_sentiment.lookup`, `signaldeck.finance.insider_data.lookup`, `signaldeck.finance.reports.lookup`, `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup`; OpenAI function names are mechanical underscores derived from those canonical keys.
+- `signaldeck.finance.reports.lookup` remains a finance-owned report lookup anchor. The retired report-backed memory write surface is not a live runtime tool; do not route new core memory behavior through finance runtime tools.
 - Model-visible tool outputs must not expose report ids, slugs, names, raw markdown, URLs, downloads, or audit links.
 - MCP boundary code owns URL/stdio safety, saved config normalization, snapshots, and dispatch wrapping; keep that safety logic here instead of scattering it through routes or services.
 - Do not recreate a `skills/` namespace here; package-private skills are not a live backend app/agents contract.
@@ -55,7 +55,7 @@ app/agents/
 
 ## ANTI-PATTERNS
 - Do not add auth middleware, RBAC, tenant/account ownership columns, permission checks, or account-management APIs unless the product scope changes.
-- Do not hard-code tool visibility outside `ExtensionService` filtering.
+- Do not hard-code alternate tool visibility outside the static extension contract.
 - Do not change tool keys or OpenAI function names without updating runtime tests, package validation, and any frontend references together.
 - Do not route new memory-write behavior through finance report tools.
 - Do not bypass MCP boundary/security helpers when dispatching saved configs.
@@ -67,5 +67,5 @@ uv run pytest tests/test_runtime_tools.py tests/test_mcp_runtime.py tests/test_w
 ```
 
 ## NOTES
-- The live platform/server-declared tool contract is small: extension-filtered finance market/report tools and Digital Oracle runtime tools.
+- The live platform/server-declared tool contract is small: installed finance market/report tools and Digital Oracle runtime tools.
 - Most user-visible drift here shows up first in package preflight, runtime tool, or MCP tests rather than route handlers.

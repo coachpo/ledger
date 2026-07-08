@@ -4,9 +4,9 @@
 
 ## OVERVIEW
 
-`src/pages/extensions/` owns the `/extensions` system route: a slim statically resident extension state list that renders backend state, sorts labels/keys for stable display, and toggles enablement through the shared extension hooks. This is a state surface, not a marketplace or plugin-management UI.
+`src/pages/extensions/` is a stale `/extensions` route family scheduled for Task 5.3 deletion. The backend extension state API has been removed; do not add new UI, toggles, tests, or callers here.
 
-Extension model: statically resident extension state.
+Extension model: backend extensions are statically installed through `INSTALLED_EXTENSIONS`; there is no frontend extension state contract to maintain.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -24,29 +24,27 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 | Task              | Location                                                                                            | Notes                                                                                               |
 | ----------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Extensions route  | `list.tsx`                                                                                          | slim extension state list, status badges, toggle actions, and route-level loading/error/empty states |
-| State hooks       | `../../hooks/use-extensions.ts`                                                                     | `/api/extensions` reads, toggles, tool-cache invalidation, and finance-only cache invalidation      |
-| Runtime ownership | `../../extensions/AGENTS.md`, `../../extensions/runtime.tsx`, `../../extensions/runtime-helpers.ts` | runtime route gates, nav assembly, and tool filtering remain outside the page layer                 |
-| Route coverage    | `list.test.tsx`                                                                                     | route rendering, toggle behavior, and bundled-state expectations                                    |
+| Extensions route  | `list.tsx`                                                                                          | stale route pending deletion |
+| State hooks       | `../../hooks/use-extensions.ts`                                                                     | stale hook pending deletion |
+| Runtime ownership | `../../extensions/AGENTS.md`, `../../extensions/runtime.tsx`, `../../extensions/runtime-helpers.ts` | stale host pending deletion |
+| Route coverage    | `list.test.tsx`                                                                                     | stale coverage pending deletion |
 
 ## CONVENTIONS
 
 - `frontend/DESIGN.md` is the source of truth for this route's page layout, shared shells, tokens, and management UI patterns.
-- Render only the backend extension contract: `key`, `label`, and `enabled`.
-- Keep sorting, toast feedback, and route-level empty/error/loading states in `list.tsx`; keep request policy and invalidation in `use-extensions.ts`.
-- `/extensions` is metadata `systemState`, not `inventory`: keep it narrow and contract-bound, and do not add inventory-only search, selection, bulk actions, or filter bars unless metadata changes with the route contract.
+- Do not add backend-contract rendering, sorting, toast feedback, invalidation, or route-level states here; this route is no longer backed by a live API.
+- `/extensions` is deletion scope, not `inventory` or `systemState`; do not add search, selection, bulk actions, or filter bars.
 - Use shared state/list primitives allowed by `DESIGN.md` so this page stays visually aligned with other platform/system routes.
-- Treat this page as a system state surface only. Route/nav/tool visibility still belongs to the extension runtime layer.
-- Keep `/extensions` aligned with `systemState` route metadata: scroll shell, `route-extensions` main, loading/ready/error/empty states, and no extension-owned disabled route shell.
-- Regression coverage must include enabled, disabled, and re-enabled Finance Workspace states for sidebar nav and direct finance routes, plus mixed Finance Workspace and Digital Oracle states for tool authoring discovery. Digital Oracle must remain route-less and nav-less.
+- Treat this page as removal-only scope. Route/nav/tool visibility should be static after Task 5.3.
+- Remove `/extensions` route metadata and regression coverage in Task 5.3.
 
 ## ANTI-PATTERNS
 
 - Do not add login/logout/account switcher, tenant selector, auth route guards, RBAC UI, or account-management UI unless the product scope changes.
-- Do not add marketplace, install, remove, or contribution-browser behavior here in phase 1.
+- Do not add marketplace, install, remove, contribution-browser, enable, or disable behavior here.
 - Do not mirror private registry or scaffold metadata in the UI.
-- Do not bypass `useToggleExtension()` or duplicate finance visibility rules in the page layer.
-- Do not turn this route into a generic settings dump unrelated to statically resident extension state.
+- Do not use `useToggleExtension()` or duplicate finance visibility rules in the page layer.
+- Do not turn this route into a generic settings dump.
 
 ## VALIDATION
 
@@ -57,5 +55,5 @@ pnpm test:run src/pages/extensions/list.test.tsx
 
 ## NOTES
 
-- This folder currently contains one live route file; keep related behavior here until the extension state surface splits into additional route families.
-- Changes here usually require matching updates in `../../extensions/AGENTS.md`, `../../hooks/AGENTS.md`, and backend slim extension-contract docs.
+- This folder remains only until Task 5.3 removes the frontend plugin host.
+- Changes here should be deletion-only unless Task 5.3 is actively in progress.

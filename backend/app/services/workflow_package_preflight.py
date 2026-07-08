@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
-from app.agents import ToolCatalogValidationError
+from app.agents import ToolCatalog, ToolCatalogValidationError
 from app.agents.mcp.tool_adapter import SUPPORTED_PACKAGE_PRIVATE_MCP_TOOL_KEYS
 from app.core.errors import ApiError
 from app.models.workflow_package import WorkflowPackage
@@ -21,8 +21,6 @@ from app.services.execution_plan import (
     PackageExecutionRequirements,
     PackageResolvedModelBinding,
 )
-from app.services.extension_dependency_service import ExtensionDependencyService
-from app.services.extension_service import ExtensionService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.output_schema_compiler import (
     OutputSchemaCompiler,
@@ -111,11 +109,10 @@ class WorkflowPackagePreflightService:
         self,
         session: Session,
         *,
-        extension_service: ExtensionService | None = None,
-        extension_service_factory: Callable[[Session], ExtensionService] = ExtensionService,
+        tool_catalog: ToolCatalog | None = None,
     ) -> None:
         self.session = session
-        self.extension_service = extension_service or extension_service_factory(session)
+        self.tool_catalog = tool_catalog or ToolCatalog()
         self.model_connection_service = ModelConnectionService(session)
         self.model_connection_repository = ModelConnectionRepository(session)
         self.secret_binding_repository = WorkflowPackageSecretBindingRepository(session)
@@ -178,11 +175,6 @@ class WorkflowPackagePreflightService:
         schema_facts = self._schema_errors(compiled_plan)
         tool_facts = self._tool_errors(compiled_plan)
         mcp_facts = self._mcp_errors(compiled_plan)
-        existing_facts = [*schema_facts, *tool_facts, *mcp_facts]
-        extension_facts = self._extension_dependency_errors(
-            package,
-            existing_facts=existing_facts,
-        )
         http_facts = self._http_errors(package, compiled_plan)
         package_requirements = PackageExecutionPlanBuilder.derive_package_requirements(
             compiled_plan
@@ -212,7 +204,6 @@ class WorkflowPackagePreflightService:
             *schema_facts,
             *tool_facts,
             *mcp_facts,
-            *extension_facts,
             *http_facts,
             *model_facts,
             *execution_plan_facts,
@@ -422,14 +413,6 @@ class WorkflowPackagePreflightService:
         diagnostic: Mapping[str, Any],
     ) -> WorkflowPackageDiagnosticFact:
         return cls._blocking_diagnostic_fact(diagnostic, kind="tool_invalid")
-
-    @classmethod
-    def _extension_dependency_error_fact(
-        cls,
-        diagnostic: Mapping[str, Any],
-    ) -> WorkflowPackageDiagnosticFact:
-        kind = cls._string_or_none(diagnostic.get("code")) or "extension_dependency_invalid"
-        return cls._blocking_diagnostic_fact(diagnostic, kind=kind, code=kind)
 
     @classmethod
     def _mcp_error_fact(
@@ -680,7 +663,7 @@ class WorkflowPackagePreflightService:
         return f"{base_field}.{issue_field}"
 
     def _tool_errors(self, compiled_plan: dict[str, Any]) -> list[WorkflowPackageDiagnosticFact]:
-        catalog = self.extension_service.get_tool_catalog()
+        catalog = self.tool_catalog
         known_keys = {tool.key for tool in catalog.list_known_tools()}
         diagnostics: list[dict[str, Any]] = []
         for profile in self._compiled_section(compiled_plan, "capabilityProfiles"):
@@ -732,45 +715,6 @@ class WorkflowPackagePreflightService:
             index = field.removeprefix("toolKeys.")
             return f"spec.capabilityProfiles.{profile_key}.toolKeys[{index}]"
         return f"spec.capabilityProfiles.{profile_key}.toolKeys"
-
-    def _extension_dependency_errors(
-        self,
-        package: WorkflowPackage,
-        *,
-        existing_facts: list[WorkflowPackageDiagnosticFact],
-    ) -> list[WorkflowPackageDiagnosticFact]:
-        dependencies = ExtensionDependencyService.normalize_dependency_payloads(
-            package.extension_dependencies
-        )
-        if not dependencies:
-            return []
-        existing_disabled_keys = {
-            str(fact.metadata.get("extensionKey") or "")
-            for fact in existing_facts
-            if fact.code == "extension_disabled"
-        }
-        diagnostics: list[dict[str, Any]] = []
-        for dependency in dependencies:
-            extension_key = str(dependency.get("extensionKey") or "")
-            if not extension_key or extension_key in existing_disabled_keys:
-                continue
-            surface = self._preferred_dependency_surface(dependency)
-            try:
-                _ = self.extension_service.require_enabled(extension_key, surface=surface)
-            except ApiError as exc:
-                diagnostics.extend(dict(detail) for detail in exc.details)
-        return [self._extension_dependency_error_fact(diagnostic) for diagnostic in diagnostics]
-
-    @staticmethod
-    def _preferred_dependency_surface(dependency: dict[str, Any]) -> str:
-        surfaces = dependency.get("surfaces")
-        if not isinstance(surfaces, list):
-            return "workflowPackage.extensionDependency"
-        for prefix in ("tool.", "runtime.tool.", "mcp.", "provider."):
-            for surface in surfaces:
-                if isinstance(surface, str) and surface.startswith(prefix):
-                    return surface
-        return str(surfaces[0]) if surfaces else "workflowPackage.extensionDependency"
 
     def _mcp_errors(self, compiled_plan: dict[str, Any]) -> list[WorkflowPackageDiagnosticFact]:
         diagnostics: list[dict[str, Any]] = []

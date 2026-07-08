@@ -5,7 +5,7 @@
 ## OVERVIEW
 `src/components/` contains the layout shell, theme system, shared component library, small cross-route form/dialog surfaces, platform-authoring widgets, template-editor support components, and shadcn/ui primitives. Routed page components live in `src/pages/` and map to routes in `src/routes.ts`, while `src/components/shared/docs/README.md` defines the shared UI contract these components implement.
 
-Extension model: statically resident extension runtime nav groups and extension state.
+Extension model: backend extensions are statically installed; frontend extension runtime nav groups and state are stale Task 5.3 cleanup scope.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 

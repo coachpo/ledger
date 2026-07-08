@@ -67,16 +67,6 @@ class DigitalOracleProviderFailure:
 
 
 @dataclass(frozen=True, slots=True)
-class DigitalOracleProviderConstructionResult[T]:
-    provider: T | None = None
-    failure: DigitalOracleProviderFailure | None = None
-
-    @property
-    def configured(self) -> bool:
-        return self.provider is not None and self.failure is None
-
-
-@dataclass(frozen=True, slots=True)
 class DigitalOracleProviderDescriptor:
     key: str
     label: str
@@ -115,27 +105,19 @@ class DigitalOracleSourceScopedProviderBundle:
 
 @dataclass(frozen=True, slots=True)
 class DigitalOraclePhase1ProviderBundle:
-    prediction_markets: DigitalOracleProviderConstructionResult[PredictionMarketsProviderBundle]
-    sec_filings: DigitalOracleProviderConstructionResult[SecFilingsProviderBundle]
-    market_sentiment: DigitalOracleProviderConstructionResult[MarketSentimentProviderBundle]
-    macro_rates: DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]
-    crypto_derivatives: DigitalOracleProviderConstructionResult[
-        DigitalOracleSourceScopedProviderBundle
-    ]
-    cftc_positioning: DigitalOracleProviderConstructionResult[
-        DigitalOracleSourceScopedProviderBundle
-    ]
-    options: DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]
+    prediction_markets: PredictionMarketsProviderBundle | DigitalOracleProviderFailure
+    sec_filings: SecFilingsProviderBundle | DigitalOracleProviderFailure
+    market_sentiment: MarketSentimentProviderBundle | DigitalOracleProviderFailure
+    macro_rates: DigitalOracleSourceScopedProviderBundle | DigitalOracleProviderFailure
+    crypto_derivatives: DigitalOracleSourceScopedProviderBundle | DigitalOracleProviderFailure
+    cftc_positioning: DigitalOracleSourceScopedProviderBundle | DigitalOracleProviderFailure
+    options: DigitalOracleSourceScopedProviderBundle | DigitalOracleProviderFailure
 
 
 @dataclass(frozen=True, slots=True)
 class DigitalOracleProviderSecrets:
     edgar_contact_email: str | None = None
     fred_api_key: str | None = None
-
-
-def _configured[T](provider: T) -> DigitalOracleProviderConstructionResult[T]:
-    return DigitalOracleProviderConstructionResult(provider=provider)
 
 
 def _disabled_failure(provider: str) -> DigitalOracleProviderFailure:
@@ -198,52 +180,43 @@ def _source_scoped_bundle(
     config: DigitalOracleProviderConfig,
     default_item_limit: int,
     source_failures: tuple[DigitalOracleProviderFailure, ...] = (),
-) -> DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]:
+) -> DigitalOracleSourceScopedProviderBundle | DigitalOracleProviderFailure:
     if not enabled:
-        return DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle](
-            failure=_disabled_failure(group_key)
-        )
+        return _disabled_failure(group_key)
 
-    return _configured(
-        DigitalOracleSourceScopedProviderBundle(
-            providers=tuple(
-                _descriptor(
-                    key=provider_key,
-                    config=config,
-                    default_item_limit=default_item_limit,
-                )
-                for provider_key in provider_keys
-            ),
-            source_failures=source_failures,
-            default_item_limit=default_item_limit,
-        )
+    return DigitalOracleSourceScopedProviderBundle(
+        providers=tuple(
+            _descriptor(
+                key=provider_key,
+                config=config,
+                default_item_limit=default_item_limit,
+            )
+            for provider_key in provider_keys
+        ),
+        source_failures=source_failures,
+        default_item_limit=default_item_limit,
     )
 
 
 def _with_fred_api_key(
-    construction: DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle],
+    construction: DigitalOracleSourceScopedProviderBundle | DigitalOracleProviderFailure,
     fred_api_key: str | None,
-) -> DigitalOracleProviderConstructionResult[DigitalOracleSourceScopedProviderBundle]:
-    provider = construction.provider
-    if provider is None:
+) -> DigitalOracleSourceScopedProviderBundle | DigitalOracleProviderFailure:
+    if isinstance(construction, DigitalOracleProviderFailure):
         return construction
-    return _configured(
-        DigitalOracleSourceScopedProviderBundle(
-            providers=provider.providers,
-            source_failures=provider.source_failures,
-            default_item_limit=provider.default_item_limit,
-            fred_api_key=fred_api_key,
-        )
+    return DigitalOracleSourceScopedProviderBundle(
+        providers=construction.providers,
+        source_failures=construction.source_failures,
+        default_item_limit=construction.default_item_limit,
+        fred_api_key=fred_api_key,
     )
 
 
 def _create_prediction_markets_provider_bundle(
     config: DigitalOracleProviderConfig,
-) -> DigitalOracleProviderConstructionResult[PredictionMarketsProviderBundle]:
+) -> PredictionMarketsProviderBundle | DigitalOracleProviderFailure:
     if not config.prediction_markets_enabled:
-        return DigitalOracleProviderConstructionResult[PredictionMarketsProviderBundle](
-            failure=_disabled_failure("prediction_markets")
-        )
+        return _disabled_failure("prediction_markets")
 
     providers = tuple(
         _descriptor(
@@ -253,67 +226,55 @@ def _create_prediction_markets_provider_bundle(
         )
         for venue in PREDICTION_MARKET_VENUES
     )
-    return _configured(
-        PredictionMarketsProviderBundle(
-            venues=PREDICTION_MARKET_VENUES,
-            providers=providers,
-            default_item_limit=config.prediction_markets_default_item_limit,
-        )
+    return PredictionMarketsProviderBundle(
+        venues=PREDICTION_MARKET_VENUES,
+        providers=providers,
+        default_item_limit=config.prediction_markets_default_item_limit,
     )
 
 
 def _create_sec_filings_provider(
     config: DigitalOracleProviderConfig,
-) -> DigitalOracleProviderConstructionResult[SecFilingsProviderBundle]:
+) -> SecFilingsProviderBundle | DigitalOracleProviderFailure:
     if not config.sec_filings_enabled:
-        return DigitalOracleProviderConstructionResult[SecFilingsProviderBundle](
-            failure=_disabled_failure("edgar")
-        )
+        return _disabled_failure("edgar")
     if config.edgar_contact_email is None:
-        return DigitalOracleProviderConstructionResult[SecFilingsProviderBundle](
-            failure=DigitalOracleProviderFailure(
-                code=EDGAR_CONTACT_EMAIL_MISSING_CODE,
-                message=EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
-                details={
-                    "provider": "edgar",
-                    "secret": EDGAR_CONTACT_EMAIL_SECRET,
-                },
-            )
+        return DigitalOracleProviderFailure(
+            code=EDGAR_CONTACT_EMAIL_MISSING_CODE,
+            message=EDGAR_CONTACT_EMAIL_MISSING_MESSAGE,
+            details={
+                "provider": "edgar",
+                "secret": EDGAR_CONTACT_EMAIL_SECRET,
+            },
         )
 
-    return _configured(
-        SecFilingsProviderBundle(
-            provider=_descriptor(
-                key="edgar",
-                config=config,
-                default_item_limit=config.sec_filings_default_item_limit,
-            ),
-            edgar_contact_email=config.edgar_contact_email,
+    return SecFilingsProviderBundle(
+        provider=_descriptor(
+            key="edgar",
+            config=config,
             default_item_limit=config.sec_filings_default_item_limit,
-        )
+        ),
+        edgar_contact_email=config.edgar_contact_email,
+        default_item_limit=config.sec_filings_default_item_limit,
     )
 
 
 def _create_market_sentiment_provider(
     config: DigitalOracleProviderConfig,
-) -> DigitalOracleProviderConstructionResult[MarketSentimentProviderBundle]:
+) -> MarketSentimentProviderBundle | DigitalOracleProviderFailure:
     if not config.market_sentiment_enabled:
-        return DigitalOracleProviderConstructionResult[MarketSentimentProviderBundle](
-            failure=_disabled_failure("market_sentiment")
-        )
+        return _disabled_failure("market_sentiment")
 
-    return _configured(
-        MarketSentimentProviderBundle(
-            provider=_descriptor(key=MARKET_SENTIMENT_PROVIDER_KEY, config=config),
-            indicator=MARKET_SENTIMENT_PROVIDER_KEY,
-            source_url=MARKET_SENTIMENT_SOURCE_URL,
-        )
+    return MarketSentimentProviderBundle(
+        provider=_descriptor(key=MARKET_SENTIMENT_PROVIDER_KEY, config=config),
+        indicator=MARKET_SENTIMENT_PROVIDER_KEY,
+        source_url=MARKET_SENTIMENT_SOURCE_URL,
     )
 
 
 def create_prediction_markets_provider_bundle(
     settings: DigitalOracleSettings | None = None,
-) -> DigitalOracleProviderConstructionResult[PredictionMarketsProviderBundle]:
+) -> PredictionMarketsProviderBundle | DigitalOracleProviderFailure:
     config = get_digital_oracle_provider_config(settings)
     return _create_prediction_markets_provider_bundle(config)
 
@@ -321,7 +282,7 @@ def create_prediction_markets_provider_bundle(
 def create_sec_filings_provider(
     settings: DigitalOracleSettings | None = None,
     provider_secrets: DigitalOracleProviderSecrets | None = None,
-) -> DigitalOracleProviderConstructionResult[SecFilingsProviderBundle]:
+) -> SecFilingsProviderBundle | DigitalOracleProviderFailure:
     config = _config_with_provider_secrets(
         get_digital_oracle_provider_config(settings),
         provider_secrets,
@@ -331,7 +292,7 @@ def create_sec_filings_provider(
 
 def create_market_sentiment_provider(
     settings: DigitalOracleSettings | None = None,
-) -> DigitalOracleProviderConstructionResult[MarketSentimentProviderBundle]:
+) -> MarketSentimentProviderBundle | DigitalOracleProviderFailure:
     config = get_digital_oracle_provider_config(settings)
     return _create_market_sentiment_provider(config)
 
@@ -406,7 +367,6 @@ def _config_with_provider_secrets(
 __all__ = [
     "DigitalOraclePhase1ProviderBundle",
     "DigitalOracleProviderSecrets",
-    "DigitalOracleProviderConstructionResult",
     "DigitalOracleProviderDescriptor",
     "DigitalOracleProviderFailure",
     "DigitalOracleSourceScopedProviderBundle",

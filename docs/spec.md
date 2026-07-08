@@ -6,7 +6,7 @@
 
 SignalDeck is a dual-stack FastAPI and React/Vite application with preserved finance template/report workflows and a package-first agent platform. Backend JSON is camelCase externally and snake_case internally. Preserved finance routes live under `/api/v1` through the bundled `signaldeck.finance` extension; platform routes live under `/api`.
 
-The canonical execution model is immutable Workflow Package artifact plus late-bound execution environment. A run freezes the selected package artifact and non-secret runtime profile evidence, while live credentials, extension state, package secret bindings, provider behavior, and runtime infrastructure remain late-bound for readiness and execution.
+The canonical execution model is immutable Workflow Package artifact plus late-bound execution environment. A run freezes the selected package artifact and non-secret runtime profile evidence, while live credentials, statically installed extension tools/providers, package secret bindings, provider behavior, and runtime infrastructure remain late-bound for readiness and execution.
 
 ## Runtime Topology
 
@@ -29,9 +29,9 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 ## Backend Architecture
 
 - `backend/app/main.py` owns app creation, exception handlers, CORS, and health.
-- `backend/app/api/router.py` composes preserved `/api/v1` finance routes behind extension gates.
-- `backend/app/api/platform_router.py` mounts `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/extensions`, `/api/tools`, and `/api/runs`.
-- `backend/app/extensions/signaldeck_finance/` contributes current template/report routes, finance provider services, finance tools, and registrars as `signaldeck.finance`.
+- `backend/app/api/router.py` composes preserved `/api/v1` routes from `INSTALLED_EXTENSIONS`.
+- `backend/app/api/platform_router.py` mounts `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/tools`, and `/api/runs`.
+- `backend/app/extensions/signaldeck_finance/` contributes current template/report routes, finance provider services, and finance tools as `signaldeck.finance`.
 - `backend/app/extensions/signaldeck_digital_oracle/` contributes only Digital Oracle runtime tools as `signaldeck.digital_oracle`; Digital Oracle has no route or nav surface, and it adds no API routers, frontend routes, or provider bundles in this upgrade.
 - `backend/app/api/dependencies.py` is the service composition root.
 - `backend/app/core/telemetry.py` owns optional Logfire setup and trace/span id formatting.
@@ -40,15 +40,15 @@ The canonical execution model is immutable Workflow Package artifact plus late-b
 ## Frontend Architecture
 
 - `frontend/src/App.tsx` creates the TanStack Query client, theme provider, error boundary, and router provider.
-- `frontend/src/routes.ts` defines flat routes for dashboard, finance workspace pages, Workflow Packages, Scheduled Tasks, Model Connections, Extensions, and Runs. Tools are linked through package authoring metadata, not a standalone route.
+- `frontend/src/routes.ts` defines flat routes for dashboard, finance workspace pages, Workflow Packages, Scheduled Tasks, Model Connections, and Runs. Tools are linked through package authoring metadata, not a standalone route.
 - `frontend/src/components/layout.tsx` owns sidebar labels, breadcrumbs, and the app shell.
-- `frontend/src/extensions/runtime-helpers.ts` assembles finance routes/nav from extension state and filters package-authoring tools across bundled frontend extensions; `ExtensionRead` is the slim `{key,label,enabled}` contract.
+- Frontend route/nav ownership is static for bundled product surfaces; package-authoring tools come from `/api/tools`.
 - API helpers live under `frontend/src/lib/api/`; wire types live under `frontend/src/lib/types/`; query keys live in `frontend/src/lib/query-keys.ts`.
 - Platform authoring helpers under `frontend/src/lib/platform-authoring/` keep schema/value/ref/manifest transforms out of routed pages.
 
 ## Preserved Finance Product API
 
-`signaldeck.finance` is enabled by default and gates preserved product APIs. Extension state supports enable and disable only.
+`signaldeck.finance` statically owns preserved product APIs through the backend extension contract.
 
 | Resource  | Routes                                                                                                                                                                                                     |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -66,11 +66,10 @@ Template/report series use runtime inputs plus report metadata tags to resolve p
 | Package exports and launches | `GET /api/workflow-packages/{packageId}/export`, `POST /api/workflow-packages/{packageId}/preflight`, `GET /api/workflow-packages/{packageId}/launch`, `POST /api/workflow-packages/{packageId}/launches`                             |
 | Scheduled Tasks              | `GET/POST /api/schedules`, `POST /api/schedules/preview`, `GET/PATCH/DELETE /api/schedules/{scheduleId}`, `POST /api/schedules/{scheduleId}/preview`, `POST /api/schedules/{scheduleId}/run-now`, `GET /api/schedules/{scheduleId}/fires` |
 | Model connections            | `GET/POST /api/model-connections`, `GET/PATCH/DELETE /api/model-connections/{connectionId}`, `POST /api/model-connections/{connectionId}/connection-test`, `POST /api/model-connections/{connectionId}/capability-probe`              |
-| Extensions                   | `GET /api/extensions`, `PATCH /api/extensions/{extensionKey}`                                                                                                                                                                         |
 | Tools                        | `GET /api/tools`                                                                                                                                                                                                                      |
 | Runs                         | `GET /api/runs`, `GET/DELETE /api/runs/{runId}`, `GET /api/runs/{runId}/rerun-draft`, `POST /api/runs/{runId}/reruns`                      |
 
-Live package reads and writes do not include status. Package persistence stores dependency keys as artifact references; readiness endpoints evaluate those refs against live model connections, extension state, and package secret bindings. Deleting a package deletes its owned runs.
+Live package reads and writes do not include status. Package persistence stores dependency keys as artifact references; readiness endpoints evaluate those refs against live model connections, installed extension tools, and package secret bindings. Deleting a package deletes its owned runs.
 
 Model Connection payloads use `protocolProfile` as the live writable selector, with `openai_chat_completions` and `openai_responses` as shipped values. Backend `ModelConnectionResolutionService` owns effective capability evidence for reads, preflight, runtime strategy selection, and run provenance. Public create/update requests accept writable connection identity, endpoint/model settings, `protocolProfile`, timeout, reasoning effort, and write-only `apiKey`; client-authored capabilities, policy fields, probe cache TTL, derived `apiStyle`, and other capability/runtime-profile truth are rejected rather than treated as authoritative. Reads include backend-derived capability states, policy fields, timeout, probe cache metadata, reachability-test metadata, and historical derived `apiStyle`; raw secrets are never returned.
 
@@ -107,8 +106,7 @@ Package secret bindings are package-local encrypted values, not manifest/export 
 
 `/api/tools` is the core global read-only discovery host.
 
-- Finance tools appear only while the `signaldeck.finance` toggle is enabled.
-- Digital Oracle tools appear only while the `signaldeck.digital_oracle` toggle is enabled.
+- Finance and Digital Oracle tools appear when their owner extensions are listed in `INSTALLED_EXTENSIONS`.
 - There is no server-declared memory tool surface.
 
 Current native runtime tools include quote/history/OHLCV, indicators, fundamentals, news, social sentiment, insider data, and Finance Workspace report lookup. `signaldeck.digital_oracle` owns the Digital Oracle tools `signaldeck.digital_oracle.prediction_markets.lookup`, `signaldeck.digital_oracle.sec_filings.lookup`, `signaldeck.digital_oracle.market_sentiment.lookup`, `signaldeck.digital_oracle.macro_rates.lookup`, `signaldeck.digital_oracle.crypto_derivatives.lookup`, `signaldeck.digital_oracle.cftc_positioning.lookup`, and `signaldeck.digital_oracle.options.lookup`; their tool keys are canonical owner-qualified contracts and their OpenAI function names are mechanical forms derived from those keys.
@@ -125,7 +123,7 @@ The Digital Oracle-backed tools expose normalized payloads only. `signaldeck.dig
 
 Generic web search remains package-private MCP configuration inside Workflow Packages, for example a package-local Exa MCP grant, not a shipped global Digital Oracle tool. The shipped Digital Oracle tool surface is limited to the seven registered keys above.
 
-Tool failure metadata is typed with `failureClass`, `source`, `phase`, `retryable`, and `disposition`. The retryable allowlist is limited to pre-dispatch provider tool-argument JSON/object failures, native tool argument validation, and MCP argument JSON/schema validation before transport dispatch. Auth, permission, grants, namespaces, extension-disabled states, missing secrets, unsupported or retired tool names, provider/network/transport errors, MCP transport errors, executor/business-rule failures, policy failures, output-schema failures, and retry-bound exhaustion are fatal.
+Tool failure metadata is typed with `failureClass`, `source`, `phase`, `retryable`, and `disposition`. The retryable allowlist is limited to pre-dispatch provider tool-argument JSON/object failures, native tool argument validation, and MCP argument JSON/schema validation before transport dispatch. Auth, permission, grants, namespaces, missing secrets, unsupported or retired tool names, provider/network/transport errors, MCP transport errors, executor/business-rule failures, policy failures, output-schema failures, and retry-bound exhaustion are fatal.
 
 Model-feedback retries use one bounded correction attempt and record redacted `toolCallRetries` metadata. Retry admission is based on typed taxonomy, not free-form error text, provider status text, or exception class names alone.
 

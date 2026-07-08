@@ -108,15 +108,6 @@ def business_rule_error(
     )
 
 
-def extension_disabled_error(extension_key: str, surface: str) -> ApiError:
-    return ApiError(
-        status_code=status.HTTP_403_FORBIDDEN,
-        code="extension_disabled",
-        message="Extension is disabled",
-        details=[{"extensionKey": extension_key, "surface": surface}],
-    )
-
-
 def validation_error(
     message: str, details: Sequence[Mapping[str, object]] | None = None
 ) -> ApiError:

@@ -1,7 +1,7 @@
 # pyright: reportMissingImports=false
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import Depends
@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.agents import ToolCatalog
 from app.db.session import get_db_session, get_session_factory
+from app.extensions.registry import build_execution_provider_bundle
 from app.services.execution_providers import ExecutionProviderBundle
-from app.services.extension_service import ExtensionService, ResolvedExtensionState
 from app.services.model_connection_probe_service import ModelConnectionProbeService
 from app.services.model_connection_service import ModelConnectionService
 from app.services.run_service import RunService
@@ -23,37 +23,12 @@ def get_session() -> Iterator[Session]:
     yield from get_db_session()
 
 
-def get_extension_service(
-    session: Annotated[Session, Depends(get_session)],
-) -> ExtensionService:
-    from app.services.extension_service import ExtensionService
-
-    return ExtensionService(session)
+def get_tool_catalog() -> ToolCatalog:
+    return ToolCatalog()
 
 
-def get_tool_catalog(
-    extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
-) -> ToolCatalog:
-    return extension_service.get_tool_catalog()
-
-
-def require_extension_enabled(
-    *,
-    extension_key: str,
-    surface: str,
-) -> Callable[[ExtensionService], ResolvedExtensionState]:
-    def dependency(
-        service: Annotated[ExtensionService, Depends(get_extension_service)],
-    ) -> ResolvedExtensionState:
-        return service.require_enabled(extension_key, surface=surface)
-
-    return dependency
-
-
-def get_execution_provider_bundle(
-    extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
-) -> ExecutionProviderBundle:
-    return extension_service.get_execution_provider_bundle()
+def get_execution_provider_bundle() -> ExecutionProviderBundle:
+    return build_execution_provider_bundle()
 
 
 def get_model_connection_service(
@@ -72,11 +47,10 @@ def get_model_connection_probe_service(
 
 def get_workflow_package_preflight_service(
     session: Annotated[Session, Depends(get_session)],
-    extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
 ) -> WorkflowPackagePreflightService:
     from app.services.workflow_package_preflight import WorkflowPackagePreflightService
 
-    return WorkflowPackagePreflightService(session, extension_service=extension_service)
+    return WorkflowPackagePreflightService(session)
 
 
 def get_run_service(
@@ -86,7 +60,6 @@ def get_run_service(
         WorkflowPackagePreflightService,
         Depends(get_workflow_package_preflight_service),
     ],
-    extension_service: Annotated[ExtensionService, Depends(get_extension_service)],
 ) -> RunService:
     from app.services.run_service import RunService
 
@@ -95,7 +68,6 @@ def get_run_service(
         get_session_factory(),
         provider_bundle=provider_bundle,
         preflight_service=preflight_service,
-        extension_service=extension_service,
     )
 
 
@@ -136,7 +108,6 @@ def get_workflow_package_schedule_service(
 
 __all__ = [
     "get_execution_provider_bundle",
-    "get_extension_service",
     "get_model_connection_probe_service",
     "get_model_connection_service",
     "get_run_service",
@@ -145,5 +116,4 @@ __all__ = [
     "get_workflow_package_preflight_service",
     "get_workflow_package_schedule_service",
     "get_workflow_package_service",
-    "require_extension_enabled",
 ]

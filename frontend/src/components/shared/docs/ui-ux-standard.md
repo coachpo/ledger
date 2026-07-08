@@ -20,7 +20,7 @@ Use the renovated Apple-inspired surface model. Screens should read as a calm ma
 
 Use semantic tokens. Colors come from `theme.css` and Tailwind semantic classes such as `bg-ui-canvas`, `bg-card/95`, `bg-ui-surface-grouped`, `bg-ui-surface-inset`, `text-foreground`, `text-muted-foreground`, `border-border/70`, `text-destructive`, `text-positive`, and `text-negative`.
 
-Make state explicit. Loading, empty, filtered-empty, disabled-extension, error, saving, validating, launching, and polling states should map to route metadata and visible UI states.
+Make state explicit. Loading, empty, filtered-empty, unavailable, error, saving, validating, launching, and polling states should map to route metadata and visible UI states.
 
 Keep route ownership visible. Feature labels, route-specific copy, query hooks, mutation behavior, toasts, and navigation stay route-owned.
 

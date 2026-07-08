@@ -3,9 +3,9 @@
 > Inherits `/AGENTS.md` and `/frontend/AGENTS.md`. This file only covers `src/hooks/`.
 
 ## OVERVIEW
-`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for templates, reports, Extensions, Workflow Packages, Scheduled Tasks, extension-filtered read-only Tools metadata for package authoring, Model Connections, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
+`src/hooks/` wraps the current `src/lib/api/*.ts` modules with TanStack Query hooks for templates, reports, Workflow Packages, Scheduled Tasks, read-only Tools metadata for package authoring, Model Connections, Runs, plus lightweight route-shell UI state helpers for inventory filters, table selection, and one small debounce helper.
 
-Extension model: statically resident extension state flows.
+Extension model: backend extensions are statically installed. The remaining `use-extensions.ts` hook is a transitional cleanup target for Task 5.3, not a live backend state contract.
 
 The repo has no users yet, so prefer clean architecture and current best practices over backward-compatibility shims or speculative legacy paths.
 
@@ -24,8 +24,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 |---|---|---|
 | Template flows | `use-templates.ts` | list/detail CRUD, inline compile with runtime inputs, placeholder tree |
 | Report flows | `use-reports.ts` | list/detail, compile with runtime inputs, upload, update, delete |
-| Extension state flows | `use-extensions.ts` | `/api/extensions` list/toggle state, finance cache invalidation, route/tool visibility support |
-| Workflow Package flows | `use-workflow-packages.ts` | package list/detail, manifest CRUD, import, export, secret bindings, validation, preflight, launch, and extension-filtered tool reads |
+| Transitional extension hook | `use-extensions.ts` | stale frontend host hook scheduled for Task 5.3 removal; do not add new callers |
+| Workflow Package flows | `use-workflow-packages.ts` | package list/detail, manifest CRUD, import, export, secret bindings, validation, preflight, launch, and installed tool reads |
 | Scheduled Task flows | `use-scheduled-tasks.ts` | schedule list/detail/fire queries plus create/update/delete/preview/run-now mutations and linked-run invalidation |
 | Model connection flows | `use-model-connections.ts` | saved endpoint CRUD, delete, connection-test helpers |
 | Run flows | `use-runs.ts` | run list/detail reads with package provenance, backend progress/queue payloads, active queued/running polling, plus rerun draft and create mutations |
@@ -37,11 +37,11 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## CONVENTIONS
 - Template hooks invalidate `queryKeys.templates.list()` and keep placeholder/detail query composition inside the hooks layer.
 - Report hooks invalidate `queryKeys.reports.list()` for writes and additionally invalidate slug-scoped detail keys after content edits so the detail route refreshes without a redirect.
-- `useTools()` composes `/api/tools` with `useExtensions()` and returns extension-filtered read-only tool metadata for package capability-profile pickers.
+- `useTools()` should expose installed read-only tool metadata from `/api/tools` for package capability-profile pickers without frontend extension filtering.
 - Package-first platform hooks invalidate `queryKeys.platform.*` namespaces. Package mutations also refresh launch, preflight, and manifest/detail scopes so run-creation surfaces converge after edits/imports/deletes.
 - Scheduled Task hooks use `queryKeys.platform.schedules.*`; create/update/delete/run-now mutations refresh schedule lists/details/fire history and linked run keys so fire history and run detail converge after materialization or deletion.
 - Model-connection connection tests invalidate persisted last-test metadata after save/test flows.
-- `useToggleExtension()` invalidates extension state plus finance workspace caches so routes, nav, and package tool filters converge after enable/disable changes.
+- Do not add new `useToggleExtension()` flows; backend extension toggles are removed and the existing hook is a Task 5.3 deletion target.
 - UI state hooks such as `useResourceFilterState()`, `useResourceSelectionState()`, and `useSplitInspectorState()` stay presentational and page-local; they coordinate shared shells but never fetch or invalidate server data.
 - `useCompileInline()` is a mutation because it represents explicit compile work rather than cached resource fetching; it accepts both template content and optional runtime inputs for `{{inputs...}}` preview resolution.
 - `useCompileReport()` is a mutation because report generation is a write that creates a persisted snapshot from a template and may include runtime inputs.
@@ -56,7 +56,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 - Do not mutate cache state ad hoc when invalidation helpers already model the scope.
 - Do not hide API errors in hooks; let the caller decide how to surface them.
 - Do not special-case report uploads or downloads in pages when the hooks/API modules already own the request behavior.
-- Do not bypass `use-extensions.ts` or `useTools()` for extension state and tool visibility in package flows.
+- Do not add new `use-extensions.ts` dependencies; package flows should consume installed tool metadata through `useTools()`.
 - Do not move route-local UI state into this layer just because a page is busy.
 
 ## VALIDATION
@@ -71,5 +71,5 @@ pnpm test:run
 - Template and report hooks keep cache policy intentionally simple: list/detail invalidation in hooks, navigation and toasts in callers.
 - `invalidateWorkflowPackageScope()` is the central package-side invalidation helper; keep route surfaces aligned with it instead of inventing page-local refresh rules.
 - `use-scheduled-tasks.ts` owns schedule list/detail/fire invalidation plus linked run refresh after run-now; pages own recurrence/input-template draft UI, navigation, and toasts.
-- Package-first platform hooks follow the same split: cache policy, extension-state filtering, and invalidation live here, while routed pages own UI, navigation, and feedback.
+- Package-first platform hooks follow the same split: cache policy and invalidation live here, while routed pages own UI, navigation, and feedback.
 - The route-shell state hooks are reusable across finance template/report inventories and platform workspace/console pages; current cross-route usage varies by hook, so keep filter/selection/inspector behavior aligned here instead of cloning page-local implementations.

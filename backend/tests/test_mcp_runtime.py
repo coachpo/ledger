@@ -30,8 +30,6 @@ from app.agents.mcp.tool_adapter import (
 )
 from app.agents.runtime_tools.types import RuntimeToolError
 from app.extensions.signaldeck_finance.ownership import FINANCE_WORKSPACE_EXTENSION_KEY
-from app.schemas.extension import ExtensionToggleRequest
-from app.services.extension_service import ExtensionService
 
 
 def _input_schema() -> dict[str, object]:
@@ -213,30 +211,6 @@ def test_mcp_runtime_rejects_package_private_exa_malformed_descriptor_without_se
     assert exc_info.value.code == "mcp_tool_descriptor_invalid"
     assert "secret-token" not in error_payload
     assert "package-token" not in error_payload
-
-
-def test_mcp_runtime_blocks_package_private_exa_when_owner_extension_disabled(
-    session_factory: sessionmaker[Session],
-) -> None:
-    with session_factory() as session:
-        _ = ExtensionService(session).set_extension_enabled(
-            FINANCE_WORKSPACE_EXTENSION_KEY,
-            ExtensionToggleRequest(enabled=False),
-        )
-
-    with pytest.raises(RuntimeToolError) as exc_info:
-        McpRuntimeResolver(session_factory).build_dispatcher(
-            mcp_server_refs=[_package_private_exa_ref()],
-            enabled=True,
-        )
-
-    assert exc_info.value.code == "extension_disabled"
-    assert exc_info.value.details == [
-        {
-            "extensionKey": FINANCE_WORKSPACE_EXTENSION_KEY,
-            "surface": "mcp.packagePrivate.web_search_exa",
-        }
-    ]
 
 
 def test_mcp_runtime_rejects_package_private_exa_malformed_config_without_secret_leak(
