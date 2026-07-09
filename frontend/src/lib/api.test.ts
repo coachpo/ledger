@@ -19,10 +19,14 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-function textResponse(body: string, status: number): Response {
+function textResponse(
+  body: string,
+  status: number,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(body, {
     status,
-    headers: { "content-type": "text/plain" },
+    headers: { "content-type": "text/plain", ...headers },
   });
 }
 
@@ -304,5 +308,52 @@ describe("api client", () => {
     expect(url).toBe(
       "https://signaldeck.example.com/api/v1/templates/template%20with%2Fslash",
     );
+  });
+
+  it("keeps blob download URLs alive until after the browser click starts", async () => {
+    const { downloadFile } = await loadApiModule();
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    const createObjectUrlMock = vi.fn(() => "blob:signaldeck-report");
+    const revokeObjectUrlMock = vi.fn();
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {
+        expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+      });
+
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectUrlMock,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectUrlMock,
+    });
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(
+      textResponse("Downloaded report", 200, {
+        "content-disposition": 'attachment; filename="report.md"',
+      }),
+    );
+
+    try {
+      await expect(downloadFile("/reports/report/download")).resolves.toBeUndefined();
+      expect(clickSpy).toHaveBeenCalledOnce();
+      expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+
+      await vi.runAllTimersAsync();
+      expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:signaldeck-report");
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: originalCreateObjectUrl,
+      });
+      Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: originalRevokeObjectUrl,
+      });
+    }
   });
 });

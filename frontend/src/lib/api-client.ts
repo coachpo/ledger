@@ -312,7 +312,7 @@ function triggerBrowserDownload(blob: Blob, filename: string): void {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(href);
+  setTimeout(() => URL.revokeObjectURL(href), 0);
 }
 
 async function fetchWithBaseUrl(

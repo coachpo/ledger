@@ -47,6 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   localStorage.clear();
   globalThis.fetch = ORIGINAL_FETCH;
@@ -66,6 +67,7 @@ describe("reports api", () => {
     const { downloadReport } = await loadReportsApi("https://signaldeck.example.com/api/v1/");
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("fresh-token");
+    vi.useFakeTimers();
     localStorage.setItem("signaldeck.apiToken", "stale-token");
     fetchMock
       .mockResolvedValueOnce(textResponse("Unauthorized", 401))
@@ -83,6 +85,8 @@ describe("reports api", () => {
     );
     expect(createObjectUrlMock).toHaveBeenCalledTimes(1);
     expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+    await vi.runAllTimersAsync();
     expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:report-download");
   });
 });
