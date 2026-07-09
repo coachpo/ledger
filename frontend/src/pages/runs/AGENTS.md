@@ -27,7 +27,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Rerun helpers      | `rerun-dialog.tsx`, `inspection-state.ts`, `detail-tabs.ts`            | root-parameter rerun modal plus URL-backed inspection-pane and tab state                                                                                                  |
 | Run hooks          | `../../hooks/use-runs.ts`                                             | list/detail queries, rerun draft/create hooks, and refetch intervals                                                                             |
 | Shared formatting  | `../../lib/format.ts`                                                 | timestamps and JSON helpers                                                                                                                                               |
-| Route coverage     | `list.test.tsx`, `detail.test.tsx`, `detail-tabs.test.ts`, `detail-http-operations.test.tsx`, `detail-sections.exports.test.ts` | list polling, detail rendering, URL tab resolution, rerun behavior, HTTP operation coverage, and detail-section export contract |
+| Route coverage     | `list.test.tsx`, `detail-tabs.test.ts`, `detail-http-operations.test.tsx`, `detail-sections.exports.test.ts`, `frontend/e2e/runs.spec.ts` | list polling, URL tab resolution, rerun behavior, HTTP operation coverage, detail-section export contract, and routed detail coverage |
 
 ## CONVENTIONS
 
@@ -57,7 +57,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ```bash
 cd frontend
-pnpm test:run src/pages/runs/list.test.tsx src/pages/runs/detail.test.tsx src/pages/runs/detail-tabs.test.ts src/pages/runs/detail-http-operations.test.tsx
+pnpm test:run src/pages/runs/list.test.tsx src/pages/runs/detail-tabs.test.ts src/pages/runs/detail-http-operations.test.tsx
+pnpm test:e2e -- runs.spec.ts
 ```
 
 ## NOTES

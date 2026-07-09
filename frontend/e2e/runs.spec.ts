@@ -129,7 +129,7 @@ async function seedCompletedRun(request: APIRequestContext) {
   const packageKey = `e2e_runs_monitor_${suffix}`;
   const modelKey = `e2e_runs_model_${suffix}`;
 
-  await seedModelConnection(request, modelKey);
+  const modelConnectionId = await seedModelConnection(request, modelKey);
   const createResponse = await request.post(
     `${PLATFORM_API_BASE}/workflow-packages`,
     { data: { manifestSource: packageManifest(packageKey, modelKey) } },
@@ -165,7 +165,7 @@ async function seedCompletedRun(request: APIRequestContext) {
   expect(detailResponse.ok()).toBeTruthy();
   const detail = await detailResponse.json();
 
-  return { runId, targetKey: String(detail.targetKey) };
+  return { modelConnectionId, runId, targetKey: String(detail.targetKey) };
 }
 
 test.describe("Runs inventory monitor", () => {
@@ -173,7 +173,7 @@ test.describe("Runs inventory monitor", () => {
     page,
     request,
   }) => {
-    const { runId, targetKey } = await seedCompletedRun(request);
+    const { modelConnectionId, runId, targetKey } = await seedCompletedRun(request);
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/runs");
@@ -280,7 +280,58 @@ test.describe("Runs inventory monitor", () => {
     await expectSharedDialogShell(page);
     await expect(rerunDialog).toContainText("Source run");
     await expect(rerunDialog).toContainText("Readiness");
-    await rerunDialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(rerunDialog).toBeHidden();
+    const parametersJson = rerunDialog.getByLabel("Root run parameters JSON");
+    await expect(parametersJson).toHaveValue(/AAPL/);
+    await parametersJson.fill('{"ticker":');
+    await expect(rerunDialog).toContainText(
+      "Root run parameters JSON must be valid JSON.",
+    );
+    await expect(rerunDialog.getByTestId("run-rerun-submit")).toBeDisabled();
+    await parametersJson.fill('{"ticker":"MSFT"}');
+    await expect(rerunDialog.getByTestId("run-rerun-submit")).toBeEnabled();
+    const [rerunResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/runs/${runId}/reruns`) &&
+          response.request().method() === "POST",
+      ),
+      rerunDialog.getByTestId("run-rerun-submit").click(),
+    ]);
+    const rerunResponseText = await rerunResponse.text();
+    expect(rerunResponse.status(), rerunResponseText).toBe(201);
+    const rerunId = Number(JSON.parse(rerunResponseText).id);
+    await expect(page).toHaveURL(new RegExp(`/runs/${rerunId}$`));
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(`${PLATFORM_API_BASE}/runs/${rerunId}`);
+          expect(response.ok()).toBeTruthy();
+          return (await response.json()).status;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe("succeeded");
+    const rerunDetailResponse = await request.get(
+      `${PLATFORM_API_BASE}/runs/${rerunId}`,
+    );
+    expect(rerunDetailResponse.ok()).toBeTruthy();
+    expect((await rerunDetailResponse.json()).input).toMatchObject({
+      ticker: "MSFT",
+    });
+
+    const deleteConnection = await request.delete(
+      `${PLATFORM_API_BASE}/model-connections/${modelConnectionId}`,
+    );
+    expect(deleteConnection.status()).toBe(204);
+    await page.goto(`/runs/${runId}`);
+    await page.getByTestId("runs-detail-rerun").click();
+    const blockedRerunDialog = page.getByRole("dialog", {
+      name: /run snapshot again/i,
+    });
+    await expect(blockedRerunDialog).toBeVisible();
+    await expect(blockedRerunDialog.getByTestId("run-rerun-readiness")).toContainText(
+      "Current snapshot readiness blocked",
+    );
+    await expect(blockedRerunDialog.getByTestId("run-rerun-submit")).toBeDisabled();
   });
 });

@@ -37,5 +37,6 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 ## VALIDATION
 ```bash
 cd frontend
-pnpm test:run src/pages/runs/detail.test.tsx src/pages/runs/detail-http-operations.test.tsx src/pages/runs/detail-sections.exports.test.ts
+pnpm test:run src/pages/runs/detail-http-operations.test.tsx src/pages/runs/detail-sections.exports.test.ts
+pnpm test:e2e -- runs.spec.ts
 ```

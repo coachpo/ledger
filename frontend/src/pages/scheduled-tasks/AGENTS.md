@@ -20,9 +20,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 scheduled-tasks/
 |-- list.tsx         # inventory, package/workflow filters, status actions, run-now entry
 |-- editor.tsx       # create flow, package/workflow target, preview, save
-|-- detail.tsx       # full-height console for edit, preview, fire history, delete
-|-- list.test.tsx    # inventory states, package/workflow filters, links, actions
-`-- detail.test.tsx  # detail tabs, preview, run-now, delete, redirect states
+`-- detail.tsx       # full-height console for edit, preview, fire history, delete
 ```
 
 ## WHERE TO LOOK
@@ -35,7 +33,7 @@ scheduled-tasks/
 | Wire/API contracts | `../../lib/api/schedules.ts`, `../../lib/types/schedule.ts` | `/api/schedules` helpers plus recurrence, fire, preview, run-now, and 204 delete payloads |
 | Runtime input helpers | `../../lib/runtime-inputs.ts` | trimmed row-to-map conversion |
 | Route metadata | `../../routes.metadata.ts` | list is inventory/scroll/wide, new is editor/fullHeight/full, detail is console/fullHeight/full |
-| Coverage | `list.test.tsx`, `detail.test.tsx`, `../../hooks/use-scheduled-tasks.test.ts`, `../../lib/api/schedules.test.ts` | route behavior, hook invalidation, and API endpoint contracts |
+| Coverage | `editor.test.tsx`, `../../hooks/use-scheduled-tasks.test.ts`, `../../lib/api/schedules.test.ts`, `frontend/e2e/scheduled-tasks.spec.ts` | create-route behavior, hook invalidation, API endpoint contracts, and routed list/detail browser flows |
 
 ## CONVENTIONS
 - `frontend/DESIGN.md` is the source of truth for this route family's page layout, shared shells, tokens, and management UI patterns.
@@ -64,5 +62,6 @@ scheduled-tasks/
 ## VALIDATION
 ```bash
 cd frontend
-pnpm test:run src/pages/scheduled-tasks/list.test.tsx src/pages/scheduled-tasks/detail.test.tsx src/hooks/use-scheduled-tasks.test.ts src/lib/api/schedules.test.ts
+pnpm test:run src/pages/scheduled-tasks/editor.test.tsx src/hooks/use-scheduled-tasks.test.ts src/lib/api/schedules.test.ts
+pnpm test:e2e -- scheduled-tasks.spec.ts
 ```

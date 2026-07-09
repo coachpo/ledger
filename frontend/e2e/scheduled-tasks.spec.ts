@@ -138,6 +138,39 @@ async function seedScheduledPackage(request: APIRequestContext) {
   return JSON.parse(responseText) as { id: number; key: string; name: string };
 }
 
+async function createScheduleViaApi(
+  request: APIRequestContext,
+  workflowPackageId: number,
+  name: string,
+  status: "enabled" | "paused" = "enabled",
+) {
+  const response = await request.post(`${PLATFORM_API_BASE}/schedules`, {
+    data: {
+      packageId: workflowPackageId,
+      workflowKey: "scheduled_flow",
+      name,
+      description: "E2E list coverage schedule.",
+      status,
+      timezone: "America/New_York",
+      recurrence: { type: "daily", atLocalTime: "09:30" },
+      inputTemplate: {
+        analysisTag: name,
+        asOfDate: "{{fire.scheduledLocalDate}}",
+        scheduledDateTime: "{{fire.scheduledLocalDateTime}}",
+        scheduledLocalTime: "{{fire.scheduledLocalTime}}",
+      },
+      templateVars: {},
+    },
+  });
+  const responseText = await response.text();
+  expect(response.status(), responseText).toBe(201);
+  return JSON.parse(responseText) as {
+    id: number;
+    latestRunId: number | null;
+    name: string;
+  };
+}
+
 async function waitForRun(request: APIRequestContext, runId: number) {
   const startedAt = Date.now();
   let latest: Record<string, unknown> | null = null;
@@ -259,6 +292,99 @@ async function runScheduleNowAndWait(
 test.describe("scheduled tasks", () => {
   test.use({ timezoneId: "UTC" });
 
+  test("scheduled tasks list filters, row actions, selection, and bulk delete", async ({
+    page,
+    request,
+  }) => {
+    const workflowPackage = await seedScheduledPackage(request);
+    const activeSchedule = await createScheduleViaApi(
+      request,
+      workflowPackage.id,
+      `E2E list active ${workflowPackage.id}`,
+    );
+    const pausedSchedule = await createScheduleViaApi(
+      request,
+      workflowPackage.id,
+      `E2E list paused ${workflowPackage.id}`,
+      "paused",
+    );
+
+    await page.goto("/scheduled-tasks");
+    await expect(page.getByTestId("scheduled-tasks-list-page")).toBeVisible();
+    await page.getByTestId("scheduled-tasks-filter-package").click();
+    await page.getByRole("option", { name: workflowPackage.name }).click();
+    await expect(page.getByTestId(`scheduled-task-row-${activeSchedule.id}`)).toBeVisible();
+    await expect(page.getByTestId(`scheduled-task-row-${pausedSchedule.id}`)).toBeVisible();
+    await page.getByTestId("scheduled-tasks-filter-workflow").click();
+    await page.getByRole("option", { name: "Scheduled Flow" }).click();
+
+    const activeRow = page.getByTestId(`scheduled-task-row-${activeSchedule.id}`);
+    const pausedRow = page.getByTestId(`scheduled-task-row-${pausedSchedule.id}`);
+    await expect(activeRow).toContainText(activeSchedule.name);
+    await expect(pausedRow).toContainText(pausedSchedule.name);
+
+    const [runNowResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/schedules/${activeSchedule.id}/run-now`) &&
+          response.request().method() === "POST",
+      ),
+      activeRow
+        .getByRole("button", { name: `Run schedule ${activeSchedule.name} now` })
+        .click(),
+    ]);
+    expect(runNowResponse.ok()).toBeTruthy();
+
+    const [pauseResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/schedules/${activeSchedule.id}`) &&
+          response.request().method() === "PATCH",
+      ),
+      activeRow
+        .getByRole("button", { name: `Pause schedule ${activeSchedule.name}` })
+        .click(),
+    ]);
+    expect(pauseResponse.ok()).toBeTruthy();
+    await expect(
+      activeRow.getByRole("button", { name: `Resume schedule ${activeSchedule.name}` }),
+    ).toBeVisible();
+
+    const [resumePausedResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/schedules/${pausedSchedule.id}`) &&
+          response.request().method() === "PATCH",
+      ),
+      pausedRow
+        .getByRole("button", { name: `Resume schedule ${pausedSchedule.name}` })
+        .click(),
+    ]);
+    expect(resumePausedResponse.ok()).toBeTruthy();
+    await expect(
+      pausedRow.getByRole("button", { name: `Pause schedule ${pausedSchedule.name}` }),
+    ).toBeVisible();
+
+    await pausedRow
+      .getByRole("checkbox", { name: `Select scheduled task ${pausedSchedule.name}` })
+      .click();
+    await expect(page.getByTestId("scheduled-tasks-bulk-actions")).toContainText(
+      "1 of 2 scheduled tasks selected",
+    );
+    await page.getByRole("button", { name: "Delete selected" }).click();
+    const deleteDialog = page.getByRole("alertdialog");
+    await expect(deleteDialog).toContainText("Delete selected scheduled tasks");
+    await deleteDialog.getByRole("button", { name: "Delete selected" }).click();
+    await expect
+      .poll(async () => {
+        const response = await request.get(
+          `${PLATFORM_API_BASE}/schedules/${pausedSchedule.id}`,
+        );
+        return response.status();
+      })
+      .toBe(404);
+  });
+
   test("scheduled tasks create, preview, pause, run now, history, and latest run link", async ({
     page,
     request,
@@ -277,6 +403,78 @@ test.describe("scheduled tasks", () => {
     await expect(page.getByTestId("scheduled-task-detail-next-run-summary")).toContainText(
       "America/New_York",
     );
+    await page.getByRole("tab", { name: "Inputs" }).click();
+    const inputTemplate = page.getByLabel("Scheduled input template JSON");
+    await expect(inputTemplate).toBeVisible();
+    await inputTemplate.fill("[]");
+    await expect(
+      page.getByTestId("scheduled-input-json-validation-feedback"),
+    ).toContainText("Scheduled input template JSON must be a valid object.");
+    await expect(page.getByRole("button", { name: "Preview next run" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Save inputs" })).toBeDisabled();
+    await inputTemplate.fill(
+      JSON.stringify({ analysisTag: "{{inputs.ticker}}" }, null, 2),
+    );
+    await expect(
+      page.getByTestId("scheduled-input-json-validation-feedback"),
+    ).toContainText("Unsupported placeholder");
+    await expect(
+      page.getByTestId("scheduled-input-json-validation-feedback"),
+    ).toContainText("inputs.ticker");
+    await expect(page.getByRole("button", { name: "Preview next run" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Save inputs" })).toBeDisabled();
+    await inputTemplate.fill(
+      JSON.stringify({ extra: "{{fire.scheduledLocalDate}}" }, null, 2),
+    );
+    await page.getByRole("button", { name: "Preview next run" }).click();
+    await expect(page.getByTestId("schedule-input-preview")).toContainText("Not ready");
+    await expect(
+      page.getByTestId("scheduled-input-preview-validation-feedback"),
+    ).toContainText("asOfDate");
+
+    const [rejectedSavePreviewResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/schedules/preview") &&
+          response.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Save inputs" }).click(),
+    ]);
+    expect(rejectedSavePreviewResponse.ok()).toBeTruthy();
+    await expect(page.getByTestId("schedule-input-preview")).toContainText("Not ready");
+    const savedPreviewAfterRejectedSave = await request.post(
+      `${PLATFORM_API_BASE}/schedules/${scheduleId}/preview`,
+    );
+    expect(savedPreviewAfterRejectedSave.ok()).toBeTruthy();
+    expect((await savedPreviewAfterRejectedSave.json()).renderedParameters).toMatchObject({
+      analysisTag: "daily_research",
+    });
+
+    await inputTemplate.fill(
+      JSON.stringify(
+        {
+          analysisTag: "detail_preview",
+          asOfDate: "{{fire.scheduledLocalDate}}",
+          scheduledDateTime: "{{fire.scheduledLocalDateTime}}",
+          scheduledLocalTime: "{{fire.scheduledLocalTime}}",
+        },
+        null,
+        2,
+      ),
+    );
+    await page.getByRole("button", { name: "Preview next run" }).click();
+    const inputPreview = page.getByTestId("schedule-input-preview");
+    await expect(inputPreview).toContainText("Ready");
+    await expect(inputPreview).toContainText("detail_preview");
+    const [saveResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/schedules/${scheduleId}`) &&
+          response.request().method() === "PATCH",
+      ),
+      page.getByRole("button", { name: "Save inputs" }).click(),
+    ]);
+    expect(saveResponse.ok()).toBeTruthy();
 
     const pauseResponse = await request.patch(
       `${PLATFORM_API_BASE}/schedules/${scheduleId}`,
@@ -295,6 +493,11 @@ test.describe("scheduled tasks", () => {
     await expect(page.getByTestId("scheduled-task-detail-status-enabled")).toBeVisible();
 
     const runId = await runScheduleNowAndWait(page, request, scheduleId);
+    const runResponse = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
+    const runDetail = await runResponse.json();
+    expect(runDetail.input).toMatchObject({
+      analysisTag: "detail_preview",
+    });
 
     await page.goto(`/scheduled-tasks/${scheduleId}`);
     await expect(page.getByTestId("scheduled-task-detail-page")).toBeVisible();

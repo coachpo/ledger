@@ -29,8 +29,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Editor section helpers            | `editor-sections.tsx`                                                                                             | large tab/section helper surface for package-local resources, validation detail rendering, and repeated editor chrome            |
 | Import workspace                  | `import-page.tsx`                                                                                                 | pasted YAML import, before-unload and route-leave confirmation, and backend validation-detail rendering                         |
 | Package launch page               | `launch.tsx`                                                                                                      | dedicated `/workflow-packages/:packageId/run` console for preflight, runtime parameters, and run creation                       |
-| Editor and resource coverage      | `editor-shell.test.tsx`, `resource-editors.test.tsx`, `secret-bindings.test.tsx`, `http-node-validation.test.tsx` | full-height editor shell, resource editing, secret bindings, and private MCP HTTP/SSE validation                                |
-| Import / launch / export coverage | `import-page.test.tsx`, `launch.test.tsx`, `preflight-launch-export.test.tsx`, `list.test.tsx`                    | import workspace behavior, launch console, preflight/export flows, and inventory behavior                                       |
+| Editor and resource coverage      | `editor-shell.test.tsx`, `secret-bindings.test.tsx`, `http-node-validation.test.tsx`, `frontend/e2e/workflow-packages.spec.ts` | full-height editor shell, resource editing, secret bindings, private MCP HTTP/SSE validation, and routed authoring coverage      |
+| Import / launch / export coverage | `import-page.test.tsx`, `preflight-launch-export.test.tsx`, `list.test.tsx`, `frontend/e2e/workflow-packages.spec.ts`           | import workspace behavior, launch console, preflight/export flows, and inventory behavior                                       |
 
 ## CONVENTIONS
 
@@ -64,7 +64,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 
 ```bash
 cd frontend
-pnpm test:run src/pages/workflow-packages/editor-shell.test.tsx src/pages/workflow-packages/resource-editors.test.tsx src/pages/workflow-packages/secret-bindings.test.tsx src/pages/workflow-packages/http-node-validation.test.tsx src/pages/workflow-packages/import-page.test.tsx src/pages/workflow-packages/launch.test.tsx src/pages/workflow-packages/preflight-launch-export.test.tsx src/pages/workflow-packages/list.test.tsx
+pnpm test:run src/pages/workflow-packages/editor-shell.test.tsx src/pages/workflow-packages/secret-bindings.test.tsx src/pages/workflow-packages/http-node-validation.test.tsx src/pages/workflow-packages/import-page.test.tsx src/pages/workflow-packages/preflight-launch-export.test.tsx src/pages/workflow-packages/list.test.tsx
+pnpm test:e2e -- workflow-packages.spec.ts
 ```
 
 ## NOTES

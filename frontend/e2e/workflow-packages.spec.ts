@@ -90,6 +90,24 @@ function runtimeProfilePackageManifest(packageKey: string, modelKey: string) {
     );
 }
 
+function packageManifestWithPrivateMcp(packageKey: string, modelKey: string) {
+  return packageManifest(packageKey, modelKey).replace(
+    "  outputSchemas:",
+    [
+      "  mcpServers:",
+      "    - key: market_mcp",
+      "      name: Market MCP",
+      "      transport: stdio",
+      "      command: python",
+      "      args: [server.py]",
+      "      env:",
+      "        MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY}",
+      "      toolKeys: [web_search_exa]",
+      "  outputSchemas:",
+    ].join("\n"),
+  );
+}
+
 function wideOutputPackageManifest(
   packageKey: string,
   modelKey: string,
@@ -417,12 +435,42 @@ test.describe("Workflow packages", () => {
     expect(createResponse.status()).toBe(201);
     const created = await createResponse.json();
 
-    const runId = await launchPackageFromDedicatedPage(
-      page,
-      Number(created.id),
-      "advisory_flow",
-      { ticker: "AAPL" },
+    await page.goto(`/workflow-packages/${created.id}/run`);
+    await expect(page.getByTestId("workflow-package-launch-page")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Launch Workflow Package" }),
+    ).toBeVisible();
+    await selectLaunchWorkflow(page, "advisory_flow");
+
+    const preflightButton = page.getByRole("button", { name: "Run preflight" });
+    await expect(preflightButton).toBeEnabled();
+    const jsonMode = page.getByRole("radio", { name: "JSON" });
+    await jsonMode.click();
+    await expect(jsonMode).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("runtime-input-json-mode-notice")).toBeVisible();
+    const runtimeInputsJson = page.getByLabel("Runtime inputs JSON");
+    await expect(runtimeInputsJson).toBeEditable();
+    await runtimeInputsJson.fill('{"ticker":');
+    await preflightButton.click();
+    await expect(page.getByTestId("runtime-input-validation-feedback")).toContainText(
+      "Runtime inputs JSON",
     );
+
+    await runtimeInputsJson.fill('{"ticker":"AAPL"}');
+    await page.getByRole("button", { name: "Apply JSON to form" }).click();
+    await expect(page.getByRole("textbox", { name: "ticker" })).toHaveValue("AAPL");
+
+    const launchButton = page.getByRole("button", { name: "Launch Run" });
+    await page.getByRole("button", { name: "Run preflight" }).click();
+    await expect(page.getByTestId("workflow-package-preflight-status")).toContainText(
+      "Preflight ready",
+    );
+    await expect(launchButton).toBeEnabled();
+    await launchButton.click();
+    await expect(page).toHaveURL(/\/runs\/\d+$/, { timeout: 15_000 });
+    await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+    const runId = Number(new URL(page.url()).pathname.split("/").pop());
+    expect(Number.isFinite(runId)).toBeTruthy();
     const detail = await waitForRun(request, runId);
 
     expect(detail.status).toBe("succeeded");
@@ -455,7 +503,7 @@ test.describe("Workflow packages", () => {
     const createResponse = await request.post(
       `${PLATFORM_API_BASE}/workflow-packages`,
       {
-        data: { manifestSource: packageManifest(packageKey, modelKey) },
+        data: { manifestSource: packageManifestWithPrivateMcp(packageKey, modelKey) },
       },
     );
     expect(createResponse.status()).toBe(201);
@@ -464,6 +512,75 @@ test.describe("Workflow packages", () => {
     await openPackageEditor(page, Number(created.id));
     await page.getByRole("tab", { name: "Agents tab" }).click();
     await expect(page.getByTestId("workflow-package-agents-tab")).toBeVisible();
+
+    await page.getByRole("tab", { name: "Capability Profiles tab" }).click();
+    await expect(page.getByTestId("workflow-package-capability-profiles-tab")).toBeVisible();
+
+    await page.getByRole("tab", { name: "Private MCP tab" }).click();
+    await expect(page.getByTestId("workflow-package-private-mcp-tab")).toBeVisible();
+    const privateMcpCard = page.getByTestId("package-private-mcp-card-market_mcp");
+    await expect(privateMcpCard).toContainText("Environment values");
+    await page.getByLabel("Private MCP 1 local key").fill("market_mcp");
+    await page.getByLabel("Private MCP 1 name").fill("Market MCP");
+    await page.getByLabel("Private MCP 1 command").fill("python");
+    await page.getByLabel("Private MCP 1 args").fill(JSON.stringify(["server.py"], null, 2));
+    await privateMcpCard.getByRole("button", { name: "Add Env" }).click();
+    await page.getByLabel("Private MCP 1 env key 1").fill("MARKET_DATA_API_KEY");
+    await page
+      .getByLabel("Private MCP 1 env value 1")
+      .fill("${MARKET_DATA_API_KEY}");
+
+    const [saveMcpRequest, saveMcpResponse] = await Promise.all([
+      page.waitForRequest(
+        (request) =>
+          request.url().includes(`/api/workflow-packages/${created.id}`) &&
+          request.method() === "PATCH",
+      ),
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/workflow-packages/${created.id}`) &&
+          response.request().method() === "PATCH",
+      ),
+      page.getByLabel("Save package").click(),
+    ]);
+    const saveMcpResponseText = await saveMcpResponse.text();
+    expect(saveMcpResponse.status(), saveMcpResponseText).toBe(200);
+    const savedMcpPayload = saveMcpRequest.postDataJSON() as {
+      manifestSource: string;
+    };
+    expect(savedMcpPayload.manifestSource).toContain("env:");
+    expect(savedMcpPayload.manifestSource).toContain(
+      "MARKET_DATA_API_KEY: ${MARKET_DATA_API_KEY}",
+    );
+    expect(savedMcpPayload.manifestSource).toContain("toolKeys:");
+    expect(savedMcpPayload.manifestSource).toContain("web_search_exa");
+
+    await page.getByRole("button", { name: "Add Private MCP" }).click();
+    await page.getByLabel("Private MCP 2 local key").fill("market_mcp");
+    await page.getByLabel("Save package").click();
+    await expect(page.getByTestId("private-mcp-validation-feedback")).toContainText(
+      "Duplicate local key: market_mcp",
+    );
+    await expect(page.getByLabel("Private MCP 2 local key")).toBeFocused();
+
+    await page.getByRole("tab", { name: "Capability Profiles tab" }).click();
+    const capabilityCommands = page
+      .getByTestId("workflow-package-capability-profiles-tab")
+      .getByTestId("capability-tool-command");
+    const capabilityCommandCount = await capabilityCommands.count();
+    await page.getByRole("button", { name: "Add Profile" }).click();
+    await expect(capabilityCommands).toHaveCount(capabilityCommandCount + 1);
+    await expect(capabilityCommands.nth(capabilityCommandCount)).toContainText(
+      "signaldeck.finance.market_data.quote_lookup",
+    );
+
+    await page.getByRole("tab", { name: "Agents tab" }).click();
+    await page.getByRole("button", { name: "Add Agent" }).click();
+    const agentDialog = page.getByRole("dialog");
+    await expect(agentDialog).toContainText("Agent editor");
+    await expect(agentDialog.getByLabel("Agent local key")).toBeVisible();
+    await expect(agentDialog.getByLabel("System prompt")).toBeVisible();
+    await agentDialog.getByRole("button", { name: "Close agent editor" }).click();
 
     const editedSource = packageManifest(
       packageKey,
@@ -592,6 +709,73 @@ test.describe("Workflow packages", () => {
     await expect(rerunDialog).toContainText("Readiness");
     await page.getByTestId("run-rerun-submit").click();
     await expect(page).toHaveURL(/\/runs\/\d+$/);
+  });
+
+  test("focuses validate diagnostics on exact private MCP fields", async ({
+    page,
+    request,
+  }) => {
+    const suffix = Date.now();
+    const packageKey = `e2e_package_diagnostics_${suffix}`;
+    const modelKey = `e2e_model_diagnostics_${suffix}`;
+
+    await seedModelConnection(request, modelKey);
+    const createResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      {
+        data: { manifestSource: packageManifestWithPrivateMcp(packageKey, modelKey) },
+      },
+    );
+    expect(createResponse.status()).toBe(201);
+    const created = await createResponse.json();
+
+    await openPackageEditor(page, Number(created.id));
+    await page.getByRole("tab", { name: "Private MCP tab" }).click();
+    await page.getByRole("button", { name: "Add Private MCP" }).click();
+    await page.getByLabel("Private MCP 2 local key").fill("diagnostic_mcp");
+    await page.getByLabel("Private MCP 2 name").fill("Diagnostic MCP");
+    await page.getByLabel("Private MCP 2 command").fill("python");
+    await page.getByLabel("Private MCP 2 args").fill(JSON.stringify(["server.py"]));
+    await page.getByTestId("package-private-mcp-card-diagnostic_mcp")
+      .getByRole("button", { name: "Add Env" })
+      .click();
+    await page.getByLabel("Private MCP 2 env key 1").fill("MARKET_DATA_API_KEY");
+    await page
+      .getByLabel("Private MCP 2 env value 1")
+      .fill("${{ secrets.market_data_api_key }}");
+
+    const [validateResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/workflow-packages/validate-manifest") &&
+          response.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Validate package" }).click(),
+    ]);
+    expect(validateResponse.ok()).toBeTruthy();
+    const validation = (await validateResponse.json()) as {
+      diagnostics: Array<{ message: string; path: string }>;
+    };
+    expect(validation.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "spec.mcpServers[1].env.MARKET_DATA_API_KEY",
+        }),
+      ]),
+    );
+    await expect(
+      page.getByRole("tab", { name: "Private MCP tab" }),
+    ).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page
+        .getByTestId("package-private-mcp-card-diagnostic_mcp")
+        .getByText("Secret references are only supported in HTTP request fields"),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator('[data-field="spec.mcpServers[1].env.MARKET_DATA_API_KEY"]')
+        .first(),
+    ).toBeFocused();
   });
 
   test("covers fake provider capability blockers and runtime profiles", async ({
