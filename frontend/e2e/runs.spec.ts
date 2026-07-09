@@ -231,58 +231,24 @@ async function seedQueuedRun(request: APIRequestContext) {
   const packageKey = `e2e_runs_cancel_${suffix}`;
   const modelKey = `e2e_runs_cancel_model_${suffix}`;
 
-  await seedModelConnection(request, modelKey);
+  const hangingProvider = await startHangingProvider();
+  await seedModelConnection(request, modelKey, {
+    baseUrl: hangingProvider.baseUrl,
+    timeoutSeconds: 30,
+  });
   const createResponse = await request.post(
     `${PLATFORM_API_BASE}/workflow-packages`,
-    { data: { manifestSource: packageManifest(packageKey, modelKey) } },
+    {
+      data: {
+        manifestSource: packageManifest(packageKey, modelKey),
+      },
+    },
   );
   expect(createResponse.status()).toBe(201);
   const created = await createResponse.json();
 
-  const launchResponse = await request.post(
-    `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
-    { data: { workflowKey: "monitor_flow", parameters: { ticker: "AAPL" } } },
-  );
-  expect(launchResponse.status()).toBe(201);
-  const launched = await launchResponse.json();
-  const runId = Number(launched.id);
-
-  const detailResponse = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
-  expect(detailResponse.ok()).toBeTruthy();
-  const detail = await detailResponse.json();
-  if (detail.status === "queued") {
-    await pageWait(1_000);
-    const stableDetailResponse = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
-    expect(stableDetailResponse.ok()).toBeTruthy();
-    const stableDetail = await stableDetailResponse.json();
-    if (stableDetail.status === "queued") {
-      return {
-        cleanup: async () => {},
-        runId,
-        targetKey: String(stableDetail.targetKey),
-      };
-    }
-  }
-
-  const hangingProvider = await startHangingProvider();
-  const blockedModelKey = `${modelKey}_blocked`;
-  await seedModelConnection(request, blockedModelKey, {
-    baseUrl: hangingProvider.baseUrl,
-    timeoutSeconds: 30,
-  });
-  const blockedCreateResponse = await request.post(
-    `${PLATFORM_API_BASE}/workflow-packages`,
-    {
-      data: {
-        manifestSource: packageManifest(`${packageKey}_blocked`, blockedModelKey),
-      },
-    },
-  );
-  expect(blockedCreateResponse.status()).toBe(201);
-  const blockedPackage = await blockedCreateResponse.json();
-
   const firstLaunchResponse = await request.post(
-    `${PLATFORM_API_BASE}/workflow-packages/${blockedPackage.id}/launches`,
+    `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
     { data: { workflowKey: "monitor_flow", parameters: { ticker: "MSFT" } } },
   );
   expect(firstLaunchResponse.status()).toBe(201);
@@ -301,7 +267,7 @@ async function seedQueuedRun(request: APIRequestContext) {
     .toBe("running");
 
   const secondLaunchResponse = await request.post(
-    `${PLATFORM_API_BASE}/workflow-packages/${blockedPackage.id}/launches`,
+    `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
     { data: { workflowKey: "monitor_flow", parameters: { ticker: "AAPL" } } },
   );
   expect(secondLaunchResponse.status()).toBe(201);
@@ -329,10 +295,6 @@ async function seedQueuedRun(request: APIRequestContext) {
     runId: queuedRunId,
     targetKey: String(queuedDetail.targetKey),
   };
-}
-
-async function pageWait(milliseconds: number) {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 test.describe("Runs inventory monitor", () => {
