@@ -1,4 +1,4 @@
-FROM node:24-alpine AS frontend-builder
+FROM node:26-alpine AS frontend-builder
 
 ARG VITE_API_BASE_URL=/api/v1
 
