@@ -91,11 +91,11 @@ See [docker/compose.production.example.yml](docker/compose.production.example.ym
 - `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection and package-secret values; production rejects the local placeholder.
 - `SIGNALDECK_API_TOKEN` enables bearer-token protection.
 - `PUBLIC_BASE_URL` is the externally reachable app origin when absolute links are needed.
-- `CORS_ALLOWED_ORIGINS` should list allowed browser origins for non-`localhost` frontend deployments; same-origin reverse-proxy deployments do not need CORS.
+- `CORS_ALLOWED_ORIGINS` should list allowed browser origins for separate-origin frontend deployments; same-origin reverse-proxy deployments do not need CORS.
 - `MCP_RUNTIME_ENABLED` defaults to `false`.
-- `MCP_RUNTIME_TIMEOUT` controls MCP runtime request timeouts.
+- `MCP_RUNTIME_TIMEOUT` controls MCP runtime request timeouts in seconds and defaults to `5`.
 - `RUN_SCHEDULER=true|false` only affects the root local/demo image entrypoint; production deployments run the scheduler as a separate container.
-- `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention.
+- `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention and is disabled unless set.
 
 ## Security
 
