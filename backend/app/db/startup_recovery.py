@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.sql.elements import BindParameter
 
 _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "Run marked as failed during startup recovery because the previous process exited while "
@@ -35,7 +36,7 @@ def fail_inflight_runs(engine: Engine) -> int:
         )
         if not recovered_run_ids:
             return 0
-        run_ids_param = bindparam("run_ids", expanding=True)
+        run_ids_param: BindParameter[object] = bindparam("run_ids", expanding=True)
         run_result = connection.execute(
             text(
                 """
