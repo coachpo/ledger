@@ -39,16 +39,6 @@ type RunInspectionIndex = {
   stepIndexes: Set<number>;
 };
 
-export const RUN_INSPECTION_MODES = [
-  "summary",
-  "execution",
-  "diagnostics",
-  "inputs",
-  "outputs",
-  "runtime",
-  "metadata",
-] as const satisfies readonly RunInspectionMode[];
-
 const RUN_INSPECTION_MODE_ALIASES: Record<string, RunInspectionMode> = {
   diagnostics: "diagnostics",
   execution: "execution",
@@ -115,7 +105,7 @@ function parseRunInspectionMode(raw: string | null): RunInspectionMode | null {
   return RUN_INSPECTION_MODE_ALIASES[raw];
 }
 
-export function defaultRunInspectionMode(run: RunRead): RunInspectionMode {
+function defaultRunInspectionMode(run: RunRead): RunInspectionMode {
   if (run.status === "succeeded") {
     return "outputs";
   }
@@ -406,19 +396,6 @@ export function serializeInspectionTarget(target: RunInspectionTarget): string {
     return `operation:${target.invocationId}`;
   }
   return "run";
-}
-
-export function inspectionTargetHash(target: RunInspectionTarget): string {
-  if (target.type === "step") {
-    return `#step-${target.stepIndex}`;
-  }
-  if (target.type === "agentInvocation") {
-    return `#invocation-${target.invocationId}`;
-  }
-  if (target.type === "operationInvocation") {
-    return `#operation-invocation-${target.invocationId}`;
-  }
-  return "#run-context";
 }
 
 export function inspectionTargetKindLabel(target: RunInspectionTarget): string {

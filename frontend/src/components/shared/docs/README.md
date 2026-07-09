@@ -1,6 +1,6 @@
 # Frontend UI and UX docs
 
-This folder owns SignalDeck frontend UI standards for shared page chrome, reusable components, and migration work. It lives under `src/components/shared` because the current frontend architecture keeps cross-feature UI in `components/shared`, shadcn primitives in `components/ui`, route shell contracts in `routes.metadata.ts` plus `layout.tsx`, and global tokens in `styles/theme.css`.
+This folder owns SignalDeck frontend UI standards for shared page chrome, reusable components, and migration work. It lives under `src/components/shared` because the current frontend architecture keeps cross-feature UI in `components/shared`, shadcn primitives in `components/ui`, route shell contracts in `routes.ts` handles plus `layout.tsx`, and global tokens in `styles/theme.css`.
 
 ## Read these first
 

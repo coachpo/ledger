@@ -5,8 +5,6 @@ import type {
   ValueEntry,
   ValueEntryArray,
   ValueEntryArrayItem,
-  ValueEntryComposite,
-  ValueEntryKind,
   ValueEntryObject,
   ValueEntryPath,
   ValueEntryScalar,
@@ -14,22 +12,11 @@ import type {
 
 export type ValueEntryValidationIssue = PlatformAuthoringIssue;
 
-const VALUE_ENTRY_SCALAR_KINDS: readonly ValueEntryScalar["kind"][] = ["null", "boolean", "integer", "number", "string"];
-const VALUE_ENTRY_COMPOSITE_KINDS: readonly ValueEntryComposite["kind"][] = ["array", "object"];
-
-export function createValueEntryValidationIssue(field: FieldPath, issue: string): ValueEntryValidationIssue {
+function createValueEntryValidationIssue(field: FieldPath, issue: string): ValueEntryValidationIssue {
   return createPlatformAuthoringIssue(field, issue);
 }
 
-export function isValueEntryScalarKind(kind: ValueEntryKind): kind is ValueEntryScalar["kind"] {
-  return VALUE_ENTRY_SCALAR_KINDS.includes(kind as ValueEntryScalar["kind"]);
-}
-
-export function isValueEntryCompositeKind(kind: ValueEntryKind): kind is ValueEntryComposite["kind"] {
-  return VALUE_ENTRY_COMPOSITE_KINDS.includes(kind as ValueEntryComposite["kind"]);
-}
-
-export function validateValueEntryPathTokens(pathTokens: ValueEntryPath, field: FieldPath = "pathTokens"): ValueEntryValidationIssue[] {
+function validateValueEntryPathTokens(pathTokens: ValueEntryPath, field: FieldPath = "pathTokens"): ValueEntryValidationIssue[] {
   if (!Array.isArray(pathTokens)) {
     return [createValueEntryValidationIssue(field, "Path tokens must be an array.")];
   }
@@ -45,7 +32,7 @@ export function validateValueEntryPathTokens(pathTokens: ValueEntryPath, field: 
   return issues;
 }
 
-export function validateValueEntryScalar(value: ValueEntryScalar, field: FieldPath = "value"): ValueEntryValidationIssue[] {
+function validateValueEntryScalar(value: ValueEntryScalar, field: FieldPath = "value"): ValueEntryValidationIssue[] {
   const issues = validateValueEntryPathTokens(value.pathTokens, joinFieldPath(field, "pathTokens"));
 
   switch (value.kind) {
@@ -79,7 +66,7 @@ export function validateValueEntryScalar(value: ValueEntryScalar, field: FieldPa
   return issues;
 }
 
-export function validateValueEntryArrayItem(item: ValueEntryArrayItem, field: FieldPath = "items"): ValueEntryValidationIssue[] {
+function validateValueEntryArrayItem(item: ValueEntryArrayItem, field: FieldPath = "items"): ValueEntryValidationIssue[] {
   const issues = validateValueEntryPathTokens(item.pathTokens, joinFieldPath(field, "pathTokens"));
 
   if (!Number.isInteger(item.index) || item.index < 0) {
@@ -90,7 +77,7 @@ export function validateValueEntryArrayItem(item: ValueEntryArrayItem, field: Fi
   return issues;
 }
 
-export function validateValueEntryArray(value: ValueEntryArray, field: FieldPath = "value"): ValueEntryValidationIssue[] {
+function validateValueEntryArray(value: ValueEntryArray, field: FieldPath = "value"): ValueEntryValidationIssue[] {
   const issues = validateValueEntryPathTokens(value.pathTokens, joinFieldPath(field, "pathTokens"));
 
   value.items.forEach((item, index) => {
@@ -100,7 +87,7 @@ export function validateValueEntryArray(value: ValueEntryArray, field: FieldPath
   return issues;
 }
 
-export function validateValueEntryObject(value: ValueEntryObject, field: FieldPath = "value"): ValueEntryValidationIssue[] {
+function validateValueEntryObject(value: ValueEntryObject, field: FieldPath = "value"): ValueEntryValidationIssue[] {
   const issues = validateValueEntryPathTokens(value.pathTokens, joinFieldPath(field, "pathTokens"));
 
   value.fields.forEach((fieldEntry, index) => {
@@ -128,16 +115,4 @@ export function validateValueEntryNode(value: ValueEntry, field: FieldPath = "va
     case "object":
       return validateValueEntryObject(value, field);
   }
-}
-
-export function validateValueEntryKind(value: ValueEntry, expectedKinds: readonly ValueEntryKind[], field: FieldPath = "value.kind"): ValueEntryValidationIssue[] {
-  if (expectedKinds.includes(value.kind)) {
-    return [];
-  }
-
-  return [createValueEntryValidationIssue(field, `Expected one of ${expectedKinds.join(", ")}.`)];
-}
-
-export function validateValueEntryPrimitiveShape(value: ValueEntry, field: FieldPath = "value"): ValueEntryValidationIssue[] {
-  return validateValueEntryNode(value, field);
 }

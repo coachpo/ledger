@@ -106,30 +106,8 @@ export function formatQueueReasonTitle(reason: RunQueueReason): string {
     : "Awaiting worker capacity";
 }
 
-export function runStatusTone(
-  status: RunStatus,
-): "neutral" | "success" | "warning" | "danger" {
-  if (status === "succeeded") {
-    return "success";
-  }
-
-  if (status === "failed") {
-    return "danger";
-  }
-
-  if (status === "cancelled") {
-    return "neutral";
-  }
-
-  return status === "queued" ? "warning" : "neutral";
-}
-
 export function formatTargetKindLabel(_targetKind: RunTargetKind): string {
   return "Workflow Package";
-}
-
-export function describeRunTarget(_targetKind: RunTargetKind): string {
-  return "Workflow package run captured an immutable executable snapshot at launch.";
 }
 
 export function sortedInvocations(

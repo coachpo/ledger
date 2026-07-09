@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/components/ui/utils";
 
-export type InlineStatePanelTone = "neutral" | "warning" | "danger";
+type InlineStatePanelTone = "neutral" | "warning" | "danger";
 
 export type InlineStatePanelProps = {
   children?: ReactNode;

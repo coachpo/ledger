@@ -4,31 +4,31 @@ import type { RunStatus } from "./run";
 export type ScheduleStatus = "enabled" | "paused";
 export type ScheduleWriteStatus = "enabled" | "paused";
 export type ScheduleFireStatus = "pending" | "queued" | "skipped" | "failed";
-export type ScheduleFireReason = "scheduled" | "manual";
+type ScheduleFireReason = "scheduled" | "manual";
 export type ScheduleOverlapPolicy = "skip" | "queue";
 export type ScheduleMisfirePolicy = "skip" | "catchUpOne";
 export type ScheduleRecurrenceType = "interval" | "daily" | "weekly" | "monthly";
 export type ScheduleIntervalUnit = "minutes" | "hours" | "days";
 export type ScheduleDayOfWeek = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
-export interface ScheduleIntervalRecurrence {
+interface ScheduleIntervalRecurrence {
   type: "interval";
   every: number;
   unit: ScheduleIntervalUnit;
 }
 
-export interface ScheduleDailyRecurrence {
+interface ScheduleDailyRecurrence {
   type: "daily";
   atLocalTime: string;
 }
 
-export interface ScheduleWeeklyRecurrence {
+interface ScheduleWeeklyRecurrence {
   type: "weekly";
   daysOfWeek: ScheduleDayOfWeek[];
   atLocalTime: string;
 }
 
-export interface ScheduleMonthlyRecurrence {
+interface ScheduleMonthlyRecurrence {
   type: "monthly";
   daysOfMonth: number[];
   atLocalTime: string;
@@ -161,7 +161,7 @@ export interface ScheduleRunNowRequest {
   scheduledFor: string;
 }
 
-export interface ScheduleRunNowRunRead {
+interface ScheduleRunNowRunRead {
   id: number;
   status: RunStatus;
   workflowPackageId: number;

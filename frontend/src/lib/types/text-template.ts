@@ -23,21 +23,11 @@ export interface TextTemplateInlineCompileInput {
   inputs?: RuntimeInputMap;
 }
 
-export interface TextTemplateStoredCompileInput {
-  inputs?: RuntimeInputMap;
-}
-
-export interface TextTemplateCompileRead {
-  id: number;
-  name: string;
-  compiled: string;
-}
-
 export interface TextTemplateInlineCompileRead {
   compiled: string;
 }
 
-export interface PlaceholderReport {
+interface PlaceholderReport {
   name: string;
   createdAt: string;
 }

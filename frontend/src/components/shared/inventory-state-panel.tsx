@@ -4,7 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 
-export type InventoryStatePanelTone = "neutral" | "warning" | "danger";
+type InventoryStatePanelTone = "neutral" | "warning" | "danger";
 
 export type InventoryStatePanelProps = {
   action?: ReactNode;

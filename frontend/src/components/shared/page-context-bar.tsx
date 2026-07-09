@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/components/ui/utils";
 
-export type PageContextBarDensity = "compact" | "comfortable";
-export type PageContextBarLayout = "stacked" | "toolbar";
-export type PageContextBarToolbarMetaPlacement = "below" | "middle";
+type PageContextBarDensity = "compact" | "comfortable";
+type PageContextBarLayout = "stacked" | "toolbar";
+type PageContextBarToolbarMetaPlacement = "below" | "middle";
 
 export type PageContextBarProps = {
   actions?: ReactNode;

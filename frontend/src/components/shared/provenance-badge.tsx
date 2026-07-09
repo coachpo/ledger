@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/components/ui/utils";
 
-export type ProvenanceBadgeTone = "neutral" | "verified" | "warning" | "destructive";
+type ProvenanceBadgeTone = "neutral" | "verified" | "warning" | "destructive";
 
 export type ProvenanceBadgeProps = {
   className?: string;

@@ -6,7 +6,7 @@ import type { SchemaIRNode } from "../schema/types";
 import type { UnknownRecord } from "@/lib/types/common";
 import type { WorkflowPackageManifestDiagnostic } from "@/lib/types/workflow-package";
 
-export type PackageMcpTransport = "stdio" | "http-sse";
+type PackageMcpTransport = "stdio" | "http-sse";
 
 export type PackageAgentDraft = {
   capabilityProfiles: string[];

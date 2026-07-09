@@ -37,7 +37,7 @@ import {
 } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar-context";
 
-export type RouteArchetype =
+type RouteArchetype =
   | "dashboard"
   | "inventory"
   | "detail"
@@ -45,13 +45,13 @@ export type RouteArchetype =
   | "console"
   | "systemState"
   | "unknown";
-export type RouteShellMode = "scroll" | "fullHeight";
+type RouteShellMode = "scroll" | "fullHeight";
 export type RouteWidthMode = "wide" | "full" | "compact" | "readable";
 export type RouteNavGroup =
   | "Agent Platform"
   | "Finance Workspace"
   | "System";
-export type RouteNavIconName =
+type RouteNavIconName =
   | "Briefcase"
   | "ClipboardList"
   | "Database"
@@ -61,7 +61,7 @@ export type RouteNavIconName =
   | "PlayCircle"
   | "Puzzle"
   | "Workflow";
-export type RouteStateVariant =
+type RouteStateVariant =
   | "ready"
   | "loading"
   | "error"
@@ -108,7 +108,7 @@ export type RouteHandle = {
   testId: string;
   widthMode: RouteWidthMode;
 };
-export type RouteNavGroupHandle = {
+type RouteNavGroupHandle = {
   items: readonly RouteHandle[];
   label: RouteNavGroup;
 };

@@ -13,7 +13,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/components/ui/utils";
 
-export type SearchableSelectOption = {
+type SearchableSelectOption = {
   description?: string;
   keywords?: string[];
   label: string;

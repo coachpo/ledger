@@ -1,11 +1,9 @@
-import type { JsonPrimitive } from "../schema/types";
-
 export type ValueEntryKind = "null" | "boolean" | "integer" | "number" | "string" | "array" | "object";
 
-export type ValueEntryPathToken = string;
+type ValueEntryPathToken = string;
 export type ValueEntryPath = ValueEntryPathToken[];
 
-export interface ValueEntryBase {
+interface ValueEntryBase {
   kind: ValueEntryKind;
   pathTokens: ValueEntryPath;
 }
@@ -57,10 +55,5 @@ export interface ValueEntryObject extends ValueEntryBase {
   fields: ValueEntryObjectField[];
 }
 
-export type ValueEntryPrimitive = JsonPrimitive;
 export type ValueEntryScalar = ValueEntryNull | ValueEntryBoolean | ValueEntryInteger | ValueEntryNumber | ValueEntryString;
-export type ValueEntryComposite = ValueEntryArray | ValueEntryObject;
-export type ValueEntry = ValueEntryScalar | ValueEntryComposite;
-
-export type ValueEntryNode = ValueEntry;
-export type ValueEntryRoot = ValueEntryObject | ValueEntryArray | ValueEntryScalar;
+export type ValueEntry = ValueEntryScalar | ValueEntryArray | ValueEntryObject;

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiState = vi.hoisted(() => ({
   compileTemplateInlineMock: vi.fn(),
-  compileTemplateMock: vi.fn(),
   createTemplateMock: vi.fn(),
   deleteTemplateMock: vi.fn(),
   getPlaceholdersMock: vi.fn(),
@@ -39,7 +38,6 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@/lib/api/templates", () => ({
-  compileTemplate: apiState.compileTemplateMock,
   compileTemplateInline: apiState.compileTemplateInlineMock,
   createTemplate: apiState.createTemplateMock,
   deleteTemplate: apiState.deleteTemplateMock,
@@ -61,7 +59,6 @@ type CapturedMutationOptions = {
 describe("useTemplates hooks", () => {
   beforeEach(() => {
     apiState.compileTemplateInlineMock.mockReset();
-    apiState.compileTemplateMock.mockReset();
     apiState.createTemplateMock.mockReset();
     apiState.deleteTemplateMock.mockReset();
     apiState.getPlaceholdersMock.mockReset();
@@ -85,9 +82,6 @@ describe("useTemplates hooks", () => {
     expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.templates.detail(7),
     });
-    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.templates.compile(7),
-    });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.templates.list(),
     });
@@ -108,13 +102,7 @@ describe("useTemplates hooks", () => {
       queryKey: queryKeys.templates.detail(7),
     });
     expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.templates.compile(7),
-    });
-    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.templates.detail(8),
-    });
-    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.templates.compile(8),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.templates.list(),
@@ -142,13 +130,7 @@ describe("useTemplates hooks", () => {
       queryKey: queryKeys.templates.detail(7),
     });
     expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.templates.compile(7),
-    });
-    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.templates.detail(8),
-    });
-    expect(reactQueryState.removeQueriesMock).toHaveBeenCalledWith({
-      queryKey: queryKeys.templates.compile(8),
     });
     expect(reactQueryState.invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: queryKeys.templates.list(),

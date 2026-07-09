@@ -25,10 +25,8 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Resource chrome | `resource-toolbar.tsx`, `resource-filter-bar.tsx`, `resource-status-strip.tsx`, `page-context-bar.tsx`, `provenance-badge.tsx` | reusable filter, summary, and status chrome for finance and platform pages |
 | Management-list actions | `resource-actions-menu.tsx`, `resource-bulk-actions-bar.tsx`, `resource-selection-checkbox.tsx`, `confirm-delete-dialog.tsx` | row overflow menus, selected-count action bars, accessible select-all/row checkboxes, and destructive confirmations |
 | Evidence / state helpers | `console-section.tsx`, `evidence-cluster.tsx`, `constraint-inspector.tsx`, `empty-state-panel.tsx`, `inventory-state-panel.tsx`, `inline-state-panel.tsx` | wide payload, evidence, and empty/error/loading presentation |
-| Generic tables | `data-table.tsx`, `data-table-column-header.tsx`, `resource-table-frame.tsx` | lightweight sortable tables and route-owned table framing |
-| Summary metrics | `metric-card.tsx` | consistent KPI card layout |
+| Generic tables | `resource-table-frame.tsx` | route-owned table framing; pages own columns, sorting, and pagination |
 | Search/select UI | `searchable-select.tsx` | command-style picker used by feature forms |
-| Row-card inventory UI | `resource-row-card.tsx` | compact resource cards used by platform inventories when a card surface is still warranted |
 | Design-system source | `../../../DESIGN.md` | source of truth for page layout, shared shells, tokens, and management UI patterns |
 | UI/UX standards and examples | `docs/README.md` | shared UI standards, component specs, page blueprints, and migration guide |
 

@@ -32,7 +32,7 @@ scheduled-tasks/
 | Schedule hooks | `../../hooks/use-scheduled-tasks.ts` | list/detail/fire queries, create/update/delete/preview/run-now mutations, linked run invalidation |
 | Wire/API contracts | `../../lib/api/schedules.ts`, `../../lib/types/schedule.ts` | `/api/schedules` helpers plus recurrence, fire, preview, run-now, and 204 delete payloads |
 | Runtime input helpers | `../../lib/runtime-inputs.ts` | trimmed row-to-map conversion |
-| Route metadata | `../../routes.metadata.ts` | list is inventory/scroll/wide, new is editor/fullHeight/full, detail is console/fullHeight/full |
+| Route metadata | `../../routes.ts` route handles | list is inventory/scroll/wide, new is editor/fullHeight/full, detail is console/fullHeight/full |
 | Coverage | `editor.test.tsx`, `../../hooks/use-scheduled-tasks.test.ts`, `../../lib/api/schedules.test.ts`, `frontend/e2e/scheduled-tasks.spec.ts` | create-route behavior, hook invalidation, API endpoint contracts, and routed list/detail browser flows |
 
 ## CONVENTIONS
@@ -48,7 +48,7 @@ scheduled-tasks/
 - Delete uses the schedule delete mutation, confirms destructive intent, and redirects detail users back to `/scheduled-tasks` after success. The page should not preserve a deleted-schedule state.
 - List rows/cards use explicit links and buttons. Do not make entire cards or rows pointer-only open targets.
 - Fire history stays schedule-owned; run detail owns execution evidence after a fire has queued a run.
-- Keep list, create, and detail state variants aligned with `routes.metadata.ts`; detail polling is a user-visible console state, not a hidden refetch implementation detail.
+- Keep list, create, and detail state variants aligned with route handles in `routes.ts`; detail polling is a user-visible console state, not a hidden refetch implementation detail.
 - Keep wide JSON templates, fire metadata, and run links mobile-contained with wrapping or internal scroll.
 
 ## ANTI-PATTERNS

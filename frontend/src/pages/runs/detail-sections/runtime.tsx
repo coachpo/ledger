@@ -1,7 +1,4 @@
-import { ConsoleSection } from "@/components/shared/console-section";
-import { ResourceStatusStrip } from "@/components/shared/resource-status-strip";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -27,7 +24,7 @@ import type {
   ModelConnectionStreamingPolicy,
 } from "@/lib/types/model-connection";
 
-import { formatQueueReasonTitle, runStatusTone, sortedInvocations } from "../detail-helpers";
+import { sortedInvocations } from "../detail-helpers";
 import { CAPABILITY_LABELS, CAPABILITY_ORDER } from "./runtime-metadata";
 import {
   CompactModeEmptyState,
@@ -513,86 +510,6 @@ export function RunRuntimeProfileSection({ run }: { run: RunRead }) {
         )}
       </RunDetailContentSection>
     </div>
-  );
-}
-
-export function RunContextStrip({
-  allInvocationsCount,
-  run,
-  runProgress,
-  targetKindLabel,
-  terminalInvocationsCount,
-}: {
-  allInvocationsCount: number;
-  run: RunRead;
-  runProgress: number;
-  targetKindLabel: string;
-  terminalInvocationsCount: number;
-}) {
-  const queueValue = run.queue
-    ? `${run.queue.state} · ${formatQueueReasonTitle(run.queue.reason)}`
-    : run.status === "queued"
-      ? "Queued without queue detail"
-      : "No queue hold";
-
-  return (
-    <section
-      className="grid min-w-0 gap-3 text-sm"
-      data-testid="runs-workspace-context"
-    >
-      <ConsoleSection
-        description="Backend-owned progress, queue, status, and token truth for this immutable run snapshot."
-        title="Summary"
-      >
-        <div className="flex min-w-0 flex-col gap-3">
-          <ResourceStatusStrip
-            items={[
-              {
-                label: "Status",
-                value: run.status,
-                tone: runStatusTone(run.status),
-              },
-              { label: "Target", value: targetKindLabel },
-              {
-                label: "Queue",
-                value: queueValue,
-                tone: run.queue ? "warning" : "muted",
-              },
-            ]}
-          />
-          <div className="min-w-0" data-testid="runs-summary-execution-row">
-            <Badge
-              data-testid="runs-detail-status"
-              variant={statusVariant(run.status)}
-            >
-              {run.status}
-            </Badge>{" "}
-            <Badge data-testid="runs-detail-target-kind" variant="outline">
-              {targetKindLabel}
-            </Badge>{" "}
-            <span className="min-w-0 break-words text-muted-foreground">
-              {terminalInvocationsCount} of {allInvocationsCount} invocation(s)
-              terminal.
-            </span>
-          </div>
-          <div
-            className="flex min-w-0 flex-col gap-2"
-            data-testid="runs-summary-progress-row"
-          >
-            <div className="flex items-center justify-between gap-3 text-muted-foreground">
-              <span>Run progress</span>
-              <span className="font-medium text-foreground">
-                {runProgress}%
-              </span>
-            </div>
-            <Progress className="min-w-0" value={runProgress} />
-          </div>
-        </div>
-      </ConsoleSection>
-
-      <RunTokensWorkspace run={run} />
-      <RunRuntimeProfileSection run={run} />
-    </section>
   );
 }
 

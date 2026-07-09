@@ -5,10 +5,6 @@ export function parseLineList(value: string): string[] {
     .filter(Boolean);
 }
 
-export function toLineList(value: string[] | null | undefined): string {
-  return Array.isArray(value) ? value.join("\n") : "";
-}
-
 export function stringifyJson(value: unknown): string {
   if (value === null || value === undefined) {
     return "";

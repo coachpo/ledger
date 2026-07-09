@@ -11,11 +11,11 @@ export interface SchemaIRString extends SchemaIRBase {
   kind: "string";
 }
 
-export interface SchemaIRInteger extends SchemaIRBase {
+interface SchemaIRInteger extends SchemaIRBase {
   kind: "integer";
 }
 
-export interface SchemaIRNumber extends SchemaIRBase {
+interface SchemaIRNumber extends SchemaIRBase {
   kind: "number";
 }
 
@@ -72,9 +72,3 @@ export type SchemaIRNode =
   | SchemaIRArray
   | SchemaIRRef
   | SchemaIRDiscriminatedUnion;
-
-export type SchemaIRBuilderInput = SchemaIRNode;
-
-export type SchemaIR = SchemaIRNode;
-export type SchemaIRVariant = SchemaIRNode;
-export type SchemaIRPrimitive = JsonPrimitive;

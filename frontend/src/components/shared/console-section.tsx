@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/components/ui/utils";
 
-export type ConsoleSectionTone = "default" | "muted" | "warning" | "danger";
-export type ConsoleSectionDensity = "compact" | "comfortable";
+type ConsoleSectionTone = "default" | "muted" | "warning" | "danger";
+type ConsoleSectionDensity = "compact" | "comfortable";
 
 export type ConsoleSectionProps = {
   actions?: ReactNode;

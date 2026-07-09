@@ -1,10 +1,8 @@
 import type {
   PlaceholderTree,
-  TextTemplateCompileRead,
   TextTemplateInlineCompileInput,
   TextTemplateInlineCompileRead,
   TextTemplateRead,
-  TextTemplateStoredCompileInput,
   TextTemplateUpdateInput,
   TextTemplateWriteInput,
 } from "../types/text-template";
@@ -55,22 +53,6 @@ export function deleteTemplate(templateId: IdParam, signal?: AbortSignal): Promi
   });
 }
 
-export function compileTemplate(
-  templateId: IdParam,
-  input?: TextTemplateStoredCompileInput,
-  signal?: AbortSignal,
-): Promise<TextTemplateCompileRead> {
-  if (!input || !input.inputs || Object.keys(input.inputs).length === 0) {
-    return request<TextTemplateCompileRead>(`${templatePath(templateId)}/compile`, { signal });
-  }
-
-  return request<TextTemplateCompileRead>(`${templatePath(templateId)}/compile`, {
-    body: input,
-    method: "POST",
-    signal,
-  });
-}
-
 export function compileTemplateInline(
   input: TextTemplateInlineCompileInput | string,
   signal?: AbortSignal,
@@ -87,14 +69,3 @@ export function compileTemplateInline(
 export function getPlaceholders(signal?: AbortSignal): Promise<PlaceholderTree> {
   return request<PlaceholderTree>("/templates/placeholders", { signal });
 }
-
-export const templatesApi = {
-  compile: compileTemplate,
-  compileInline: compileTemplateInline,
-  create: createTemplate,
-  delete: deleteTemplate,
-  get: getTemplate,
-  list: listTemplates,
-  placeholders: getPlaceholders,
-  update: updateTemplate,
-} as const;

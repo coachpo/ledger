@@ -12,7 +12,6 @@ import { Link } from "react-router";
 
 import { InventoryPageShell } from "@/components/shared/inventory-page-shell";
 import { InventoryStatePanel } from "@/components/shared/inventory-state-panel";
-import { ResourceRowCard } from "@/components/shared/resource-row-card";
 import { ResourceStatusBadge } from "@/components/shared/resource-status-strip";
 import { Button } from "@/components/ui/button";
 
@@ -79,19 +78,20 @@ export function ExampleInventoryPage({ resources }: { resources: Resource[] }) {
       ) : (
         <div className="grid gap-3">
           {filtered.map((resource) => (
-            <ResourceRowCard
+            <article
               key={resource.id}
-              density="compactPlus"
-              title={resource.name}
-              subtitle={resource.id}
-              primaryAction={{
-                kind: "link",
-                label: `Open ${resource.name}`,
-                to: `/resources/${resource.id}`,
-              }}
-              badges={<ResourceStatusBadge label={resource.status} tone={resource.status === "ready" ? "success" : "warning"} />}
-              actions={<Button asChild variant="outline"><Link to={`/resources/${resource.id}`}>Open</Link></Button>}
-            />
+              className="rounded-lg border border-border/70 bg-card/95 p-4 shadow-ui-xs"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link className="font-medium text-foreground underline-offset-4 hover:underline" to={`/resources/${resource.id}`}>
+                    {resource.name}
+                  </Link>
+                  <p className="mt-1 break-all text-xs text-muted-foreground">{resource.id}</p>
+                </div>
+                <ResourceStatusBadge label={resource.status} tone={resource.status === "ready" ? "success" : "warning"} />
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -101,7 +101,7 @@ export function ExampleInventoryPage({ resources }: { resources: Resource[] }) {
 ```
 ## Detail or editor shell
 
-Use `WorkspacePageShell` for full-height detail, editor, or console pages. The route metadata should own full-height shell mode before this layout is used.
+Use `WorkspacePageShell` for full-height detail, editor, or console pages. The route handle should own full-height shell mode before this layout is used.
 
 ```tsx
 import { PageContextBar } from "@/components/shared/page-context-bar";
@@ -185,7 +185,7 @@ export function CreateResourceDialog({ open, onOpenChange, onSubmit }: Props) {
 
 ## Before shipping a new page
 
-1. Add or update `src/routes.metadata.ts` when the page is a live route.
+1. Add or update the route handle in `src/routes.ts` when the page is a live route.
 2. Use `InventoryPageShell`, `WorkspacePageShell`, or the route-owned page pattern that matches the route archetype.
 3. Use shared state panels for visible loading, empty, filtered-empty, disabled, and error states.
 4. Keep query hooks, route params, mutation code, and navigation out of shared components.

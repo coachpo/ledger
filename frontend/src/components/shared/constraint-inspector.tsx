@@ -4,7 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
-export type ConstraintInspectorItem = ReactNode;
+type ConstraintInspectorItem = ReactNode;
 
 export type ConstraintInspectorProps = {
   blocking: readonly ConstraintInspectorItem[];

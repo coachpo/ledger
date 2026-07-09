@@ -58,19 +58,6 @@ import {
   type RunInspectionTarget,
 } from "../inspection-state";
 
-export {
-  RunEvidenceAvailabilitySection,
-  RunFinalOutputPane,
-  RunInputWorkspace,
-  RunOutputWorkspace,
-  RunOverviewWorkspace,
-} from "./payload-sections";
-export {
-  RunContextStrip,
-  RunRuntimeProfileSection,
-  RunTokensWorkspace,
-} from "./runtime";
-
 import {
   JsonBlock,
   RunEvidenceAvailabilitySection,
@@ -448,7 +435,7 @@ function runDiagnostics(
   ];
 }
 
-export function RunDiagnosticsWorkspace({
+function RunDiagnosticsWorkspace({
   run,
   steps,
 }: {
@@ -636,7 +623,7 @@ function StepTraceSummary({
   );
 }
 
-export function ExecutionOutline({
+function ExecutionOutline({
   activeInspection,
   onSelect,
   run,

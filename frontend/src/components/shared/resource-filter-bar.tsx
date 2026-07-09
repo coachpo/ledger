@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/components/ui/utils";
 
-export type ResourceFilterBarItem = {
+type ResourceFilterBarItem = {
   active?: boolean;
   clearLabel?: string;
   id: string;

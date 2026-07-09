@@ -66,14 +66,6 @@ export function buildRunInputDefaultValue(node: SchemaIRNode): unknown {
   return buildSampleValue(node, { includeOptionalFields: false });
 }
 
-export function stringifyPreviewJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
-}
-
-export function createPreviewJson(builder: SchemaIRNode) {
-  return stringifyPreviewJson(buildPreviewValue(builder));
-}
-
 export function createLiteralValueDraft(node: SchemaIRLiteral) {
   const kind = primitiveKindForValue(node.value);
   return {

@@ -13,7 +13,7 @@ export const GROUP_BY_LABELS: Record<GroupByOption, string> = {
 export type SortField = "name" | "createdAt" | "source";
 export type SortDirection = "asc" | "desc";
 
-export const REPORT_SOURCE_LABELS: Record<ReportSource, string> = {
+const REPORT_SOURCE_LABELS: Record<ReportSource, string> = {
   agent: "Agent",
   compiled: "Compiled",
   external: "External",

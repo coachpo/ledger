@@ -1,6 +1,6 @@
 import type { RuntimeInputMap } from "../runtime-inputs";
 
-export interface ReportAnalysisMetadata {
+interface ReportAnalysisMetadata {
   ticker?: string | null;
   reviewType?: string | null;
   trigger?: string | null;
@@ -9,7 +9,7 @@ export interface ReportAnalysisMetadata {
   [key: string]: unknown;
 }
 
-export type ReportCreatedByType = "agent";
+type ReportCreatedByType = "agent";
 
 export interface ReportCreatedByMetadata {
   type: ReportCreatedByType;
@@ -24,7 +24,7 @@ export interface ReportCreatedByMetadata {
   traceId?: string | null;
 }
 
-export interface ReportMetadata {
+interface ReportMetadata {
   author: string | null;
   description: string | null;
   tags: string[];

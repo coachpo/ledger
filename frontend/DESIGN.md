@@ -8,7 +8,7 @@ SignalDeck is a dense management UI for workflow packages, scheduled runs, model
 
 - `src/styles/theme.css` is the token source of truth. Use semantic Tailwind classes and the `--ui-*` tokens for custom surfaces, spacing, layout, shadows, motion, z-index, control sizing, and state values.
 - `src/components/ui` contains shadcn/Radix primitives. Keep these presentational and free of route or API logic.
-- `src/components/shared` contains reusable SignalDeck UI: page shells, toolbars, state panels, status chrome, data-table frames, dialogs, row cards, and management-list helpers.
+- `src/components/shared` contains reusable SignalDeck UI: page shells, toolbars, state panels, status chrome, table frames, dialogs, and management-list helpers.
 - Feature folders and pages own domain copy, route params, hooks, mutations, toasts, navigation, and validation behavior.
 
 ## Tokens
@@ -39,7 +39,7 @@ Use `--ui-space-*`, `--ui-shadow-*`, `--ui-z-*`, `--ui-motion-*`, `--ui-breakpoi
 - Inventory search uses `ResourceToolbar.search`.
 - Active filters use `ResourceFilterBar`.
 - Route-level empty/error/loading states use `InventoryStatePanel`; inline notices use `InlineStatePanel`; card-like empty states use `EmptyStatePanel`. These are solid grouped/elevated surfaces, not dashed containers.
-- Tables use `DataTable` when generic sorting/pagination fits, or `ResourceTableFrame` around route-owned table markup.
+- Tables use `ResourceTableFrame` around route-owned table markup; routes own columns, sorting, and pagination behavior.
 - Status uses `ResourceStatusBadge` and `ResourceStatusStrip`, not route-local colored spans.
 
 ## Forms And Dialogs

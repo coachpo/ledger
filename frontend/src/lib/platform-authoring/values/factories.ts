@@ -4,7 +4,6 @@ import type {
   ValueEntryArray,
   ValueEntryArrayItem,
   ValueEntryBoolean,
-  ValueEntryComposite,
   ValueEntryInteger,
   ValueEntryKind,
   ValueEntryNull,
@@ -18,15 +17,11 @@ import type {
 
 const DEFAULT_VALUE_ENTRY_PATH: ValueEntryPath = [];
 
-export function createValueEntryPath(pathTokens: readonly string[] = []): ValueEntryPath {
+function createValueEntryPath(pathTokens: readonly string[] = []): ValueEntryPath {
   return [...pathTokens];
 }
 
-export function createEmptyValueEntryPath(): ValueEntryPath {
-  return [];
-}
-
-export function createDefaultValueEntry(kind: ValueEntryKind = "string"): ValueEntry {
+function createDefaultValueEntry(kind: ValueEntryKind = "string"): ValueEntry {
   switch (kind) {
     case "null":
       return createNullValueEntry();
@@ -43,21 +38,6 @@ export function createDefaultValueEntry(kind: ValueEntryKind = "string"): ValueE
     case "string":
     default:
       return createStringValueEntry("");
-  }
-}
-
-export function createValueEntryFromPrimitive(value: JsonPrimitive | null): ValueEntryScalar {
-  if (value === null) {
-    return createNullValueEntry();
-  }
-
-  switch (typeof value) {
-    case "boolean":
-      return createBooleanValueEntry(value);
-    case "number":
-      return Number.isInteger(value) ? createIntegerValueEntry(value) : createNumberValueEntry(value);
-    case "string":
-      return createStringValueEntry(value);
   }
 }
 
@@ -115,14 +95,6 @@ export function createValueEntryObjectField(
   pathTokens: ValueEntryPath = DEFAULT_VALUE_ENTRY_PATH,
 ): ValueEntryObjectField {
   return { key, pathTokens: createValueEntryPath(pathTokens), value } satisfies ValueEntryObjectField;
-}
-
-export function createEmptyValueEntryComposite(kind: ValueEntryComposite["kind"]): ValueEntryComposite {
-  return kind === "array" ? createArrayValueEntry() : createObjectValueEntry();
-}
-
-export function isValueEntryScalar(value: ValueEntry): value is ValueEntryScalar {
-  return value.kind === "null" || value.kind === "boolean" || value.kind === "integer" || value.kind === "number" || value.kind === "string";
 }
 
 function extendPath(pathTokens: ValueEntryPath, token: string): ValueEntryPath {

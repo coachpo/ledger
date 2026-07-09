@@ -4,7 +4,7 @@ export type ResourceFilterMap<TKey extends string = string> = Partial<
   Record<TKey, string>
 >;
 
-export type ResourceFilterPredicateState<TKey extends string = string> = {
+type ResourceFilterPredicateState<TKey extends string = string> = {
   filters: ResourceFilterMap<TKey>;
   normalizedSearch: string;
   search: string;

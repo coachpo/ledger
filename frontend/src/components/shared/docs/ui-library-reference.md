@@ -186,33 +186,6 @@ Example:
 
 Common mistakes: moving route callbacks into the component, using generic labels like `Actions`, or wrapping a visible primary action that should be a normal button or link.
 
-## ResourceRowCard
-
-Purpose: compact resource card for inventory lists with title link, metadata, badges, evidence, status, provenance, footer, and trailing actions.
-
-Use for template, report, run, or platform resource lists where cards are clearer than a table.
-Don't use for static metric summaries or deeply nested editor panes.
-
-API: `title`, optional `subtitle`, `description`, `metadata`, `badges`, `leading`, `actions`, `primaryAction`, `bodyAction`, `selected`, `statusStrip`, `provenance`, `factsGrid`, `evidenceChips`, `evidence`, `footer`, `density`, `className`, and `testId`.
-
-Variants: density `compact` or `compactPlus`.
-
-Accessibility: title links use React Router `Link` and need clear labels. Actions must be buttons or links, not pointer-only wrappers.
-
-Example:
-
-```tsx
-<ResourceRowCard
-  density="compactPlus"
-  title={report.name}
-  subtitle={report.slug}
-  metadata={`Updated ${formatDate(report.updatedAt)}`}
-  primaryAction={{ kind: "link", label: `Open ${report.name}`, to: `/reports/${report.slug}` }}
-  badges={<ResourceStatusBadge label={report.source} tone="muted" />}
-/>
-```
-Common mistakes: wrapping the whole card in a click handler, putting feature-specific fetch logic in card props, or using badges without text.
-
 ## ResourceStatusStrip and ResourceStatusBadge
 
 Purpose: standard status display for resource facts and compact state badges.
@@ -236,7 +209,7 @@ Purpose: minimal rounded bordered table container with width containment.
 
 Use when route-owned table markup already exists and only needs the shared frame.
 
-Don't use when you need shared sorting. Use `DataTable` instead.
+Don't use when you need shared sorting; keep sorting in route-owned table markup.
 
 API: `children`, optional `className`, and `testId`.
 
@@ -307,36 +280,3 @@ Don't use for create/edit form dialogs. Use `EntityDialogShell` inside a normal 
 API: `open`, `title`, `description`, `onOpenChange`, `onConfirm`, optional `confirmLabel`, and optional `isPending`.
 
 Accessibility: renders shadcn `AlertDialogTitle` and `AlertDialogDescription`; keep descriptions explicit about irreversible effects.
-
-## MetricCard
-
-Purpose: compact KPI card with title, value, note, optional icon, status, provenance, footer, and optional link behavior.
-
-Use for dashboard and summary metrics.
-
-Don't use for inventory rows or editable fields.
-
-API: `title`, `value`, optional `density`, `tone`, `note`, `icon`, `iconClassName`, `status`, `provenance`, `footer`, `to`, and `valueClassName`.
-
-Variants: density `default` or `compact`; tone `default` or `muted`.
-
-Accessibility: when `to` is provided, the card renders as a link. The title and value must make the destination clear enough in context.
-
-Common mistakes: using metric cards for action panels, hiding key status in icon color only, or putting long prose in `note`.
-## DataTable and DataTableColumnHeader
-
-Purpose: lightweight generic table wrapper with sorting, density options, empty message, and row test id support.
-
-Use for small data that benefits from tabular scan and sortable columns.
-
-Don't use for simple cards, route-owned custom tables that already handle paging, or wide payload consoles.
-
-DataTable API: `columns`, `data`, `emptyMessage`, optional `density`, `initialSorting`, `initialPageSize`, `pageSizeOptions`, `tableLabel`, `getRowTestId`, and `className`.
-
-Column header API: `column`, `title`, optional `density`, and `className`.
-
-Variants: table density `comfortable` or `compact`; header density `comfortable` or `compact`.
-
-Accessibility: pass `tableLabel` when the surrounding heading is not enough. Sortable headers use buttons with aria labels and title text.
-
-Common mistakes: putting navigation on a row instead of a cell link, using table state as route state without syncing intentionally, or forgetting `emptyMessage`.

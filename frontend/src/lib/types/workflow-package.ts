@@ -1,8 +1,8 @@
 import type { UnknownRecord } from "./common";
 import type { RunPackageResolvedModelConnectionRead, RunStatus } from "./run";
 
-export type WorkflowPackageManifestApiVersion = "signaldeck.workflowPackage/v1";
-export type WorkflowPackageManifestDiagnosticSeverity = "error" | "warning";
+type WorkflowPackageManifestApiVersion = "signaldeck.workflowPackage/v1";
+type WorkflowPackageManifestDiagnosticSeverity = "error" | "warning";
 
 export interface WorkflowPackageManifestRequest {
   manifestSource: string;
@@ -79,7 +79,7 @@ export interface WorkflowPackageListRead {
   items: WorkflowPackageRead[];
 }
 
-export interface WorkflowPackageLaunchDiagnostic extends UnknownRecord {
+interface WorkflowPackageLaunchDiagnostic extends UnknownRecord {
   field?: string;
   issue?: string;
   message?: string;

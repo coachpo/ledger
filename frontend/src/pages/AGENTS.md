@@ -59,9 +59,9 @@ src/pages/
 
 ## GLOBAL ROUTE GUARDRAILS
 
-- `src/routes.ts` registers the live route tree, while `src/routes.metadata.ts` is the single contract for route archetype, breadcrumb title, nav label, sidebar test id, shell mode, ownership, and expected state variants. Add metadata before adding a live route.
-- `frontend/DESIGN.md` is the source of truth for page layout, shared shells, tokens, and management UI patterns. Route metadata, page implementation, and the owning AGENTS guide must agree.
-- `Layout` consumes route metadata through `getRouteMetadataForPathname()`. Breadcrumbs, sidebar labels, `data-route-shell-mode`, and the routed `<main>` test id must not be rebuilt in page components.
+- `src/routes.ts` registers the live route tree and owns route handles for route archetype, breadcrumb title, nav label, sidebar test id, shell mode, ownership, and expected state variants. Add handle metadata before adding a live route.
+- `frontend/DESIGN.md` is the source of truth for page layout, shared shells, tokens, and management UI patterns. Route handles, page implementation, and the owning AGENTS guide must agree.
+- `Layout` consumes route handles from React Router matches. Breadcrumbs, sidebar labels, `data-route-shell-mode`, and the routed `<main>` test id must not be rebuilt in page components.
 - The app has exactly one page-level `<main>` for routed content. Full-height routes still render inside that shell main, not inside a nested page main.
 - Unknown URLs must hit the product-owned catch-all route with `route-unknown` metadata. Thrown route errors must use `RouteErrorPage`; React Router's default developer error UI is not an accepted state.
 - Link versus button semantics are required. Use links for navigation to real URLs, including row/card open actions. Use buttons for mutations, dialogs, menus, sorting, toggles, and transient UI state.

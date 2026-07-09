@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/components/ui/utils";
 
-export type ResourceToolbarSearchProps = {
+type ResourceToolbarSearchProps = {
   disabled?: boolean;
   id: string;
   label: string;

@@ -1,4 +1,4 @@
-export interface ToolCatalogItemRead {
+interface ToolCatalogItemRead {
   key: string;
   displayName: string;
   description: string;

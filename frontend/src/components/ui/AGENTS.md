@@ -21,7 +21,7 @@ Trusted single-user scope: Inherit the root trusted single-user invariant. Do no
 | Task | Location | Notes |
 |---|---|---|
 | Shared class merging | `utils.ts` | `cn()` wraps `clsx` + `tailwind-merge` |
-| Button-like variants | `button-variants.ts`, `badge-variants.ts`, `toggle-variants.ts` | shared `cva()` recipes and token choices |
+| Button-like variants | `button-variants.ts`, `badge-variants.ts` | shared `cva()` recipes and token choices |
 | Sidebar primitives | `sidebar.tsx`, `sidebar-context.ts` | provider/context, mobile sheet vs desktop inset, tooltip-ready menu buttons |
 | Form controls | `input.tsx`, `textarea.tsx`, `select.tsx`, `checkbox.tsx`, `switch.tsx` | presentational controls only |
 | Overlay/menu wrappers | `dialog.tsx`, `sheet.tsx`, `dropdown-menu.tsx`, `popover.tsx`, `tooltip.tsx` | Radix-backed wrappers |

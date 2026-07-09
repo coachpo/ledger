@@ -98,13 +98,3 @@ export function deleteModelConnection(
     signal,
   });
 }
-
-export const modelConnectionsApi = {
-  create: createModelConnection,
-  delete: deleteModelConnection,
-  get: getModelConnection,
-  list: listModelConnections,
-  probeCapabilities: probeModelConnectionCapabilities,
-  testConnection: testModelConnection,
-  update: updateModelConnection,
-} as const;

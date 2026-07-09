@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/components/ui/utils";
 
-export type EvidenceClusterLayout = "grid" | "list" | "inline";
+type EvidenceClusterLayout = "grid" | "list" | "inline";
 export type EvidenceClusterTone = "neutral" | "verified" | "warning" | "danger";
 
 export type EvidenceClusterItem = {

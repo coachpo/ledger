@@ -1,31 +1,16 @@
 import { createArrayValueEntry, createBooleanValueEntry, createIntegerValueEntry, createNullValueEntry, createObjectValueEntry, createStringValueEntry, createNumberValueEntry, createValueEntryArrayItem, createValueEntryObjectField } from "./factories";
-import { validateValueEntryNode } from "./validation";
-import type { JsonPrimitive, SchemaIRPrimitive } from "../schema/types";
+import type { JsonPrimitive } from "../schema/types";
 import type {
   ValueEntry,
-  ValueEntryComposite,
   ValueEntryPath,
   ValueEntryScalar,
 } from "./types";
-
-export type ValueEntryCodecIssue = {
-  path: string;
-  message: string;
-};
-
-export type ValueEntryCodecResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; issues: ValueEntryCodecIssue[] };
 
 function toIssuePath(pathTokens: ValueEntryPath): string {
   return pathTokens.join(".");
 }
 
-function toCodecIssues(issues: ReturnType<typeof validateValueEntryNode>): ValueEntryCodecIssue[] {
-  return issues.map((issue) => ({ path: issue.field, message: issue.issue }));
-}
-
-export function encodePrimitiveValueEntry(value: JsonPrimitive | null, pathTokens: ValueEntryPath = []): ValueEntryScalar {
+function encodePrimitiveValueEntry(value: JsonPrimitive | null, pathTokens: ValueEntryPath = []): ValueEntryScalar {
   if (value === null) {
     return createNullValueEntry(pathTokens);
   }
@@ -87,27 +72,6 @@ export function decodeValueEntry(value: ValueEntry): unknown {
   }
 }
 
-export function serializeValueEntry(value: ValueEntry): JsonPrimitive | JsonPrimitive[] | Record<string, JsonPrimitive | JsonPrimitive[] | Record<string, unknown>> {
-  return decodeValueEntry(value) as JsonPrimitive | JsonPrimitive[] | Record<string, JsonPrimitive | JsonPrimitive[] | Record<string, unknown>>;
-}
-
-export function validateAndDecodeValueEntry(value: ValueEntry): ValueEntryCodecResult<unknown> {
-  const issues = toCodecIssues(validateValueEntryNode(value));
-  if (issues.length > 0) {
-    return { ok: false, issues };
-  }
-
-  return { ok: true, value: decodeValueEntry(value) };
-}
-
-export function isCodecCompatiblePrimitive(value: unknown): value is SchemaIRPrimitive {
-  return value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string";
-}
-
 export function valueEntryPathToString(pathTokens: ValueEntryPath): string {
   return toIssuePath(pathTokens);
-}
-
-export function isCompositeValueEntry(value: ValueEntry): value is ValueEntryComposite {
-  return value.kind === "array" || value.kind === "object";
 }

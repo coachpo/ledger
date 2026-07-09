@@ -10,7 +10,7 @@ export type ResourceStatusTone =
   | "warning"
   | "danger"
   | "muted";
-export type ResourceStatusStripDensity = "compact" | "comfortable" | "toolbar";
+type ResourceStatusStripDensity = "compact" | "comfortable" | "toolbar";
 
 export type ResourceStatusBadgeProps = {
   className?: string;

@@ -26,7 +26,3 @@ const UNSUPPORTED_SCHEMA_KEYWORD_MESSAGES: Record<string, string> = {
 export function getUnsupportedSchemaKeywordMessage(keyword: string): string {
   return UNSUPPORTED_SCHEMA_KEYWORD_MESSAGES[keyword] ?? `Keyword ${JSON.stringify(keyword)} is not supported`;
 }
-
-export function isUnsupportedSchemaKeyword(keyword: string): boolean {
-  return keyword in UNSUPPORTED_SCHEMA_KEYWORD_MESSAGES;
-}

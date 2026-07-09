@@ -3,8 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatResourceRef,
   parseResourceRef,
-  parseVersionedRef,
-  parseVersionedRefs,
+  parseResourceRefs,
   toVersionedRefValue,
   validateResourceRef,
   validateResourceRefs,
@@ -19,7 +18,7 @@ describe("resource-ref", () => {
   });
 
   it("parses key+version refs and formats them back", () => {
-    const ref = parseVersionedRef("Output schema", "summary_schema@5");
+    const ref = parseResourceRef("Output schema", "summary_schema@5");
 
     expect(ref).toEqual({ key: "summary_schema", version: 5 });
     expect(formatResourceRef(ref)).toBe("summary_schema@5");
@@ -27,7 +26,7 @@ describe("resource-ref", () => {
   });
 
   it("rejects invalid versions with current caller-facing wording", () => {
-    expect(() => parseVersionedRef("Capability", "summarize@beta")).toThrowError(
+    expect(() => parseResourceRef("Capability", "summarize@beta")).toThrowError(
       "Capability entries must use key or key@version.",
     );
   });
@@ -45,7 +44,7 @@ describe("resource-ref", () => {
   });
 
   it("parses line-delimited refs and tracks indexed validation paths", () => {
-    expect(parseVersionedRefs("Capability", "summarize@3\nquotes")).toEqual([
+    expect(parseResourceRefs("Capability", "summarize@3\nquotes")).toEqual([
       { key: "summarize", version: 3 },
       { key: "quotes", version: null },
     ]);

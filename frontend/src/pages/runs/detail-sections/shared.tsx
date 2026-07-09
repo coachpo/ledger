@@ -24,7 +24,7 @@ export type RunDetailSectionBlockProps = {
   tone?: "default" | "muted" | "warning" | "danger";
 };
 
-export function RunDetailSectionTitle({
+function RunDetailSectionTitle({
   blockId,
   icon: Icon,
   title,
@@ -52,7 +52,7 @@ export function RunDetailSectionTitle({
   );
 }
 
-export function RunDetailSectionDescription({
+function RunDetailSectionDescription({
   blockId,
   children,
 }: {

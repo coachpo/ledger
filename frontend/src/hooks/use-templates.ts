@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-  compileTemplate,
   compileTemplateInline,
   createTemplate,
   deleteTemplate,
@@ -13,7 +12,6 @@ import {
 import { queryKeys } from "@/lib/query-keys";
 import type {
   TextTemplateInlineCompileInput,
-  TextTemplateStoredCompileInput,
   TextTemplateUpdateInput,
   TextTemplateWriteInput,
 } from "@/lib/types/text-template";
@@ -31,9 +29,6 @@ function clearDeletedTemplateQueries(
 ) {
   queryClient.removeQueries({
     queryKey: queryKeys.templates.detail(templateId),
-  });
-  queryClient.removeQueries({
-    queryKey: queryKeys.templates.compile(templateId),
   });
 }
 
@@ -100,16 +95,6 @@ export function useDeleteTemplates() {
   });
 }
 
-export function useCompileTemplate(templateId: IdParam | undefined) {
-  const resolvedId = templateId ?? "";
-
-  return useQuery({
-    queryKey: queryKeys.templates.compile(resolvedId),
-    queryFn: ({ signal }) => compileTemplate(resolvedId, undefined, signal),
-    enabled: Boolean(templateId),
-  });
-}
-
 export function useTemplate(templateId: IdParam | undefined) {
   const resolvedId = templateId ?? "";
 
@@ -126,11 +111,6 @@ export function useCompileInline() {
       compileTemplateInline(input),
   });
 }
-
-export type CompileStoredTemplateVariables = {
-  templateId: IdParam;
-  input?: TextTemplateStoredCompileInput;
-};
 
 export function usePlaceholders() {
   return useQuery({

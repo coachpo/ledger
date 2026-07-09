@@ -63,7 +63,7 @@ frontend/
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |---|---|---|
-| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/routes.metadata.ts`, `src/components/layout.tsx` | query client, router provider, metadata-driven shell/nav rendering, static finance routes, theme toggle, and sidebar navigation |
+| App bootstrap | `src/App.tsx`, `src/routes.ts`, `src/components/layout.tsx` | query client, router provider, route-handle-driven shell/nav rendering, static finance routes, theme toggle, and sidebar navigation |
 | Shared API/state logic | `src/lib/AGENTS.md`, `src/lib/api/AGENTS.md`, `src/lib/types/AGENTS.md`, `src/lib/platform-authoring/AGENTS.md`, `src/hooks/AGENTS.md` | typed fetch, query keys, wire contracts, platform-authoring helpers, and TanStack Query wrappers |
 | Shared route shells and UI state | `DESIGN.md`, `src/components/shared/docs/README.md`, `src/components/shared/AGENTS.md`, `src/hooks/AGENTS.md` | design-system source of truth, inventory/workspace/split-inspector shells, resource chrome, table/action/selection framing, and reusable filter/selection/inspector state helpers |
 | Template routes | `src/pages/templates/AGENTS.md`, `src/components/templates/AGENTS.md`, `src/hooks/use-templates.ts`, `src/lib/api/templates.ts` | CRUD, runtime inputs, placeholder tree, inline preview compile |
@@ -76,13 +76,13 @@ frontend/
 
 ## CONVENTIONS
 - Routing stays flat under `Layout`; feature depth lives inside components and hooks, not in nested route trees.
-- `src/routes.ts` is the route source of truth; Finance Workspace template/report routes are static entries there, and `src/components/layout.tsx` renders the shell nav plus metadata-backed breadcrumbs.
+- `src/routes.ts` is the route source of truth; Finance Workspace template/report routes are static entries there, and `src/components/layout.tsx` renders the shell nav plus handle-backed breadcrumbs.
 - Server data flows through `src/lib/api*.ts` and `src/hooks/*`; routed screens should not call `fetch` directly.
 - Keep React render logic pure; use effects only for external synchronization, not derived state or local data transforms.
 - Browser-exposed env access goes through `import.meta.env`, and only `VITE_`-prefixed variables may reach frontend code.
 - Use the `@` alias for `src/` imports instead of long relative paths.
 - Mutation-heavy screens use Sonner toasts for success/error feedback and shadcn/ui primitives for dialogs/forms.
-- `src/routes.metadata.ts` is the contract for route archetype, breadcrumb, sidebar ownership, shell mode, width mode, and visible state variants; `Layout` consumes that metadata instead of page-local chrome rules.
+- `src/routes.ts` route handles are the contract for route archetype, breadcrumb, sidebar ownership, shell mode, width mode, and visible state variants; `Layout` consumes those handles instead of page-local chrome rules.
 - `DESIGN.md` is the frontend-wide source of truth for page layout, route shell choice, shared shells, tokens, shared management UI, destructive confirmations, row action menus, selection checkboxes, and bulk action bars.
 - Shared inventory/workspace/split-inspector shells plus the route-state hooks in `src/hooks/` are the default way to compose page chrome; do not fork table/filter/action/selection/inspector scaffolding per route.
 - Template preview and report generation both support runtime-input maps built from shared row helpers in `src/lib/runtime-inputs.ts`.

@@ -10,13 +10,13 @@ import {
 
 export type SchemaCodecIssue = SchemaValidationIssue;
 
-export type SchemaCodecParseSuccess = {
+type SchemaCodecParseSuccess = {
   builder: ReturnType<typeof jsonSchemaToSchemaBuilder>;
   jsonSchema: UnknownRecord;
   issues: [];
 };
 
-export type SchemaCodecParseFailure = {
+type SchemaCodecParseFailure = {
   builder: null;
   jsonSchema: null;
   issues: SchemaCodecIssue[];
@@ -694,4 +694,3 @@ function parseRefBuilder(value: unknown, context: SchemaNodeContext): SchemaIRRe
     schemaVersion: match.groups.version ? Number.parseInt(match.groups.version, 10) : undefined,
   } as const;
 }
-

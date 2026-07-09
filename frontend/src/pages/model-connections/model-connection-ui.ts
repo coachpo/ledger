@@ -1,8 +1,4 @@
-import type {
-  EvidenceClusterItem,
-  EvidenceClusterTone,
-} from "@/components/shared/evidence-cluster";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import type {
   ModelConnectionCapabilities,
   ModelConnectionCapabilityState,
@@ -70,7 +66,7 @@ export const CAPABILITY_LABEL_BY_KEY = Object.fromEntries(
   CAPABILITY_DEFINITIONS.map(({ key, label }) => [key, label]),
 ) as Record<keyof ModelConnectionCapabilities, string>;
 
-export const SUMMARY_CAPABILITY_KEYS = [
+const SUMMARY_CAPABILITY_KEYS = [
   "strictJsonSchemaOutput",
   "nativeToolCalls",
   "jsonObjectOutput",
@@ -116,7 +112,7 @@ export const STREAMING_POLICY_LABELS: Record<
   forbid: "Forbid streaming",
 };
 
-export function defaultCapabilityState(
+function defaultCapabilityState(
   status: ModelConnectionCapabilityStatus = "unknown",
 ): ModelConnectionCapabilityState {
   return { detail: null, lastProbedAt: null, status };
@@ -176,7 +172,7 @@ export function capabilitiesForProtocolProfile(
   };
 }
 
-export function getCapabilityCounts(capabilities: ModelConnectionCapabilities) {
+function getCapabilityCounts(capabilities: ModelConnectionCapabilities) {
   return CAPABILITY_DEFINITIONS.reduce(
     (counts, { key }) => {
       counts[capabilities[key].status] += 1;
@@ -333,69 +329,4 @@ export function formatCapabilityDetails(
       CAPABILITY_STATUS_LABELS[capability.status]
     }`;
   }).join(" · ");
-}
-
-function getLastTestEvidenceTone(
-  connection: ModelConnectionListItemRead,
-): EvidenceClusterTone {
-  if (connection.lastTestOk === true) {
-    return "verified";
-  }
-
-  if (connection.lastTestOk === false) {
-    return "danger";
-  }
-
-  return "warning";
-}
-
-function getCapabilityEvidenceTone(
-  capabilities: ModelConnectionCapabilities,
-): EvidenceClusterTone {
-  const counts = getCapabilityCounts(capabilities);
-  return counts.unsupported > 0 || counts.unknown > 0 ? "warning" : "verified";
-}
-
-function formatReachabilityValue(connection: ModelConnectionListItemRead): string {
-  return connection.lastTestedAt
-    ? formatDateTime(connection.lastTestedAt)
-    : "No reachability test recorded";
-}
-
-
-export function getModelConnectionEvidenceItems(
-  connection: ModelConnectionListItemRead,
-): EvidenceClusterItem[] {
-  return [
-    {
-      description: `${PROTOCOL_PROFILE_DESCRIPTIONS[connection.protocolProfile]} Timeout ${connection.timeoutSeconds}s against ${connection.baseUrl}.`,
-      label: "Protocol profile",
-      tone: "neutral",
-      value: PROTOCOL_PROFILE_LABELS[connection.protocolProfile],
-    },
-    {
-      description: connection.lastTestMessage ?? "Backend connection test has not reported a provider message.",
-      label: "Test state",
-      tone: getLastTestEvidenceTone(connection),
-      value: formatLastTestStatus(connection),
-    },
-    {
-      description: formatCapabilityDetails(connection),
-      label: "Capability support",
-      tone: getCapabilityEvidenceTone(connection.capabilities),
-      value: formatCapabilitySummary(connection.capabilities),
-    },
-    {
-      description: `Reasoning effort: ${formatReasoningEffort(connection.reasoningEffort)}.`,
-      label: "Runtime policy",
-      tone: "neutral",
-      value: formatRuntimePolicyEvidence(connection),
-    },
-    {
-      description: connection.lastTestMessage ?? "Run a saved backend connection test to refresh reachability.",
-      label: "Reachability",
-      tone: getLastTestEvidenceTone(connection),
-      value: formatReachabilityValue(connection),
-    },
-  ];
 }

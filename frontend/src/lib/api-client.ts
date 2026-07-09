@@ -4,7 +4,7 @@ import type {
   ApiErrorResponse,
 } from "./types/common";
 
-export type RequestMethod = "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
+type RequestMethod = "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
 export type RequestQueryValue = boolean | number | string | null | undefined;
 
 export interface RequestOptions {
@@ -408,21 +408,6 @@ async function requestTextWithBaseUrl(
   return response.text();
 }
 
-async function requestBlobWithBaseUrl(
-  baseUrl: string,
-  path: string,
-  options: RequestOptions = {},
-): Promise<Blob> {
-  const response = await fetchWithBaseUrl(
-    baseUrl,
-    path,
-    options,
-    "application/octet-stream, */*",
-  );
-
-  return response.blob();
-}
-
 async function downloadFileWithBaseUrl(
   baseUrl: string,
   path: string,
@@ -452,32 +437,11 @@ export async function requestPlatform<T>(
   return requestWithBaseUrl<T>(PLATFORM_API_BASE_URL, path, options);
 }
 
-export function requestText(
-  path: string,
-  options: RequestOptions = {},
-): Promise<string> {
-  return requestTextWithBaseUrl(API_BASE_URL, path, options);
-}
-
 export function requestPlatformText(
   path: string,
   options: RequestOptions = {},
 ): Promise<string> {
   return requestTextWithBaseUrl(PLATFORM_API_BASE_URL, path, options);
-}
-
-export function requestBlob(
-  path: string,
-  options: RequestOptions = {},
-): Promise<Blob> {
-  return requestBlobWithBaseUrl(API_BASE_URL, path, options);
-}
-
-export function requestPlatformBlob(
-  path: string,
-  options: RequestOptions = {},
-): Promise<Blob> {
-  return requestBlobWithBaseUrl(PLATFORM_API_BASE_URL, path, options);
 }
 
 export function downloadFile(

@@ -1,6 +1,6 @@
 # UI and UX standard
 
-This is the project-owned frontend UI standard for SignalDeck. It reflects the current React and Vite app, the shared component set in `src/components/shared`, shadcn primitives in `src/components/ui`, route metadata in `src/routes.metadata.ts`, layout ownership in `src/components/layout.tsx`, and theme tokens in `src/styles/theme.css`.
+This is the project-owned frontend UI standard for SignalDeck. It reflects the current React and Vite app, the shared component set in `src/components/shared`, shadcn primitives in `src/components/ui`, route handles in `src/routes.ts`, layout ownership in `src/components/layout.tsx`, and theme tokens in `src/styles/theme.css`.
 
 ## Assumptions
 
@@ -39,7 +39,7 @@ Use the project `--ui-*` tokens when component CSS needs custom values for surfa
 
 Page titles use `PageContextBar`, which renders the route title as a responsive `h1` with `text-2xl` and `sm:text-3xl`.
 
-Detail titles use compact heading styles such as `text-xl font-semibold tracking-tight`. Inventory card titles use the shared row card title treatment.
+Detail titles use compact heading styles such as `text-xl font-semibold tracking-tight`. Inventory card titles should use compact route-owned heading/link treatment.
 
 Body copy uses `text-sm` or `text-xs` depending on density. Supporting text uses `text-muted-foreground`. Avoid washed-out copy that fails in light mode.
 
@@ -84,9 +84,9 @@ Use `ResourceToolbar.search` for compact inventory search. It supplies a hidden 
 
 ## Tables, lists, and resource rows
 
-Use `DataTable` for small generic sortable tables. Use `ResourceTableFrame` for route-owned table markup that only needs the shared border and containment frame.
+Use `ResourceTableFrame` for route-owned table markup that needs the shared border and containment frame. Routes own columns, sorting, pagination, and row actions.
 
-Use `ResourceRowCard` for compact inventory cards that need title links, badges, metadata, status strips, evidence chips, provenance, or trailing actions.
+Use route-owned card/list markup for compact inventory cards that need title links, badges, metadata, status strips, evidence chips, provenance, or trailing actions.
 
 Use `ResourceStatusStrip` for grouped status facts and `ResourceStatusBadge` for single status pills.
 
@@ -103,7 +103,7 @@ Dialogs should not fetch data directly. The parent route or hook supplies data a
 
 ## Navigation
 
-`src/routes.ts` registers live routes. `src/routes.metadata.ts` defines route archetype, breadcrumb title, nav label, sidebar test id, shell mode, ownership, and state variants.
+`src/routes.ts` registers live routes and defines each route handle with route archetype, breadcrumb title, nav label, sidebar test id, shell mode, ownership, and state variants.
 
 `Layout` renders sidebar, breadcrumbs, shell mode, width mode, and the single page-level `main`. Leaf pages don't rebuild those structures.
 
@@ -139,7 +139,7 @@ Use status text and labels, not color alone. Badge tone can support the message,
 
 ## Naming conventions
 
-Shared component names describe UI shape and scope: `InventoryPageShell`, `WorkspacePageShell`, `ResourceToolbar`, `ResourceRowCard`, `InlineStatePanel`.
+Shared component names describe UI shape and scope: `InventoryPageShell`, `WorkspacePageShell`, `ResourceToolbar`, `ResourceTableFrame`, `InlineStatePanel`.
 
 Use `Resource*` for reusable inventory chrome, `*Shell` for structural wrappers, `*Panel` for empty, inline, or state containers, and `*Layout` for multi-region arrangements.
 Props should name semantic regions, not implementation details. Prefer `pageContext`, `toolbar`, `filterBar`, `leftPane`, `rightPane`, `emptyInspector`, `actions`, and `status`.
@@ -152,7 +152,7 @@ Do use `components/shared` for cross-feature shells and repeated resource chrome
 
 Do use `components/ui` primitives instead of raw styled HTML for buttons, cards, badges, dialogs, sheets, tables, alerts, inputs, toggles, and selects.
 
-Do use `routes.metadata.ts` and `layout.tsx` for route shell decisions.
+Do use route handles in `routes.ts` and `layout.tsx` for route shell decisions.
 
 Don't create `/src/ui`, a second component library, or route-local clones of shared inventory controls.
 

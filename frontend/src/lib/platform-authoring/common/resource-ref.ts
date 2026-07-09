@@ -86,6 +86,3 @@ export function formatResourceRef(ref: Pick<ResourceRef, "key"> & { version?: nu
 export function toVersionedRefValue(key: string, version?: number | null): string {
   return version ? `${key}@${version}` : key;
 }
-
-export const parseVersionedRef = parseResourceRef;
-export const parseVersionedRefs = parseResourceRefs;

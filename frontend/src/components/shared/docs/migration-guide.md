@@ -16,11 +16,11 @@ Replace repeated row overflow dropdown trigger/content wrappers with `ResourceAc
 
 Replace resource table select-all and row selection checkbox wiring with `ResourceSelectionCheckbox`.
 
-Replace repeated card rows with `ResourceRowCard` when the card represents a resource and needs title link, badges, metadata, status, evidence, or actions.
+Keep resource-card markup route-owned unless a second current route needs the same card abstraction.
 
 Replace raw status spans with `ResourceStatusBadge` or `ResourceStatusStrip`.
 
-Replace ad-hoc bordered table wrappers with `ResourceTableFrame`, or replace small custom sortable tables with `DataTable`.
+Replace ad-hoc bordered table wrappers with `ResourceTableFrame`; keep table columns, sorting, and pagination route-owned.
 Replace local empty, warning, and error card markup with `InventoryStatePanel`, `EmptyStatePanel`, or `InlineStatePanel`.
 
 Replace create or edit dialog content scaffolding with `EntityDialogShell` when the flow has a form body and footer actions.
@@ -37,7 +37,7 @@ Leave route params, navigation, links, redirects, toasts, and mutation sequencin
 
 Leave feature-specific copy, column definitions, validation messages, and form submit handlers with the owning route.
 
-Leave route metadata in `src/routes.metadata.ts` and shell rendering in `layout.tsx`.
+Leave route handles in `src/routes.ts` and shell rendering in `layout.tsx`.
 Leave feature-only widgets in their feature folder until they have a second real use case.
 
 ## Replacement map
@@ -50,7 +50,6 @@ Leave feature-only widgets in their feature folder until they have a second real
 | Selected-count delete/clear bar | `ResourceBulkActionsBar` | Keep selection state, mutation calls, and toasts route-owned. |
 | Row action dropdown trigger/content wrapper | `ResourceActionsMenu` | Keep `DropdownMenuItem` children, links, callbacks, and destructive variants route-owned. |
 | Resource row or select-all checkbox checked-state mapping | `ResourceSelectionCheckbox` | Keep selected ids, selected items, and mutation behavior route-owned. |
-| Clickable resource card wrapper | `ResourceRowCard` plus `primaryAction` | Use real links and buttons. |
 | Status text with custom colors | `ResourceStatusBadge` or `ResourceStatusStrip` | Use supported tones only. |
 | Dashed empty or error cards | `InventoryStatePanel`, `EmptyStatePanel`, or `InlineStatePanel` | Match the scope of the state; shared state panels now use solid grouped/elevated surfaces. |
 | `rounded-md border bg-muted/20` route panels | Shared shell, `Card`, `ResourceTableFrame`, or a route-owned section component using `bg-card/70` or `bg-ui-surface-grouped` plus `shadow-ui-*` | Keep route copy and behavior in place while replacing only the visual wrapper. |
@@ -61,7 +60,7 @@ Leave feature-only widgets in their feature folder until they have a second real
 | Local split pane with resize or inspector | Route-owned panel or dialog | Add shared layout only after repeated use. |
 ## Incremental migration order
 
-1. Confirm the route is live in `src/routes.ts` and has correct metadata in `src/routes.metadata.ts`.
+1. Confirm the route is live in `src/routes.ts` and has correct route-handle metadata.
 2. Identify repeated chrome: page context, search, filters, state panels, rows, status, table frame, dialog frame, or inspector.
 3. Replace one layer at a time. Start with page shell and toolbar, then state panels, then rows or tables, then dialogs.
 4. Keep the route's hook calls, derived data, mutations, toasts, and navigation unchanged during the visual extraction.

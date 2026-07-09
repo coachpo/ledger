@@ -16,7 +16,7 @@ export type RunStatus =
   | "succeeded"
   | "failed"
   | "cancelled";
-export type RunQueueState = "waiting" | "blocked";
+type RunQueueState = "waiting" | "blocked";
 export type RunQueueReason =
   | "awaiting-worker-capacity"
   | "blocked-by-package-serial-policy";
@@ -26,16 +26,16 @@ export type RunStepStatus =
   | "succeeded"
   | "failed"
   | "skipped";
-export type RunStepOrigin = "planned";
-export type RunInvocationInputMode = "passthrough" | "wired";
-export type RunInvocationResolvedInputOrigin = "derived" | "passthrough";
-export type RunInvocationOutputOrigin = "executed";
-export type RunOperationKind = "http";
+type RunStepOrigin = "planned";
+type RunInvocationInputMode = "passthrough" | "wired";
+type RunInvocationResolvedInputOrigin = "derived" | "passthrough";
+type RunInvocationOutputOrigin = "executed";
+type RunOperationKind = "http";
 export type RunTargetKind = "workflowPackage";
-export type RunInvocationResourceScope = "global" | "packageLocal";
-export type RunScheduleReason = "scheduled" | "manual";
+type RunInvocationResourceScope = "global" | "packageLocal";
+type RunScheduleReason = "scheduled" | "manual";
 
-export interface RunInvocationScopedRef {
+interface RunInvocationScopedRef {
   scope: RunInvocationResourceScope;
   id?: number;
   localId?: number;
@@ -43,16 +43,10 @@ export interface RunInvocationScopedRef {
   version?: number;
 }
 
-export interface RunTargetIdentityRead {
+interface RunTargetIdentityRead {
   targetKind: RunTargetKind;
   targetId: number;
   targetKey: string;
-}
-
-export interface RunAgentErrorRead {
-  code: string;
-  message: string;
-  details: UnknownRecord[];
 }
 
 export interface RunModelGatewaySelectedStrategiesRead {
@@ -70,15 +64,15 @@ export interface RunModelGatewayUsageRead {
   totalTokens?: number | null;
 }
 
-export type RunProviderRetryAttemptOutcome =
+type RunProviderRetryAttemptOutcome =
   | "retryScheduled"
   | "retryAfterHonored"
   | "exhausted";
-export type RunProviderRetryTerminalOutcome =
+type RunProviderRetryTerminalOutcome =
   | "succeededAfterRetry"
   | "exhausted";
 
-export interface RunProviderRetryAttemptRead {
+interface RunProviderRetryAttemptRead {
   attempt: number;
   outcome: RunProviderRetryAttemptOutcome;
   errorCode: string;
@@ -87,14 +81,14 @@ export interface RunProviderRetryAttemptRead {
   delayMs?: number | null;
 }
 
-export interface RunProviderRetriesRead {
+interface RunProviderRetriesRead {
   policy: "transientProviderRetry/v1";
   maxAttempts: number;
   attempts: RunProviderRetryAttemptRead[];
   terminalOutcome: RunProviderRetryTerminalOutcome;
 }
 
-export interface RunModelGatewayMetadataRead {
+interface RunModelGatewayMetadataRead {
   selectedStrategies?: RunModelGatewaySelectedStrategiesRead | null;
   usage?: RunModelGatewayUsageRead | null;
   providerRetries?: RunProviderRetriesRead | null;
@@ -132,13 +126,13 @@ export interface RunPackageResolvedModelConnectionRead {
   hasApiKey: boolean;
 }
 
-export interface RunExtensionDependencyRead {
+interface RunExtensionDependencyRead {
   extensionKey: string;
   surfaces: string[];
   fields: string[];
 }
 
-export interface RunPackageLocalResourceRefsRead {
+interface RunPackageLocalResourceRefsRead {
   agents: string[];
   outputSchemas: string[];
   capabilityProfiles: string[];
@@ -146,27 +140,27 @@ export interface RunPackageLocalResourceRefsRead {
   workflows: string[];
 }
 
-export interface RunPackagePreflightSummaryRead {
+interface RunPackagePreflightSummaryRead {
   ready: boolean;
   blockingErrors: UnknownRecord[];
   warnings: UnknownRecord[];
 }
 
-export interface RunProgressRead {
+interface RunProgressRead {
   unit: "invocation";
   terminalCount: number;
   totalCount: number;
   percent: number;
 }
 
-export interface RunQueueRead {
+interface RunQueueRead {
   state: RunQueueState;
   reason: RunQueueReason;
   message: string;
   blockingRunId: number | null;
 }
 
-export interface RunScheduleProvenanceRead {
+interface RunScheduleProvenanceRead {
   scheduleId: number | null;
   scheduleFireId: number | null;
   scheduleName: string | null;
@@ -185,7 +179,7 @@ export interface RunScheduleProvenanceRead {
   scheduleDeletedAt: string | null;
 }
 
-export interface RunPackageLaunchSnapshotRead {
+interface RunPackageLaunchSnapshotRead {
   workflowKey: string;
   workflowName: string;
   workflowDescription: string;
@@ -193,7 +187,7 @@ export interface RunPackageLaunchSnapshotRead {
   parameters: UnknownRecord;
 }
 
-export interface RunCurrentPackageAuditRead {
+interface RunCurrentPackageAuditRead {
   available: boolean;
   manifestHash?: string | null;
   compiledHash?: string | null;
@@ -202,7 +196,7 @@ export interface RunCurrentPackageAuditRead {
   unavailableReason?: string | null;
 }
 
-export interface RunPackageProvenanceRead {
+interface RunPackageProvenanceRead {
   workflowPackageId: number;
   workflowPackageKey: string;
   workflowPackageName: string;
