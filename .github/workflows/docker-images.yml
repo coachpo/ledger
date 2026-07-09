@@ -32,7 +32,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME_BACKEND: signaldeck-backend
   IMAGE_NAME_FRONTEND: signaldeck-frontend
-  BUILD_PLATFORM: linux/arm64
+  BUILD_PLATFORM: linux/amd64,linux/arm64
 
 jobs:
   build-and-push:
@@ -90,7 +90,7 @@ jobs:
           echo "git_revision=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "git_run_number=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image (linux/arm64)
+      - name: Build and push Docker image (linux/amd64,linux/arm64)
         uses: docker/build-push-action@v6
         with:
           builder: ${{ steps.buildx.outputs.name }}

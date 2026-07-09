@@ -119,7 +119,7 @@ SignalDeck has no migration framework; schema changes require rebuilding the dat
 
 - `ci.yml` runs version sync, backend quality, frontend quality, and frontend E2E.
 - Backend CI installs with `uv sync --frozen`; frontend CI installs with `pnpm install --frozen-lockfile`.
-- `docker-images.yml` builds and publishes backend/frontend linux/arm64 images for GitHub Container Registry with SBOM/provenance metadata on non-PR pushes.
+- `docker-images.yml` builds and publishes backend/frontend linux/amd64 and linux/arm64 images for GitHub Container Registry with SBOM/provenance metadata on non-PR pushes.
 
 ## Versioning
 
