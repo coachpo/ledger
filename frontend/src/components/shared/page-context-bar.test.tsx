@@ -79,6 +79,8 @@ describe("PageContextBar", () => {
       "md:flex-row",
       "md:items-baseline",
     );
+    expect(title).toHaveClass("min-w-0");
+    expect(title).not.toHaveClass("shrink-0");
     expect(description).toHaveAttribute(
       "data-slot",
       "page-context-description",
