@@ -14,7 +14,7 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm run build
 
-FROM python:3.13-slim AS backend-builder
+FROM python:3.14-slim AS backend-builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.8 /uv /uvx /bin/
 
@@ -31,7 +31,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY backend/app ./app
 
-FROM python:3.13-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 LABEL org.opencontainers.image.title="SignalDeck local/demo combined image" \
       org.opencontainers.image.description="Local/demo-only combined SignalDeck app; not a supported production artifact." \
