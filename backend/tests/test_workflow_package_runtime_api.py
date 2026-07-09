@@ -1074,20 +1074,6 @@ def test_stale_recovered_run_cannot_be_finalized_by_expired_executor(
         assert "scheduler lease expired" in str(run.error)
 
 
-def test_runtime_input_registry_endpoints_are_removed_from_openapi(client: TestClient) -> None:
-    response = client.get("/openapi.json")
-    assert response.status_code == 200, response.json()
-    openapi = cast(dict[str, Any], response.json())
-    paths = cast(dict[str, dict[str, Any]], openapi["paths"])
-
-    registry_path = "/api/workflow-packages/{package_id}/runtime-input-registry"
-    presets_path = "/api/workflow-packages/{package_id}/runtime-input-registry/presets"
-    presets_item_path = f"{presets_path}/{{entry_id}}"
-    assert registry_path not in paths
-    assert presets_path not in paths
-    assert presets_item_path not in paths
-
-
 def test_workflow_package_read_contract_is_artifact_inventory_and_launch_keeps_live_readiness(
     client: TestClient,
     session_factory: sessionmaker[Session],

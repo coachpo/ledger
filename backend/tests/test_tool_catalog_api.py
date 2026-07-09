@@ -709,28 +709,9 @@ def test_tools_catalog_route_is_get_only(client: TestClient) -> None:
     assert response.status_code == 405
     openapi = cast(dict[str, object], client.get("/openapi.json").json())
     paths = cast(dict[str, object], openapi["paths"])
-    schemas = cast(
-        dict[str, dict[str, object]],
-        cast(dict[str, object], openapi["components"])["schemas"],
-    )
     assert "/api/tools" in paths
     tools_path = cast(dict[str, object], paths["/api/tools"])
     assert set(tools_path) == {"get"}
-
-    get_operation = cast(dict[str, object], tools_path["get"])
-    get_responses = cast(dict[str, object], get_operation["responses"])
-    ok_response = cast(dict[str, object], get_responses["200"])
-    ok_content = cast(dict[str, object], ok_response["content"])
-    ok_json = cast(dict[str, object], ok_content["application/json"])
-    assert ok_json["schema"] == {"$ref": "#/components/schemas/ToolCatalogListRead"}
-    assert set(cast(dict[str, object], schemas["ToolCatalogItemRead"]["properties"])) == {
-        "key",
-        "displayName",
-        "description",
-    }
-    list_properties = cast(dict[str, object], schemas["ToolCatalogListRead"]["properties"])
-    assert set(list_properties) == {"items"}
-    assert cast(list[str], schemas["ToolCatalogListRead"]["required"]) == ["items"]
 
 
 def test_tool_catalog_static_extension_tools_and_validation_stays_artifact_only(

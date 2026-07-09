@@ -124,6 +124,12 @@ def test_browser_safe_error_details_preserve_public_scalars_and_drop_unsafe_valu
     assert text_detail_error.details == []
 
 
+def test_removed_workflow_memory_api_is_not_registered(client: TestClient) -> None:
+    response = client.get("/api/memory/proposals")
+
+    assert response.status_code == 404
+
+
 def test_api_error_envelope_details_are_browser_safe(app: FastAPI) -> None:
     def api_error_details_probe() -> None:
         raise ApiError(
