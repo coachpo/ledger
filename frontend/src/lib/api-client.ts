@@ -28,7 +28,9 @@ export interface ApiRequestErrorOptions {
 
 export type IdParam = number | string;
 
-const DEFAULT_API_V1_BASE_URL = "http://127.0.0.1:8000/api/v1";
+const DEFAULT_API_BASE_URL = import.meta.env.DEV
+  ? "http://127.0.0.1:8000/api"
+  : "/api";
 const CONFIGURED_API_BASE_URL = normalizeApiBaseUrl(
   import.meta.env.VITE_API_BASE_URL,
 );
@@ -70,7 +72,7 @@ function normalizeApiBaseUrl(value: string | undefined): string {
   const normalized = value?.trim();
 
   if (!normalized) {
-    return DEFAULT_API_V1_BASE_URL;
+    return DEFAULT_API_BASE_URL;
   }
 
   return normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
