@@ -24,7 +24,7 @@ Workflow Packages are the only executable authoring root. Package manifests use 
 
 Model Connections are global encrypted provider bindings. Tools are read-only server-declared metadata from `/api/tools`; packages reference canonical owner-qualified tool keys through local capability profiles. Package exports omit secret-bearing private MCP `env`, `headers`, and `query` values along with database ids, run history, package secret binding rows, and raw secret values.
 
-Scheduled Tasks use structured recurrence and IANA timezones to materialize due fires into ordinary queued runs. Runs store immutable executable snapshots, queue/progress state, invocation evidence, operation evidence, retry/failure metadata, trace ids when configured, final output, and rerun lineage.
+Scheduled Tasks use structured recurrence and IANA timezones to materialize due fires into ordinary queued runs. Runs store immutable executable snapshots, queue/progress state, invocation evidence, operation evidence, retry/failure metadata, trace ids when configured, final output, and rerun lineage. `POST /api/runs/{id}/cancel` cancels queued runs immediately; running runs stop cooperatively at step boundaries.
 
 ## Prerequisites
 
@@ -91,7 +91,9 @@ See [docker/compose.production.example.yml](/home/qing/Documents/projects/ledger
 - `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection and package-secret values; production rejects the local placeholder.
 - `SIGNALDECK_API_TOKEN` enables bearer-token protection.
 - `PUBLIC_BASE_URL` is the externally reachable app origin when absolute links are needed.
-- `CORS_ALLOWED_ORIGINS` should list allowed browser origins.
+- `CORS_ALLOWED_ORIGINS` should list allowed browser origins for non-`localhost` frontend deployments; same-origin reverse-proxy deployments do not need CORS.
+- `MCP_RUNTIME_ENABLED` defaults to `false`.
+- `MCP_RUNTIME_TIMEOUT` controls MCP runtime request timeouts.
 - `RUN_SCHEDULER=true|false` only affects the root local/demo image entrypoint; production deployments run the scheduler as a separate container.
 - `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention.
 
@@ -108,6 +110,8 @@ Use a libpq-style PostgreSQL URL for database tools:
 pg_dump "$POSTGRES_URL" > signaldeck.sql
 psql "$POSTGRES_URL" < signaldeck.sql
 ```
+
+**Back up `AGENT_PLATFORM_ENCRYPTION_KEY` with every `pg_dump`. Losing the key makes stored model-connection and package-secret values undecryptable, API reads can return 500, there is no rotation or re-encryption tool yet, and the only recovery path is re-entering every secret. Generate a high-entropy key with `openssl rand -base64 32`.**
 
 ## Schema Changes
 

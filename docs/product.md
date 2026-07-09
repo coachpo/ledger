@@ -30,7 +30,7 @@ The parser rejects YAML aliases, anchors, merge keys, unsupported tags, non-fini
 
 ## Runs
 
-Launches and scheduled fires create queued runs with immutable package snapshots and resolved non-secret Model Connection runtime profiles. The scheduler worker claims queued runs, dispatches agents and HTTP operations from the snapshot, and stores run evidence.
+Launches and scheduled fires create queued runs with immutable package snapshots and resolved non-secret Model Connection runtime profiles. The scheduler worker claims queued runs, dispatches agents and HTTP operations from the snapshot, and stores run evidence. `POST /api/runs/{id}/cancel` cancels queued runs immediately; running runs stop cooperatively at step boundaries.
 
 Run detail exposes canonical inputs, package provenance, queue/progress state, steps, agent invocations, HTTP operation invocations, token usage, optional trace/span ids, typed failure taxonomy, bounded tool-call correction retries, transient provider retry metadata when emitted, and final output. Rerun edits root launch parameters and links back to the source run.
 
