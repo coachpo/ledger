@@ -32,3 +32,4 @@
 | 8.7 | done | Commit `8e5adb28`; frontend lint/typecheck/test:run/build passed (297 tests); full e2e passed (22 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 9.1 | done | Commit `6db78798`; knip exits 0; frontend lint/typecheck/test:run/build passed (288 tests); full e2e passed (22 tests); fresh spec reviewers found stale query-key and docs references that were fixed, then final fresh spec reviewer approved; fresh code-quality reviewer approved. |
 | 9.2 | done | Commit `f477d21d`; backend dead-code checks and import smoke passed; backend full validation passed (731 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
+| 9.3 | done | Commit `de86db3f`; docs sanity checks passed; only root `AGENTS.md` remains and shared UI docs are deleted; fresh spec reviewer found docs wording issues that were fixed, then final fresh spec reviewer approved; fresh code-quality reviewer approved. |
