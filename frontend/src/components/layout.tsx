@@ -10,7 +10,7 @@ import {
   Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Link, NavLink, Outlet, useLocation } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useMatches } from "react-router";
 
 import {
   Breadcrumb,
@@ -37,12 +37,84 @@ import {
 } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar-context";
 
-import {
-  getSidebarRouteMetadataGroups,
-  getRouteMetadataForPathname,
-  type RouteNavIconName,
-  type RouteWidthMode,
-} from "@/routes.metadata";
+export type RouteArchetype =
+  | "dashboard"
+  | "inventory"
+  | "detail"
+  | "editor"
+  | "console"
+  | "systemState"
+  | "unknown";
+export type RouteShellMode = "scroll" | "fullHeight";
+export type RouteWidthMode = "wide" | "full" | "compact" | "readable";
+export type RouteNavGroup =
+  | "Agent Platform"
+  | "Finance Workspace"
+  | "System";
+export type RouteNavIconName =
+  | "Briefcase"
+  | "ClipboardList"
+  | "Database"
+  | "FileText"
+  | "LayoutDashboard"
+  | "Link2"
+  | "PlayCircle"
+  | "Puzzle"
+  | "Workflow";
+export type RouteStateVariant =
+  | "ready"
+  | "loading"
+  | "error"
+  | "empty"
+  | "filteredEmpty"
+  | "unauthorized"
+  | "notFound"
+  | "creating"
+  | "editing"
+  | "saving"
+  | "importing"
+  | "validating"
+  | "launching"
+  | "polling";
+export type RouteHandle = {
+  archetype: RouteArchetype;
+  breadcrumb: {
+    parent?: {
+      href: `/${string}`;
+      title: string;
+    };
+    title: string;
+  };
+  nav: {
+    group: RouteNavGroup;
+    iconName: RouteNavIconName;
+    label: string;
+    path?: `/${string}`;
+    sidebar: boolean;
+    testId: string;
+  };
+  owner:
+    | { kind: "platform" }
+    | { kind: "system" }
+    | {
+        extensionKey: "signaldeck.finance";
+        extensionLabel: "Finance Workspace";
+        kind: "extension";
+      }
+    | { kind: "unknown" };
+  pattern: `/${string}` | "*";
+  shellMode: RouteShellMode;
+  stateVariants: readonly RouteStateVariant[];
+  testId: string;
+  widthMode: RouteWidthMode;
+};
+export type RouteNavGroupHandle = {
+  items: readonly RouteHandle[];
+  label: RouteNavGroup;
+};
+export type RootRouteHandle = {
+  sidebarGroups: readonly RouteNavGroupHandle[];
+};
 
 type NavItem = {
   icon: LucideIcon;
@@ -63,11 +135,55 @@ const navIconByName: Record<RouteNavIconName, LucideIcon> = {
   Workflow,
 };
 
-function assembleNavGroups() {
-  return getSidebarRouteMetadataGroups().map((group) => ({
+function isRouteHandle(handle: unknown): handle is RouteHandle {
+  return (
+    typeof handle === "object" &&
+    handle !== null &&
+    "breadcrumb" in handle &&
+    "shellMode" in handle &&
+    "testId" in handle
+  );
+}
+
+function isRootRouteHandle(handle: unknown): handle is RootRouteHandle {
+  return (
+    typeof handle === "object" &&
+    handle !== null &&
+    "sidebarGroups" in handle
+  );
+}
+
+function activeRouteHandle(matches: readonly { handle: unknown }[]): RouteHandle {
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const handle = matches[index]?.handle;
+
+    if (isRouteHandle(handle)) {
+      return handle;
+    }
+  }
+
+  throw new Error("Current route is missing route handle metadata.");
+}
+
+function rootRouteHandle(
+  matches: readonly { handle: unknown }[],
+): RootRouteHandle {
+  const rootHandle = matches.find((match) => isRootRouteHandle(match.handle));
+
+  if (!rootHandle || !isRootRouteHandle(rootHandle.handle)) {
+    throw new Error("Root route is missing sidebar handle metadata.");
+  }
+
+  return rootHandle.handle;
+}
+
+function assembleNavGroups(sidebarGroups: readonly RouteNavGroupHandle[]) {
+  return sidebarGroups.map((group) => ({
     items: group.items.map((metadata) => {
       if (!metadata.nav.path) {
-        throw new Error(`Sidebar route metadata is missing a nav path: ${metadata.pattern}`);
+        throw new Error(
+          `Sidebar route metadata is missing a nav path: ${metadata.pattern}`,
+        );
       }
 
       return {
@@ -89,7 +205,8 @@ function isNavItemActive(pathname: string, item: NavItem) {
 
 function AppSidebar() {
   const location = useLocation();
-  const navGroups = assembleNavGroups();
+  const matches = useMatches();
+  const navGroups = assembleNavGroups(rootRouteHandle(matches).sidebarGroups);
   const { isMobile, open, setOpenMobile } = useSidebar();
   const showExpandedContent = open || isMobile;
 
@@ -172,8 +289,8 @@ function routeWidthWrapperClassName(widthMode: RouteWidthMode) {
 }
 
 export function Layout() {
-  const location = useLocation();
-  const routeMetadata = getRouteMetadataForPathname(location.pathname);
+  const matches = useMatches();
+  const routeMetadata = activeRouteHandle(matches);
   const breadcrumbMetadata = routeMetadata.breadcrumb;
   const usesFullHeightShell = routeMetadata.shellMode === "fullHeight";
 

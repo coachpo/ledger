@@ -1,16 +1,10 @@
 import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { ThemeProvider } from "@/components/theme-provider";
-import {
-  FINANCE_WORKSPACE_NAV_GROUP,
-  getRouteMetadataForPathname,
-  getSidebarRouteMetadataGroups,
-} from "@/routes.metadata";
-
-import { Layout } from "./layout";
+import { router } from "@/routes";
 
 const localStorageState = new Map<string, string>();
 
@@ -28,78 +22,28 @@ beforeEach(() => {
   document.documentElement.classList.remove("dark");
 });
 
-const groupedSidebarItems = getSidebarRouteMetadataGroups().map((group) => ({
-  items: group.items.map((metadata) => {
-    if (!metadata.nav.path) {
-      throw new Error(
-        `Sidebar metadata is missing a nav path for ${metadata.pattern}`,
-      );
-    }
-
-    return {
-      href: metadata.nav.path,
-      label: metadata.nav.label,
-      testId: metadata.nav.testId,
-    };
-  }),
-  label: group.label,
-}));
-
 function renderLayout(initialEntry: string) {
+  const testRouter = createMemoryRouter(router.routes, {
+    initialEntries: [initialEntry],
+  });
+
   return render(
     <ThemeProvider>
       <QueryClientProvider
-        client={new QueryClient({
-          defaultOptions: { queries: { retry: false } },
-        })}
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
       >
-        <MemoryRouter initialEntries={[initialEntry]}>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route index element={<div>Dashboard content</div>} />
-              <Route path="templates" element={<div>Templates content</div>} />
-              <Route
-                path="templates/new"
-                element={<div data-testid="template-new-content">Template new</div>}
-              />
-              <Route
-                path="reports/:slug"
-                element={<div>Report detail content</div>}
-              />
-              <Route
-                path="workflow-packages"
-                element={<div>Workflow packages</div>}
-              />
-              <Route
-                path="workflow-packages/import"
-                element={<div>Import workspace</div>}
-              />
-              <Route
-                path="workflow-packages/:packageId/run"
-                element={
-                  <div data-testid="workflow-package-launch-page">
-                    Package launch content
-                  </div>
-                }
-              />
-              <Route
-                path="scheduled-tasks"
-                element={<div>Scheduled tasks</div>}
-              />
-              <Route
-                path="runs/:runId"
-                element={<div>Run detail content</div>}
-              />
-            </Route>
-          </Routes>
-        </MemoryRouter>
+        <RouterProvider router={testRouter} />
       </QueryClientProvider>
     </ThemeProvider>,
   );
 }
 
-function sidebarGroup(label: string): HTMLElement {
-  const labelElement = screen.getByText(label);
+async function sidebarGroup(label: string): Promise<HTMLElement> {
+  const labelElement = await screen.findByText(label);
   const group = labelElement.closest<HTMLElement>('[data-sidebar="group"]');
 
   if (!group) {
@@ -110,24 +54,24 @@ function sidebarGroup(label: string): HTMLElement {
 }
 
 describe("Layout", () => {
-  it("renders the static sidebar groups without extension state", () => {
+  it("renders the static sidebar groups without extension state", async () => {
     const { container } = renderLayout("/");
 
+    expect(await screen.findByTestId("nav-dashboard")).toBeVisible();
     expect(
       Array.from(container.querySelectorAll('[data-sidebar="group-label"]')).map(
         (label) => label.textContent,
       ),
-    ).toEqual(groupedSidebarItems.map((group) => group.label));
-    expect(screen.getByTestId("nav-dashboard")).toBeVisible();
+    ).toEqual(["Agent Platform", "Finance Workspace"]);
     expect(screen.getByTestId("nav-templates")).toBeVisible();
     expect(screen.getByTestId("nav-reports")).toBeVisible();
     expect(screen.queryByTestId("nav-extensions")).not.toBeInTheDocument();
   });
 
-  it("keeps finance sidebar items visible as static navigation", () => {
+  it("keeps finance sidebar items visible as static navigation", async () => {
     renderLayout("/");
 
-    const financeGroup = sidebarGroup(FINANCE_WORKSPACE_NAV_GROUP);
+    const financeGroup = await sidebarGroup("Finance Workspace");
     expect(
       within(financeGroup)
         .getAllByRole("link")
@@ -135,12 +79,13 @@ describe("Layout", () => {
     ).toEqual(["/templates", "/reports"]);
   });
 
-  it("maps width modes onto scroll routes", () => {
+  it("maps width modes onto scroll routes", async () => {
     renderLayout("/reports/example-report");
 
-    const metadata = getRouteMetadataForPathname("/reports/example-report");
-    const routedMain = screen.getByTestId(metadata.testId);
-    const wrapper = Array.from(routedMain.querySelectorAll<HTMLElement>("div")).find(
+    const routedMain = await screen.findByTestId("route-report-detail");
+    const wrapper = Array.from(
+      routedMain.querySelectorAll<HTMLElement>("div"),
+    ).find(
       (element) =>
         element.className.includes("min-h-full") &&
         element.className.includes("max-w-full"),
@@ -159,27 +104,25 @@ describe("Layout", () => {
     );
   });
 
-  it("marks full-height routed mains", () => {
+  it("marks full-height routed mains", async () => {
     renderLayout("/workflow-packages/88/run");
 
-    const routedMain = screen
-      .getByTestId("workflow-package-launch-page")
-      .closest("main");
+    const routedMain = await screen.findByTestId(
+      "route-workflow-package-launch",
+    );
 
     expect(routedMain).toHaveAttribute("data-route-shell-mode", "fullHeight");
     expect(routedMain).toHaveAttribute("data-route-width-mode", "full");
   });
 
-  it("keeps metadata-owned shell chrome visible in dark mode", () => {
+  it("keeps metadata-owned shell chrome visible in dark mode", async () => {
     localStorageState.set("signaldeck-theme", "dark");
     renderLayout("/workflow-packages");
 
-    const metadata = getRouteMetadataForPathname("/workflow-packages");
     expect(document.documentElement).toHaveClass("dark");
-    expect(screen.getByRole("banner")).toBeVisible();
-    expect(screen.getByTestId(metadata.testId)).toHaveAttribute(
-      "data-route-shell-mode",
-      metadata.shellMode,
-    );
+    expect(await screen.findByRole("banner")).toBeVisible();
+    expect(
+      await screen.findByTestId("route-workflow-packages-list"),
+    ).toHaveAttribute("data-route-shell-mode", "scroll");
   });
 });
