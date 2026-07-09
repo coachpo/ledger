@@ -29,14 +29,6 @@ def fail_inflight_runs(engine: Engine) -> int:
         return 0
 
     with engine.begin() as connection:
-        recovered_run_ids = list(
-            connection.execute(
-                text("SELECT id FROM runs WHERE " + _STALE_RUNNING_RUN_PREDICATE)
-            ).scalars()
-        )
-        if not recovered_run_ids:
-            return 0
-        run_ids_param: BindParameter[object] = bindparam("run_ids", expanding=True)
         run_result = connection.execute(
             text(
                 """
@@ -45,14 +37,18 @@ def fail_inflight_runs(engine: Engine) -> int:
                     error = COALESCE(NULLIF(error, ''), :restart_failure_message),
                     finished_at = COALESCE(finished_at, NOW()),
                     updated_at = NOW()
-                WHERE id IN :run_ids
+                WHERE """
+                + _STALE_RUNNING_RUN_PREDICATE
+                + """
+                RETURNING id
                 """
-            ).bindparams(run_ids_param),
-            {
-                "restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE,
-                "run_ids": recovered_run_ids,
-            },
+            ),
+            {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
         )
+        recovered_run_ids = list(run_result.scalars())
+        if not recovered_run_ids:
+            return 0
+        run_ids_param: BindParameter[object] = bindparam("run_ids", expanding=True)
         if "run_steps" in table_names:
             connection.execute(
                 text(
@@ -186,7 +182,7 @@ def fail_inflight_runs(engine: Engine) -> int:
                     "run_ids": recovered_run_ids,
                 },
             )
-    return max(run_result.rowcount, 0)
+    return len(recovered_run_ids)
 
 
 __all__ = ["fail_inflight_runs"]

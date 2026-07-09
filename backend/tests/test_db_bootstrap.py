@@ -108,16 +108,68 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"package_id": package["id"], "package_key": package["key"]},
         ).scalar_one()
+        recovered_steps = (
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO run_steps (run_id, step_index, status, origin)
+                    VALUES
+                        (:run_id, 1, 'running', 'planned'),
+                        (:run_id, 2, 'pending', 'planned')
+                    RETURNING step_index, id
+                    """
+                ),
+                {"run_id": run_id},
+            )
+            .mappings()
+            .all()
+        )
+        recovered_step_ids = {row["step_index"]: row["id"] for row in recovered_steps}
         conn.execute(
             text(
                 """
-                INSERT INTO run_steps (run_id, step_index, status, origin)
-                VALUES
-                    (:run_id, 1, 'running', 'planned'),
-                    (:run_id, 2, 'pending', 'planned')
+                INSERT INTO run_agent_invocations (
+                    run_step_id, run_id, step_index, slot, agent_id, agent_key,
+                    agent_version, output_schema_id, output_schema_version, status
+                ) VALUES
+                    (
+                        :running_step_id, :run_id, 1, 'decision', 1, 'running_agent',
+                        1, 1, 1, 'running'
+                    ),
+                    (
+                        :pending_step_id, :run_id, 2, 'summary', 1, 'pending_agent',
+                        1, 1, 1, 'pending'
+                    )
                 """
             ),
-            {"run_id": run_id},
+            {
+                "running_step_id": recovered_step_ids[1],
+                "pending_step_id": recovered_step_ids[2],
+                "run_id": run_id,
+            },
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO run_operation_invocations (
+                    run_step_id, run_id, step_index, slot, operation_key, operation_kind,
+                    output_schema_id, output_schema_version, status
+                ) VALUES
+                    (
+                        :running_step_id, :run_id, 1, 'fetch', 'running_http', 'http',
+                        1, 1, 'running'
+                    ),
+                    (
+                        :pending_step_id, :run_id, 2, 'audit', 'pending_http', 'http',
+                        1, 1, 'pending'
+                    )
+                """
+            ),
+            {
+                "running_step_id": recovered_step_ids[1],
+                "pending_step_id": recovered_step_ids[2],
+                "run_id": run_id,
+            },
         )
         historical_failed_run_id = conn.execute(
             text(
@@ -199,6 +251,28 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"run_id": run_id},
         ).all()
+        agent_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message IS NOT NULL, finished_at IS NOT NULL
+                FROM run_agent_invocations
+                WHERE run_id = :run_id
+                ORDER BY step_index, slot
+                """
+            ),
+            {"run_id": run_id},
+        ).all()
+        operation_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message IS NOT NULL, finished_at IS NOT NULL
+                FROM run_operation_invocations
+                WHERE run_id = :run_id
+                ORDER BY step_index, slot
+                """
+            ),
+            {"run_id": run_id},
+        ).all()
         historical_steps = conn.execute(
             text(
                 """
@@ -234,6 +308,14 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
     assert steps == [
         (1, "failed", True, True),
         (2, "skipped", True, True),
+    ]
+    assert agent_invocations == [
+        ("decision", "failed", "startup_recovery", True, True),
+        ("summary", "skipped", "startup_recovery", True, True),
+    ]
+    assert operation_invocations == [
+        ("fetch", "failed", "startup_recovery", True, True),
+        ("audit", "skipped", "startup_recovery", True, True),
     ]
     assert historical_steps == [(1, "running", None, None)]
     assert historical_agent_invocations == [("decision", "running", None, None, None)]

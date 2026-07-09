@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from typing import cast
 
 import httpx
@@ -346,6 +347,13 @@ def test_mcp_security_blocks_ssrf_redirects_shells_and_truncates_output() -> Non
         "python",
         "module.py",
     )
+    python_path = shutil.which("python") or shutil.which("python3")
+    assert python_path is not None
+    python_executable = python_path.rsplit("/", 1)[-1]
+    assert validate_stdio_command(
+        (python_path, "module.py"),
+        allowed_commands={python_executable},
+    ) == (python_path, "module.py")
     with pytest.raises(McpSecurityError, match="secret-bearing query"):
         validate_http_sse_url(
             "https://safe.example/mcp?exaApiKey=secret-token",
