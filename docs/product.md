@@ -66,7 +66,7 @@ Extensions are private Python wiring, not a marketplace. `INSTALLED_EXTENSIONS` 
 
 Schema changes require a database rebuild. Startup uses SQLAlchemy `create_all`, bundled package seeds, and stale-run recovery instead of Alembic migrations.
 
-Deploy behind `SIGNALDECK_API_TOKEN` or an authenticated reverse proxy, use HTTPS, and keep PostgreSQL private. Production requires non-placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values and regular PostgreSQL backups.
+Deploy behind `SIGNALDECK_API_TOKEN` or an authenticated reverse proxy, use HTTPS, and keep PostgreSQL private. Production requires non-placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values, and that key must be backed up with PostgreSQL because losing it makes stored model-connection and package-secret values undecryptable; re-entering secrets is the only recovery path.
 
 ## Validation
 
