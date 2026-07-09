@@ -27,6 +27,11 @@ from app.schemas.run import (
     RunTargetKind,
 )
 from app.services.extension_dependencies import normalize_extension_dependency_payloads
+from app.services.workflow_package_export import build_workflow_package_manifest_hydration_payload
+from app.services.workflow_package_manifest_compiler import (
+    MCP_SECRET_PROJECTION_REDACTED,
+    project_package_private_mcp_secrets,
+)
 
 _WorkflowPackageSnapshotResolver = Callable[[Run], RunWorkflowPackageSnapshot]
 
@@ -195,6 +200,7 @@ class RunReadProjection:
             return None
         snapshot = self._workflow_package_snapshot_for_run(run)
         package = self.workflow_package_repository.get(snapshot.workflow_package_id)
+        safe_manifest = self._safe_manifest_payload(snapshot)
         return {
             "workflowPackageId": snapshot.workflow_package_id,
             "workflowPackageKey": snapshot.workflow_package_key,
@@ -206,9 +212,12 @@ class RunReadProjection:
             "workflowKey": snapshot.workflow_key,
             "workflowName": snapshot.workflow_name,
             "workflowDescription": snapshot.workflow_description,
-            "manifestSource": snapshot.manifest_source,
-            "packageDefinition": deepcopy(snapshot.package_definition),
-            "compiledPlan": deepcopy(snapshot.compiled_plan),
+            "manifestSource": safe_manifest["manifestSource"],
+            "packageDefinition": deepcopy(safe_manifest["packageDefinition"]),
+            "compiledPlan": project_package_private_mcp_secrets(
+                snapshot.compiled_plan,
+                mode=MCP_SECRET_PROJECTION_REDACTED,
+            ),
             "launchSnapshot": self._package_launch_snapshot_payload(snapshot),
             "extensionDependencies": deepcopy(snapshot.extension_dependencies),
             "localResourceRefs": deepcopy(snapshot.local_resource_refs),
@@ -219,6 +228,12 @@ class RunReadProjection:
             # Current package audit is display-only and never used to rebind the run.
             "currentPackage": self._current_package_audit_payload(snapshot, package),
         }
+
+    @staticmethod
+    def _safe_manifest_payload(snapshot: RunWorkflowPackageSnapshot) -> dict[str, object]:
+        return build_workflow_package_manifest_hydration_payload(
+            {"manifestSource": snapshot.manifest_source}
+        )
 
     @staticmethod
     def _package_launch_snapshot_payload(

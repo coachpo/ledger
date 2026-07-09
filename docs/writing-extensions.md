@@ -1,7 +1,8 @@
 # Writing Extensions
 
-SignalDeck extensions are static backend code contracts. There is no marketplace,
-runtime discovery, install API, enable/disable state, or `/api/extensions` route.
+SignalDeck extensions are static backend code contracts. There is no
+marketplace, runtime discovery, install API, enable/disable state, or
+`/api/extensions` route.
 
 ## Contract Fields
 
@@ -12,12 +13,19 @@ An extension declares an `EXTENSION = Extension(...)` value with these fields:
 - `tool_declarations`: server-declared `/api/tools` metadata.
 - `runtime_tool_specs`: native runtime executors for declared tools.
 - `provider_factories`: named factories consumed by backend composition.
-- `runtime_dependency_surfaces`: run dependency surface labels.
+- `runtime_dependency_surfaces`: run dependency surface labels copied into package/run provenance.
 - `package_private_mcp_tool_keys`: private MCP tool keys owned by the extension.
 
 Tool keys must stay owner-qualified:
 `signaldeck.<owner>.<tool_collection>.<tool>`. OpenAI function names are the
 mechanical underscore mapping from those keys.
+
+Bundled extensions today are:
+
+- `signaldeck.finance`: templates/reports routers, finance providers, finance
+  runtime tools, and package-private ownership of `web_search_exa`.
+- `signaldeck.digital_oracle`: Digital Oracle runtime tools only; no API router
+  and no browser route.
 
 ## Add An Extension
 
@@ -28,8 +36,8 @@ mechanical underscore mapping from those keys.
 
 Do not use dynamic `import_module` discovery or registrar side effects.
 
-Bundled Workflow Package preset seeds use `ON CONFLICT DO UPDATE`; shipped presets
-are managed/read-only and can overwrite same-key edits on restart.
+Bundled Workflow Package preset seeds use `ON CONFLICT DO UPDATE`; shipped
+presets are managed/read-only and can overwrite same-key edits on restart.
 
 ## Multiple Implementations
 

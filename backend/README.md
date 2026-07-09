@@ -32,13 +32,13 @@ Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets rema
 - `/api/schedules` for Scheduled Tasks targeting Workflow Packages, including create, list, detail, patch, delete, preview, run-now, and fire-history reads
 - `/api/model-connections` for global live provider bindings and secret-safe connection testing
 - `/api/tools` for read-only server-declared tool metadata
-- `/api/runs` for global run list/detail, root-parameter reruns, and immutable run-owned executable snapshot provenance
+- `/api/runs` for global run list/detail, cancel, delete, root-parameter reruns, and immutable run-owned executable snapshot provenance
 
 Scheduled Tasks use structured recurrence payloads: `interval` with minutes, hours, or days, `daily` at a local time, `weekly` with unique weekday values, and `monthly` with unique day-of-month values. Schedules require a valid IANA timezone. Daily, weekly, and monthly schedules evaluate local wall-clock occurrences, roll DST spring gaps forward to the next valid minute, and fire DST fall repeated local times once at the earliest valid instant. Monthly invalid dates are skipped. Overlap policy is `skip` or `queue`; misfire policy is `skip` or `catchUpOne`, with `catchUpOne` bounded by `misfireGraceSeconds`.
 
 Scheduled input templates are JSON objects only. The renderer allows `schedule`, `fire`, `window`, `lastRun`, and `vars` placeholders, preserves JSON types for exact placeholders, stringifies embedded placeholders, validates the rendered parameters against the package workflow input schema, and fails missing or unsupported expressions before queueing. Unsaved previews use `POST /api/schedules/preview`; saved previews use `POST /api/schedules/{scheduleId}/preview` and are ephemeral. Schedule reads intentionally omit `inputTemplate` and `templateVars`, so clients must save explicit input drafts instead of assuming detail hydration. Run now requires `idempotencyKey` and `scheduledFor`, creates a manual fire through the scheduled-run path, and returns a compact run summary. `DELETE /api/schedules/{scheduleId}` returns 204 with no response body, removes the schedule and fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Workflow Package deletion semantics are unchanged and still delete package-owned runs.
 
-Rerun endpoints are `GET /api/runs/{runId}/rerun-draft` and `POST /api/runs/{runId}/reruns`; they work with root launch `parameters`.
+Rerun endpoints are `GET /api/runs/{runId}/rerun-draft` and `POST /api/runs/{runId}/reruns`; they work with root launch `parameters`. `POST /api/runs/{runId}/cancel` cancels queued runs immediately and running runs at step boundaries.
 
 ## Tests
 
@@ -76,6 +76,6 @@ docker compose -f ../docker-compose.yml down -v
 - Schema changes require a database reset until data must survive upgrades.
 - Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs`, sets `QUOTE_PROVIDER_BACKEND=deterministic` by default, and pairs with a built frontend preview on `4173`.
 - The frontend E2E helper defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
-- `docs/` has concise product and data-model docs, extension-writing guidance, and retained migration plans.
-- Root workflows check `backend/VERSION` against `backend/pyproject.toml` and build linux/arm64 backend and frontend GHCR images.
+- `docs/` has concise product and data-model docs plus extension-writing guidance.
+- Root workflows check `backend/VERSION` against `backend/pyproject.toml` and build linux/amd64 plus linux/arm64 backend and frontend GHCR images.
 - For repo-wide setup, validation, and frontend wiring, see the root `README.md`.

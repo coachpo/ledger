@@ -1,82 +1,178 @@
 # SignalDeck Product
 
-SignalDeck is a self-hosted mini-Jenkins for LLM agents. Operators define multi-agent workflows as YAML Workflow Packages, run them manually or on schedules, and inspect queued execution, step evidence, final outputs, and generated reports.
+SignalDeck is a self-hosted mini-Jenkins for LLM agents. Operators define
+multi-agent workflows as YAML Workflow Packages, launch them manually or on
+schedules, and inspect queued execution, evidence, final outputs, templates, and
+reports from one trusted single-user app.
 
 ## Scope
 
-SignalDeck is trusted single-user software. Public user authentication, RBAC, organizations, tenant management, plugin marketplaces, live broker execution, portfolio accounting, workflow memory, run forks, Studio, Tryout, orchestration, runtime-v2, simulations, and backtests are not product surfaces unless the project is explicitly re-scoped.
+SignalDeck is trusted single-user software. Public user authentication, RBAC,
+organizations, tenant management, plugin marketplaces, live broker execution,
+portfolio accounting, workflow memory, run forks, Studio, Tryout,
+orchestration, runtime-v2, simulations, and backtests are not product surfaces
+unless the project is explicitly re-scoped.
 
-The live browser routes are:
+The browser app ships these route families:
 
-- `/templates` and `/reports` for preserved finance template/report work.
-- `/workflow-packages` for YAML package authoring, validation, import, export, and package secret bindings.
-- `/workflow-packages/:packageId/run` for launch preflight and manual run creation.
-- `/scheduled-tasks` for recurring Workflow Package runs.
-- `/model-connections` for encrypted model/provider bindings.
-- `/runs` for run list, run detail, and rerun.
+- `/` dashboard for recent runs, status counts, and active-run polling.
+- `/templates`, `/templates/new`, and `/templates/:templateId/edit`.
+- `/reports` and `/reports/:slug`.
+- `/workflow-packages`, `/workflow-packages/import`, `/workflow-packages/new`,
+  `/workflow-packages/:packageId`, and `/workflow-packages/:packageId/run`.
+- `/scheduled-tasks`, `/scheduled-tasks/new`, and
+  `/scheduled-tasks/:scheduleId`.
+- `/model-connections`, `/model-connections/new`, and
+  `/model-connections/:modelConnectionId/edit`.
+- `/runs` and `/runs/:runId`.
 
-The live backend APIs are:
+The backend exposes `/health` and `/ready`, finance APIs under `/api/v1`, and
+platform APIs under `/api`:
 
-- `/api/v1/templates` and `/api/v1/reports`, contributed by `signaldeck.finance`.
-- `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/tools`, and `/api/runs`.
+- `/api/v1/templates` and `/api/v1/reports`, contributed by
+  `signaldeck.finance`.
+- `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`,
+  `/api/tools`, and `/api/runs`.
 
 ## Workflow Packages
 
-Workflow Packages are the only executable authoring root. A package manifest uses `signaldeck.workflowPackage/v1` YAML and owns package-local agents, `systemPrompt` methodology, output schemas, capability profiles, private MCP configs, HTTP operation nodes, workflow graphs, and dependency references.
+Workflow Packages are the only executable authoring root. A package manifest
+uses `signaldeck.workflowPackage/v1` YAML and owns `spec.inputs`, package-local
+agents, output schemas, capability profiles, private MCP server configs, HTTP
+operation nodes, and workflow graphs.
 
-Package manifests reference Model Connections by stable global key and runtime tools by canonical owner-qualified tool key. Package-private MCP `env`, `headers`, and `query` values are secret-bearing runtime config; browser reads and exports omit those values along with database ids, run history, package secret binding rows, and raw secret values.
+Workflow graph node kinds are `step`, `http`, `sequence`, `fanout`, and `loop`.
+Step and HTTP request references can target `inputs.<path>` or
+`nodes.<nodeId>.outputs.<slot>[.<path>]`. Workflow outputs must reference node
+outputs. Secret references use `${{ secrets.<key> }}` and are only accepted in
+HTTP request fields. HTTP operation preflight currently allows `GET` and `POST`.
 
-The parser rejects YAML aliases, anchors, merge keys, unsupported tags, non-finite numbers, duplicate local refs, raw global ids, legacy `spec.skills`, and legacy `spec.memory`.
+Package manifests reference Model Connections by stable global key and runtime
+tools by canonical owner-qualified tool key. Package-private MCP `env`,
+`headers`, and `query` values are secret-bearing runtime config. Manifest
+source/package-definition payloads and export YAML omit secret-bearing inline
+MCP values, raw secret values, database ids, run history, and package secret
+binding rows; API response envelopes can still include package identity such as
+`packageId` and `packageKey`. The separate Secret Bindings API/UI exposes only
+key, presence, and timestamps, never the stored value.
+
+The parser rejects YAML aliases, anchors, merge keys, unsupported tags,
+non-finite numbers, duplicate YAML keys, duplicate local refs, raw database ids,
+secret-like manifest fields, `spec.skills`, closed-object schema keywords such
+as `additionalProperties`, and unknown manifest fields.
 
 ## Runs
 
-Launches and scheduled fires create queued runs with immutable package snapshots and resolved non-secret Model Connection runtime profiles. The scheduler worker claims queued runs, dispatches agents and HTTP operations from the snapshot, and stores run evidence. `POST /api/runs/{id}/cancel` cancels queued runs immediately; running runs stop cooperatively at step boundaries.
+Launches and scheduled fires create queued runs with immutable package snapshots
+and resolved non-secret Model Connection runtime profiles. The scheduler worker
+claims queued runs, dispatches agents and HTTP operations from the snapshot, and
+stores run evidence.
 
-Run detail exposes canonical inputs, package provenance, queue/progress state, steps, agent invocations, HTTP operation invocations, token usage, optional trace/span ids, typed failure taxonomy, bounded tool-call correction retries, transient provider retry metadata when emitted, and final output. Rerun edits root launch parameters and links back to the source run.
+Run detail exposes canonical inputs, package provenance, queue/progress state,
+steps, agent invocations, HTTP operation invocations, token usage, optional
+trace/span ids, typed failure taxonomy, bounded tool-call correction retries,
+transient provider retry metadata when emitted, and final output. Package
+provenance returns a safe manifest source and package definition, and redacts
+package-private MCP `env`, `headers`, and `query` values from compiled-plan
+reads.
+
+`POST /api/runs/{id}/cancel` cancels queued runs immediately; running runs stop
+cooperatively at step boundaries. `GET /api/runs/{id}/rerun-draft` and
+`POST /api/runs/{id}/reruns` create reruns from the frozen snapshot while
+allowing root launch parameter edits. `DELETE /api/runs/{id}` removes one run.
 
 ## Scheduled Tasks
 
-Scheduled Tasks target one current Workflow Package workflow. They use structured `interval`, `daily`, `weekly`, or `monthly` recurrence with an IANA timezone, overlap and misfire policies, JSON input templates, preview without persistence, run-now, and schedule-owned fire history while the schedule exists.
+Scheduled Tasks target one current Workflow Package workflow. They use
+structured `interval`, `daily`, `weekly`, or `monthly` recurrence with an IANA
+timezone, overlap and misfire policies, JSON input templates, preview without
+persistence, run-now, and schedule-owned fire history while the schedule exists.
 
-Deleting a schedule deletes future automation and schedule-owned fire rows while preserving existing runs through run-owned schedule provenance.
+Schedule input templates can reference `schedule`, `fire`, `window`, `lastRun`,
+and `vars` placeholders. Deleting a schedule deletes future automation and
+schedule-owned fire rows while preserving existing runs through run-owned
+schedule provenance.
 
 ## Model Connections And Tools
 
-Model Connections are global encrypted provider/model bindings. Writes select connection identity, endpoint/model settings, `protocolProfile`, timeout, reasoning effort, and write-only API key values; backend services own capability evidence, policy defaults, probe metadata, reachability-test metadata, and runtime-profile truth.
+Model Connections are global encrypted provider/model bindings. Writes select
+connection identity, endpoint/model settings, `protocolProfile`, timeout,
+reasoning effort, and write-only API key values. Backend services own capability
+evidence, runtime policy defaults, probe metadata, reachability-test metadata,
+and runtime-profile truth.
 
-`/api/tools` is read-only server-declared metadata from statically installed extensions. Packages grant tools through local capability profiles; unsupported native tool names fail closed and do not fall through to MCP fallback.
+`/api/tools` is read-only server-declared metadata from statically installed
+extensions. Packages grant tools through local capability profiles. Unsupported
+native tool names fail closed instead of silently falling through to MCP
+fallback. OpenAI function names are the mechanical underscore mapping from
+canonical tool keys.
 
-`signaldeck.finance` contributes market data, OHLCV/history, indicators, fundamentals, news, social sentiment, insider data, and report lookup tools. `signaldeck.digital_oracle` contributes prediction markets, SEC filings, market sentiment, macro/rates, crypto derivatives, CFTC positioning, and options tools. OpenAI function names are the mechanical underscore mapping from canonical keys.
+`signaldeck.finance` contributes market data, OHLCV/history, indicators,
+fundamentals, news, social sentiment, insider data, and report lookup tools.
+`signaldeck.digital_oracle` contributes prediction markets, SEC filings, market
+sentiment, macro/rates, crypto derivatives, CFTC positioning, and options tools.
 
 ## Templates And Reports
 
-Templates support the `inputs` and `reports` placeholder roots, inline compile, stored-template compile, placeholder browsing, and runtime input metadata. JSON Schema `title` and `description` are display metadata only and do not change runtime payloads.
+Templates support markdown authoring, `{{placeholders}}`, runtime inputs, inline
+compile preview, stored-template compile, placeholder browsing, save/delete, and
+report generation. JSON Schema `title` and `description` are display metadata
+only and do not change runtime payloads.
 
-Reports are point-in-time markdown snapshots keyed by unique slug. Sources are `compiled`, `uploaded`, `external`, and `agent`; `external` is only for true external user/API-created reports.
+Reports are point-in-time markdown snapshots keyed by unique slug. They can be
+generated from templates, uploaded as UTF-8 markdown, created by API, edited by
+content, downloaded, filtered, and deleted. Sources are `compiled`, `uploaded`,
+`external`, and `agent`; `external` is only for true external user/API-created
+reports.
 
 ## Static Extensions
 
-Extensions are private Python wiring, not a marketplace. `INSTALLED_EXTENSIONS` declares bundled extension instances, validates unique extension/tool keys, and contributes API routers, runtime tool declarations/specs, providers, and dependency surfaces.
+Extensions are private Python wiring, not a marketplace. `INSTALLED_EXTENSIONS`
+declares bundled extension instances, validates unique extension/tool keys, and
+contributes API routers, runtime tool declarations/specs, providers, dependency
+surfaces, and package-private MCP tool ownership.
 
-`signaldeck.finance` owns the preserved template/report route families plus finance runtime tools/providers. `signaldeck.digital_oracle` is tool-only and adds no route or nav surface.
+`signaldeck.finance` owns the preserved template/report route families plus
+finance runtime tools/providers. `signaldeck.digital_oracle` is tool-only and
+adds no route or nav surface.
 
 ## Operations
 
-`start.sh` is the authoritative local/demo launcher. The root Dockerfile and root Compose stack are local/demo only; production uses the supported backend and frontend images.
+`start.sh` is the authoritative local/demo launcher. It builds the root
+combined local/demo image and exposes only `http://localhost:${APP_PORT:-8080}`.
+The root Dockerfile and root Compose stack are local/demo only.
 
-Schema changes require a database rebuild. Startup uses SQLAlchemy `create_all`, bundled package seeds, and stale-run recovery instead of Alembic migrations.
+Production uses the supported backend and frontend images. The backend image
+serves the API by default and also runs the scheduler role when started with
+`python -m app.workers.run_scheduler`; the scheduler role is required because
+launches only enqueue runs. The frontend production image serves the browser app
+and proxies same-origin `/api` requests to `BACKEND_UPSTREAM`.
 
-Deploy behind `SIGNALDECK_API_TOKEN` or an authenticated reverse proxy, use HTTPS, and keep PostgreSQL private. Production requires non-placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values, and that key must be backed up with PostgreSQL because losing it makes stored model-connection and package-secret values undecryptable; re-entering secrets is the only recovery path.
+Schema changes require a database rebuild. Startup uses SQLAlchemy `create_all`,
+bundled package seeds, and stale-run recovery instead of Alembic migrations.
+Run retention is disabled unless `SIGNALDECK_RUN_RETENTION_DAYS` is set and
+prunes terminal runs by `finished_at`.
+
+When `SIGNALDECK_API_TOKEN` is set, all non-`OPTIONS` paths except `/health`
+and `/ready` require `Authorization: Bearer <token>`. Deploy behind that token
+or an authenticated reverse proxy, use HTTPS, and keep PostgreSQL private.
+Production requires non-placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values. Back
+that key up with PostgreSQL because losing it makes stored Model Connection and
+package-secret values undecryptable.
 
 ## Validation
 
-CI is the test plan: version sync, backend quality, frontend quality, frontend E2E, and Docker image publishing. Local full validation is:
+CI is the test plan: version sync, backend quality, frontend quality, frontend
+E2E, and Docker image publishing. Local full validation is:
 
 ```bash
+(cd backend && uv sync)
+(cd frontend && pnpm install)
 (cd backend && uv run ruff check app tests && uv run black --check app tests && uv run isort --check-only app tests && uv run mypy app && uv run pytest)
 (cd frontend && pnpm lint)
 (cd frontend && pnpm typecheck)
 (cd frontend && pnpm build)
 (cd frontend && pnpm test:run)
 (cd frontend && pnpm exec playwright install --with-deps chromium && pnpm test:e2e)
+git diff --check
 ```

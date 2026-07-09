@@ -101,6 +101,7 @@ from app.services.package_execution_plan_builder import (
 )
 from app.services.run_read_projection import RunReadProjection
 from app.services.run_rerun import RunRerunPreparation
+from app.services.workflow_package_export import build_workflow_package_manifest_hydration_payload
 from app.services.workflow_package_preflight import (
     WorkflowPackagePreflightResult,
     WorkflowPackagePreflightService,
@@ -629,6 +630,9 @@ class RunService:
         package_workflow = plan.package_workflow
         if workflow_package is None or preflight is None or package_workflow is None:
             return None
+        safe_manifest = build_workflow_package_manifest_hydration_payload(
+            {"manifestSource": workflow_package.manifest_source}
+        )
         return RunWorkflowPackageSnapshot(
             workflow_package_id=workflow_package.id,
             workflow_package_key=workflow_package.key,
@@ -640,8 +644,8 @@ class RunService:
             workflow_description=package_workflow.description,
             manifest_hash=workflow_package.manifest_hash,
             compiled_hash=workflow_package.compiled_hash,
-            manifest_source=workflow_package.manifest_source,
-            package_definition=deepcopy(workflow_package.package_definition),
+            manifest_source=str(safe_manifest["manifestSource"]),
+            package_definition=deepcopy(safe_manifest["packageDefinition"]),
             compiled_plan=deepcopy(workflow_package.compiled_plan),
             extension_dependencies=self._extension_dependencies_for_package(workflow_package),
             local_resource_refs=self._package_local_resource_refs(workflow_package.compiled_plan),

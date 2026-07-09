@@ -1383,6 +1383,53 @@ def test_package_run_list_filters_and_detail_provenance_are_secret_safe(
     ).model_dump(mode="json", by_alias=True)
 
 
+def test_package_run_detail_provenance_redacts_inline_private_mcp_runtime_config(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    _seed_model_connection(session_factory)
+    manifest_source = base_manifest(
+        package_key="private_mcp_provenance_package",
+        mcp_servers=[
+            {
+                "key": "exa",
+                "name": "Exa Web Search",
+                "transport": "http-sse",
+                "url": "https://mcp.exa.ai/mcp?tools=web_search_exa",
+                "headers": {"Authorization": "Bearer inline-mcp-secret"},
+                "query": {"api_key": "inline-query-secret"},
+                "toolKeys": ["web_search_exa"],
+            }
+        ],
+    )
+    create_response = client.post(
+        "/api/workflow-packages",
+        json={"manifestSource": manifest_source},
+    )
+    assert create_response.status_code == 201, create_response.json()
+    package = cast(dict[str, Any], create_response.json())
+    run = _launch_package_run(client, package, ticker="MSFT")
+
+    detail_response = client.get(f"/api/runs/{run['id']}")
+
+    assert detail_response.status_code == 200, detail_response.json()
+    provenance = cast(dict[str, Any], detail_response.json()["packageProvenance"])
+    serialized_provenance = json.dumps(provenance, sort_keys=True)
+    assert "inline-mcp-secret" not in serialized_provenance
+    assert "inline-query-secret" not in serialized_provenance
+    assert provenance["compiledPlan"]["mcpServers"][0]["headers"] == {"Authorization": "[REDACTED]"}
+    assert provenance["compiledPlan"]["mcpServers"][0]["query"] == {"api_key": "[REDACTED]"}
+
+    with session_factory() as session:
+        snapshot = session.get(RunWorkflowPackageSnapshot, run["id"])
+        assert snapshot is not None
+        assert "inline-mcp-secret" not in snapshot.manifest_source
+        assert "inline-query-secret" not in snapshot.manifest_source
+        serialized_definition = json.dumps(snapshot.package_definition, sort_keys=True)
+        assert "inline-mcp-secret" not in serialized_definition
+        assert "inline-query-secret" not in serialized_definition
+
+
 def test_new_workflow_package_runs_store_null_snapshot_status_for_fresh_and_rerun(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

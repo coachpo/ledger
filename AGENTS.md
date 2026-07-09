@@ -10,7 +10,7 @@ Prefer clean current architecture over compatibility shims, legacy stubs, or spe
 ## Directory Overview
 - `backend/`: FastAPI, SQLAlchemy models, services, runtime tools, scheduler worker, and pytest suite.
 - `frontend/`: React/Vite app, TanStack Query, shadcn/ui, Vitest, and Playwright E2E.
-- `docs/`: concise product/data docs plus retained extension-writing guidance and migration plans.
+- `docs/`: concise product/data docs plus retained extension-writing guidance.
 - `demo/`: grounded Workflow Package YAML examples.
 - `.github/workflows/`: CI gates and Docker image publishing.
 - `start.sh`, `Dockerfile`, `docker-compose.yml`: local/demo combined stack wrapper.
