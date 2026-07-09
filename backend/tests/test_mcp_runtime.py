@@ -160,6 +160,25 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
     assert "[REDACTED]" in output_payload
 
 
+def test_mcp_runtime_disabled_with_package_private_refs_exposes_no_tools(
+    session_factory: sessionmaker[Session],
+) -> None:
+    client = _FakeMcpToolClient({"content": "unused"})
+    dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
+        mcp_server_refs=[_package_private_exa_ref()],
+        client=cast(McpToolClient, client),
+        enabled=False,
+    )
+
+    assert dispatcher.get_openai_tools() == []
+    assert dispatcher.list_execution_descriptors() == ()
+    assert dispatcher.list_tool_declarations() == ()
+    with pytest.raises(RuntimeToolError) as exc_info:
+        dispatcher.dispatch(name="mcp_exa_web_search_exa", arguments_json="{}")
+    assert exc_info.value.code == "mcp_tool_call_unsupported"
+    assert client.calls == []
+
+
 def test_mcp_runtime_rejects_package_private_exa_without_descriptor(
     session_factory: sessionmaker[Session],
 ) -> None:
