@@ -5,8 +5,7 @@ ARG VITE_API_BASE_URL=/api/v1
 WORKDIR /app
 
 RUN apk add --no-cache libc6-compat curl \
-    && corepack enable \
-    && corepack prepare pnpm@10.30.1 --activate
+    && npm install -g pnpm@10.30.1
 
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
