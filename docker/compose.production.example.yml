@@ -10,6 +10,7 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     ports:
       - "127.0.0.1:8000:8000"
+    restart: unless-stopped
 
   scheduler:
     image: ghcr.io/OWNER/signaldeck-backend:${SIGNALDECK_IMAGE_TAG:?required}
@@ -31,3 +32,4 @@ services:
       - "8080:8080"
     depends_on:
       - backend
+    restart: unless-stopped

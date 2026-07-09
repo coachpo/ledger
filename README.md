@@ -82,20 +82,21 @@ Production runs as three container roles:
 
 The scheduler container is required in production. Launches only enqueue runs; without the scheduler worker those runs stay `queued` forever. Multiple scheduler replicas are safe because coordination uses a PostgreSQL advisory lock, so only one worker owns a lease slot at a time.
 
-The example compose requires `SIGNALDECK_IMAGE_TAG`; set it to a release tag such as `v1.2.3` rather than a mutable `latest` tag. It also requires `SIGNALDECK_API_TOKEN`; deployments that rely only on an authenticated reverse proxy should remove that environment entry deliberately.
+The example compose requires `SIGNALDECK_IMAGE_TAG`; pin it to an immutable published tag (a release tag once one exists, or an image digest/sha tag from the Docker Images workflow) rather than a mutable `latest` tag. It also requires `SIGNALDECK_API_TOKEN`; deployments that rely only on an authenticated reverse proxy should remove that environment entry deliberately.
 
 See [docker/compose.production.example.yml](docker/compose.production.example.yml) for the supported split-image example.
 
 ## Runtime Configuration
 
 - `SIGNALDECK_RUNTIME_MODE` defaults to `local`; production images set it to `production`.
-- `DATABASE_URL` is required in production and should point at managed PostgreSQL.
+- `DATABASE_URL` is required in production and should point at managed PostgreSQL 16+. Provider-style `postgresql://` and `postgres://` URLs are accepted and normalized to the `postgresql+psycopg://` driver automatically; the `pgvector` extension is not required.
 - `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection and package-secret values; production rejects the local placeholder.
 - `SIGNALDECK_API_TOKEN` enables bearer-token protection.
 - `PUBLIC_BASE_URL` is the externally reachable app origin when absolute links are needed.
 - `CORS_ALLOWED_ORIGINS` should list allowed browser origins for separate-origin frontend deployments; same-origin reverse-proxy deployments do not need CORS.
-- `MCP_RUNTIME_ENABLED` defaults to `false`.
+- `MCP_RUNTIME_ENABLED` defaults to `false`. In the split production topology set it on the `scheduler` container — the scheduler executes runs, so MCP settings on the API container alone have no effect.
 - `MCP_RUNTIME_TIMEOUT` controls MCP runtime request timeouts in seconds and defaults to `5`.
+- `BACKEND_UPSTREAM` (frontend image only) is the `host:port` the bundled nginx proxies `/api/` to; the image default `127.0.0.1:8000` only works when backend and frontend share a network namespace, so compose deployments set it to `backend:8000`.
 - `RUN_SCHEDULER=true|false` only affects the root local/demo image entrypoint; production deployments run the scheduler as a separate container.
 - `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention and is disabled unless set.
 

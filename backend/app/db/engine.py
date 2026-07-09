@@ -14,9 +14,18 @@ def _engine_kwargs(database_url: str) -> dict[str, object]:
     return {"future": True}
 
 
+def _normalize_database_url(url: str) -> str:
+    # Managed-Postgres providers hand out postgres:// or postgresql:// URLs;
+    # only psycopg 3 is installed, so pin the driver instead of crashing on psycopg2.
+    for bare_scheme in ("postgresql://", "postgres://"):
+        if url.startswith(bare_scheme):
+            return "postgresql+psycopg://" + url[len(bare_scheme) :]
+    return url
+
+
 @lru_cache
 def get_engine(database_url: str | None = None) -> Engine:
-    resolved_url = database_url or get_settings().database_url
+    resolved_url = _normalize_database_url(database_url or get_settings().database_url)
     return create_engine(resolved_url, **_engine_kwargs(resolved_url))
 
 

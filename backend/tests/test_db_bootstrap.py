@@ -584,3 +584,23 @@ def test_init_db_releases_advisory_lock_on_bootstrap_failure(
         "create_all:True",
         "unlock",
     ]
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [
+        ("postgresql://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
+        ("postgres://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
+        ("postgresql+psycopg://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
+    ],
+)
+def test_normalize_database_url_pins_psycopg_driver(given: str, expected: str) -> None:
+    from app.db.engine import _normalize_database_url
+
+    assert _normalize_database_url(given) == expected
+
+
+def test_get_engine_accepts_provider_style_url(database_url: str) -> None:
+    bare_url = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+    engine = get_engine(bare_url)
+    assert engine.dialect.driver == "psycopg"
