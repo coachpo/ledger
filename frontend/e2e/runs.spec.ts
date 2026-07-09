@@ -1,3 +1,9 @@
+import { once } from "node:events";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import {
   expect,
   test,
@@ -67,16 +73,24 @@ function packageManifest(packageKey: string, modelKey: string) {
   ].join("\n");
 }
 
-async function seedModelConnection(request: APIRequestContext, key: string) {
+async function seedModelConnection(
+  request: APIRequestContext,
+  key: string,
+  overrides?: {
+    baseUrl?: string;
+    modelId?: string;
+    timeoutSeconds?: number;
+  },
+) {
   const payload = {
     key,
     name: `E2E runs fake provider model ${key}`,
     description: "Fake provider model connection for runs monitor E2E.",
-    baseUrl: FAKE_PROVIDER_BASE_URL,
-    modelId: "fake-strict-schema",
+    baseUrl: overrides?.baseUrl ?? FAKE_PROVIDER_BASE_URL,
+    modelId: overrides?.modelId ?? "fake-strict-schema",
     reasoningEffort: "low",
     protocolProfile: "openai_responses",
-    timeoutSeconds: 5,
+    timeoutSeconds: overrides?.timeoutSeconds ?? 5,
     apiKey: "sk-e2e-runs-fake-provider",
   };
 
@@ -106,6 +120,50 @@ async function seedModelConnection(request: APIRequestContext, key: string) {
   );
   expect(response.ok()).toBeTruthy();
   return Number((await response.json()).id);
+}
+
+async function startHangingProvider() {
+  let releaseResponse: (() => void) | null = null;
+  const responseReleased = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  let firstRequestSeen: (() => void) | null = null;
+  const firstRequest = new Promise<void>((resolve) => {
+    firstRequestSeen = resolve;
+  });
+  const sockets = new Set<import("node:net").Socket>();
+  const server = createServer(
+    async (_request: IncomingMessage, _response: ServerResponse) => {
+      firstRequestSeen?.();
+      firstRequestSeen = null;
+      await responseReleased;
+    },
+  );
+
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to start hanging provider.");
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    waitForFirstRequest: () => firstRequest,
+    async close() {
+      releaseResponse?.();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      server.close();
+      await once(server, "close");
+    },
+  };
 }
 
 async function expectSharedDialogShell(page: Page) {
@@ -166,6 +224,115 @@ async function seedCompletedRun(request: APIRequestContext) {
   const detail = await detailResponse.json();
 
   return { modelConnectionId, runId, targetKey: String(detail.targetKey) };
+}
+
+async function seedQueuedRun(request: APIRequestContext) {
+  const suffix = Date.now();
+  const packageKey = `e2e_runs_cancel_${suffix}`;
+  const modelKey = `e2e_runs_cancel_model_${suffix}`;
+
+  await seedModelConnection(request, modelKey);
+  const createResponse = await request.post(
+    `${PLATFORM_API_BASE}/workflow-packages`,
+    { data: { manifestSource: packageManifest(packageKey, modelKey) } },
+  );
+  expect(createResponse.status()).toBe(201);
+  const created = await createResponse.json();
+
+  const launchResponse = await request.post(
+    `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
+    { data: { workflowKey: "monitor_flow", parameters: { ticker: "AAPL" } } },
+  );
+  expect(launchResponse.status()).toBe(201);
+  const launched = await launchResponse.json();
+  const runId = Number(launched.id);
+
+  const detailResponse = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
+  expect(detailResponse.ok()).toBeTruthy();
+  const detail = await detailResponse.json();
+  if (detail.status === "queued") {
+    await pageWait(1_000);
+    const stableDetailResponse = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
+    expect(stableDetailResponse.ok()).toBeTruthy();
+    const stableDetail = await stableDetailResponse.json();
+    if (stableDetail.status === "queued") {
+      return {
+        cleanup: async () => {},
+        runId,
+        targetKey: String(stableDetail.targetKey),
+      };
+    }
+  }
+
+  const hangingProvider = await startHangingProvider();
+  const blockedModelKey = `${modelKey}_blocked`;
+  await seedModelConnection(request, blockedModelKey, {
+    baseUrl: hangingProvider.baseUrl,
+    timeoutSeconds: 30,
+  });
+  const blockedCreateResponse = await request.post(
+    `${PLATFORM_API_BASE}/workflow-packages`,
+    {
+      data: {
+        manifestSource: packageManifest(`${packageKey}_blocked`, blockedModelKey),
+      },
+    },
+  );
+  expect(blockedCreateResponse.status()).toBe(201);
+  const blockedPackage = await blockedCreateResponse.json();
+
+  const firstLaunchResponse = await request.post(
+    `${PLATFORM_API_BASE}/workflow-packages/${blockedPackage.id}/launches`,
+    { data: { workflowKey: "monitor_flow", parameters: { ticker: "MSFT" } } },
+  );
+  expect(firstLaunchResponse.status()).toBe(201);
+  const firstRunId = Number((await firstLaunchResponse.json()).id);
+
+  await hangingProvider.waitForFirstRequest();
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`${PLATFORM_API_BASE}/runs/${firstRunId}`);
+        expect(response.ok()).toBeTruthy();
+        return (await response.json()).status;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe("running");
+
+  const secondLaunchResponse = await request.post(
+    `${PLATFORM_API_BASE}/workflow-packages/${blockedPackage.id}/launches`,
+    { data: { workflowKey: "monitor_flow", parameters: { ticker: "AAPL" } } },
+  );
+  expect(secondLaunchResponse.status()).toBe(201);
+  const queuedRunId = Number((await secondLaunchResponse.json()).id);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`${PLATFORM_API_BASE}/runs/${queuedRunId}`);
+        expect(response.ok()).toBeTruthy();
+        return (await response.json()).status;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe("queued");
+
+  const queuedDetailResponse = await request.get(`${PLATFORM_API_BASE}/runs/${queuedRunId}`);
+  expect(queuedDetailResponse.ok()).toBeTruthy();
+  const queuedDetail = await queuedDetailResponse.json();
+
+  return {
+    cleanup: async () => {
+      await hangingProvider.close();
+    },
+    runId: queuedRunId,
+    targetKey: String(queuedDetail.targetKey),
+  };
+}
+
+async function pageWait(milliseconds: number) {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 test.describe("Runs inventory monitor", () => {
@@ -333,5 +500,43 @@ test.describe("Runs inventory monitor", () => {
       "Current snapshot readiness blocked",
     );
     await expect(blockedRerunDialog.getByTestId("run-rerun-submit")).toBeDisabled();
+  });
+
+  test("cancels a queued run from the run detail page", async ({
+    page,
+    request,
+  }) => {
+    const { cleanup, runId, targetKey } = await seedQueuedRun(request);
+
+    try {
+      await page.goto(`/runs/${runId}`);
+      await expect(page.getByTestId("runs-detail-page")).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: new RegExp(`Run #${runId}`) }),
+      ).toContainText(targetKey);
+      await expect(page.getByTestId("runs-detail-summary-line")).toContainText(
+        "queued",
+      );
+
+      await page.getByTestId("runs-detail-cancel").click();
+
+      await expect
+        .poll(
+          async () => {
+            const response = await request.get(`${PLATFORM_API_BASE}/runs/${runId}`);
+            expect(response.ok()).toBeTruthy();
+            return (await response.json()).status;
+          },
+          { timeout: 15_000 },
+        )
+        .toBe("cancelled");
+
+      await expect(page.getByTestId("runs-detail-summary-line")).toContainText(
+        "cancelled",
+      );
+      await expect(page.getByTestId("runs-detail-cancel")).toHaveCount(0);
+    } finally {
+      await cleanup();
+    }
   });
 });
