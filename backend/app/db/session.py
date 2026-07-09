@@ -9,11 +9,7 @@ from sqlalchemy.engine import Engine
 from app.db.engine import get_db_session, get_engine, get_session_factory, reset_db_caches
 from app.db.seed import seed_preset_packages
 from app.db.startup_recovery import fail_inflight_runs
-from app.db.validation import (
-    SupportsDialect,
-    SupportsDialectName,
-    validate_supported_database_engine,
-)
+from app.db.validation import validate_supported_database_engine
 from app.models.base import Base
 
 _INIT_DB_ADVISORY_LOCK_KEY = 772114523790049232
@@ -48,8 +44,6 @@ def init_db(database_url: str | None = None) -> None:
 
 
 __all__ = [
-    "SupportsDialect",
-    "SupportsDialectName",
     "get_db_session",
     "get_engine",
     "get_session_factory",

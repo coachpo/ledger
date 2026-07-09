@@ -57,14 +57,6 @@ class OutputSchemaLike(Protocol):
     def registry_refs(self) -> list[str]: ...
 
 
-class OutputSchemaRegistryResolver(Protocol):
-    def resolve_registry_ref(
-        self,
-        key: str,
-        version: int | None = None,
-    ) -> OutputSchemaLike | None: ...
-
-
 @dataclass
 class PackageOutputSchemaCandidate:
     key: str
@@ -209,13 +201,10 @@ class PreparedOutputSchema:
 
 
 class OutputSchemaCompiler:
-    def __init__(self, registry_resolver: OutputSchemaRegistryResolver | None = None) -> None:
-        self.registry_resolver = registry_resolver
-        self._parsed_registry_cache: dict[RegistryTarget, SchemaNode] = {}
+    def __init__(self) -> None:
         self._runtime_model_cache: dict[tuple[str, int], type[BaseModel]] = {}
 
     def clear_caches(self) -> None:
-        self._parsed_registry_cache.clear()
         self._runtime_model_cache.clear()
 
     def normalize_payload(
@@ -1202,29 +1191,18 @@ class OutputSchemaCompiler:
 
     def _resolve_registry_target(
         self,
-        key: str,
-        version: int | None,
+        _key: str,
+        _version: int | None,
         *,
         path: str,
         issues: list[dict[str, str]],
     ) -> RegistryTarget | None:
-        if self.registry_resolver is None:
-            self._add_issue(
-                issues,
-                path,
-                "Shared registry refs are not supported in package-local schemas",
-            )
-            return None
-        row = self.registry_resolver.resolve_registry_ref(key, version)
-        if row is None:
-            issue = (
-                f"Shared registry ref {key!r} v{version} was not found"
-                if version is not None
-                else f"Published shared registry ref {key!r} was not found"
-            )
-            self._add_issue(issues, path, issue)
-            return None
-        return RegistryTarget(key=row.key, version=row.version)
+        self._add_issue(
+            issues,
+            path,
+            "Shared registry refs are not supported in package-local schemas",
+        )
+        return None
 
     def _load_registry_node_by_target(
         self,
@@ -1241,32 +1219,12 @@ class OutputSchemaCompiler:
                 "Recursive shared registry refs are not supported",
             )
             return self._placeholder_node()
-        cached_node = self._parsed_registry_cache.get(target)
-        if cached_node is not None:
-            return cached_node
-        if self.registry_resolver is None:
-            self._add_issue(
-                issues,
-                _join_path(path, "$ref"),
-                "Shared registry refs are not supported in package-local schemas",
-            )
-            return self._placeholder_node()
-        row = self.registry_resolver.resolve_registry_ref(target.key, target.version)
-        if row is None:
-            self._add_issue(
-                issues,
-                _join_path(path, "$ref"),
-                f"Shared registry ref {target.key!r} v{target.version} was not found",
-            )
-            return self._placeholder_node()
-        node = self._node_from_json_schema(
-            row.json_schema,
-            path=f"registry[{target.key}@{target.version}]",
-            seen_refs=seen_refs + (target,),
-            issues=issues,
+        self._add_issue(
+            issues,
+            _join_path(path, "$ref"),
+            "Shared registry refs are not supported in package-local schemas",
         )
-        self._parsed_registry_cache[target] = node
-        return node
+        return self._placeholder_node()
 
     def _validate_discriminator_variants(
         self,
@@ -1526,16 +1484,9 @@ class OutputSchemaCompiler:
             )
             annotation = cast(Any, list)[item_annotation]
         elif isinstance(node, SchemaRef):
-            if self.registry_resolver is None:
-                raise OutputSchemaCompilerError(
-                    "Shared registry refs are not supported in package-local schemas"
-                )
-            row = self.registry_resolver.resolve_registry_ref(node.key, node.version)
-            if row is None:
-                raise OutputSchemaCompilerError(
-                    f"Shared registry ref {node.key!r} v{node.version} was not found"
-                )
-            annotation = self.build_runtime_model(row)
+            raise OutputSchemaCompilerError(
+                "Shared registry refs are not supported in package-local schemas"
+            )
         else:
             annotation = self._compile_discriminated_union(node, model_name=model_name)
         if node.nullable:

@@ -1,20 +1,11 @@
 from __future__ import annotations
 
-from typing import Protocol
+from sqlalchemy.engine import Engine
 
 _POSTGRES_DIALECTS = {"postgresql", "postgres"}
 
 
-class SupportsDialect(Protocol):
-    @property
-    def dialect(self) -> SupportsDialectName: ...
-
-
-class SupportsDialectName(Protocol):
-    name: str
-
-
-def validate_supported_database_engine(engine: SupportsDialect) -> None:
+def validate_supported_database_engine(engine: Engine) -> None:
     if engine.dialect.name in _POSTGRES_DIALECTS:
         return
 

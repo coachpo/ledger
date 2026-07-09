@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.agents.tool_catalog import (
-        ResolvedCapabilityToolset,
         ResolvedTool,
         ToolCatalog,
         ToolCatalogValidationError,
@@ -12,7 +11,6 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
-    "ResolvedCapabilityToolset",
     "ResolvedTool",
     "ToolCatalog",
     "ToolCatalogValidationError",

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Literal, Protocol, cast
+from typing import Literal
 
 from app.agents.runtime_tools.types import RuntimeToolWarning
 from app.extensions.signaldeck_digital_oracle.config import OptionsMoneyness
@@ -18,10 +18,6 @@ _NEAR_THE_MONEY_RATIO = Decimal("0.05")
 OptionSide = Literal["call", "put"]
 
 
-class OptionTable(Protocol):
-    def to_dict(self, orient: Literal["records"]) -> list[Mapping[str, object]]: ...
-
-
 @dataclass(frozen=True, slots=True)
 class OptionRows:
     calls: tuple[DigitalOracleOptionContract, ...]
@@ -34,12 +30,13 @@ def rows_from_table(
     provider: str,
     side: OptionSide,
 ) -> Sequence[Mapping[str, object]]:
-    if not hasattr(value, "to_dict"):
+    to_dict = getattr(value, "to_dict", None)
+    if not callable(to_dict):
         raise DigitalOracleProviderError(
             f"{provider} returned malformed {side} option rows",
             details={"provider": provider, "field": side},
         )
-    rows = cast(OptionTable, value).to_dict("records")
+    rows = to_dict("records")
     return tuple(row for row in rows if isinstance(row, Mapping))
 
 

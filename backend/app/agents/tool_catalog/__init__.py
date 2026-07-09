@@ -4,7 +4,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Protocol
+from typing import Any
 
 from app.agents.tool_catalog.server_declared import (
     ServerDeclaredToolSpec,
@@ -25,29 +25,10 @@ class ResolvedTool:
     owner_extension_key: str | None = None
 
 
-@dataclass(frozen=True)
-class ResolvedCapabilityToolset:
-    capability_id: int
-    capability_key: str
-    capability_version: int
-    name: str
-    description: str
-    tools: tuple[ResolvedTool, ...]
-
-
 class ToolCatalogValidationError(ValueError):
     def __init__(self, details: Sequence[dict[str, object]]) -> None:
         super().__init__("Tool catalog validation failed")
         self.details: list[dict[str, object]] = [dict(detail) for detail in details]
-
-
-class CapabilityLike(Protocol):
-    id: int
-    key: str
-    version: int
-    name: str
-    description: str
-    tool_keys: Sequence[object]
 
 
 class ToolCatalog:
@@ -140,17 +121,6 @@ class ToolCatalog:
             raise ToolCatalogValidationError(details)
         return tuple(resolved_tools)
 
-    def resolve_capability(self, capability: CapabilityLike) -> ResolvedCapabilityToolset:
-        resolved_tools = self.resolve_tool_keys(capability.tool_keys)
-        return ResolvedCapabilityToolset(
-            capability_id=capability.id,
-            capability_key=capability.key,
-            capability_version=capability.version,
-            name=capability.name,
-            description=capability.description,
-            tools=resolved_tools,
-        )
-
     @staticmethod
     def _normalize_tool_key(
         raw_grant: dict[str, Any],
@@ -229,7 +199,6 @@ def get_default_tool_catalog() -> ToolCatalog:
 
 
 __all__ = [
-    "ResolvedCapabilityToolset",
     "ResolvedTool",
     "ToolCatalog",
     "ToolCatalogValidationError",
