@@ -24,3 +24,4 @@
 | 7.5 | done | Commit `ba75bd01`; backend full validation passed (763 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 7.6 | done | Commit `9607ea4d`; `git diff --check` passed; fresh spec reviewer approved and fresh code-quality reviewer approved. |
 | 8.1 | done | Commit `e7167672`; backend full validation passed (764 tests); fresh spec reviewer approved and fresh code-quality reviewer approved. |
+| 8.2 | done | Commit `fe56396d`; backend full validation passed (745 tests); fresh spec reviewers found validation-layer gaps that were fixed, then final fresh spec reviewer approved; fresh code-quality reviewers found coverage gaps that were fixed, then final fresh code-quality reviewer approved. |
