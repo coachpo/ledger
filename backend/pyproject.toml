@@ -47,10 +47,6 @@ target-version = "py313"
 select = ["E", "F", "I", "B", "UP"]
 ignore = ["B008"]
 
-[tool.ruff.lint.per-file-ignores]
-"app/agents/mcp/security.py" = ["E501"]
-"app/services/run_service.py" = ["E501"]
-
 [tool.mypy]
 python_version = "3.13"
 warn_return_any = true

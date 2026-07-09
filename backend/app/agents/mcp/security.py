@@ -68,7 +68,7 @@ def validate_http_sse_url(
     addresses = _resolve_host_addresses(host, resolved_hosts=resolved_hosts)
     if not addresses:
         raise McpSecurityError("MCP HTTP/SSE host did not resolve")
-    # ponytail: DNS can rebind after validation; pin resolved IPs in the transport if this becomes multi-tenant.
+    # ponytail: DNS can rebind after validation, pin resolved IPs before multi-tenant use.
     for address in addresses:
         _validate_public_ip_address(address)
     return url

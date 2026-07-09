@@ -111,7 +111,7 @@ pg_dump "$POSTGRES_URL" > signaldeck.sql
 psql "$POSTGRES_URL" < signaldeck.sql
 ```
 
-**Back up `AGENT_PLATFORM_ENCRYPTION_KEY` with every `pg_dump`. Losing the key makes stored model-connection and package-secret values undecryptable, API reads can return 500, there is no rotation or re-encryption tool yet, and the only recovery path is re-entering every secret. Generate a high-entropy key with `openssl rand -base64 32`.**
+**Back up `AGENT_PLATFORM_ENCRYPTION_KEY` with every `pg_dump`. SignalDeck currently uses a single-key Fernet encryption model; losing that key makes stored model-connection and package-secret values undecryptable, API reads can return 500, there is no rotation or re-encryption tool yet, and the only recovery path is re-entering every secret. Generate a high-entropy key with `openssl rand -base64 32`.**
 
 ## Schema Changes
 
