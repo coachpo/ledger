@@ -119,6 +119,32 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"run_id": run_id},
         )
+        historical_failed_run_id = conn.execute(
+            text(
+                """
+                INSERT INTO runs (
+                    target_kind, target_id, target_key, target_version,
+                    workflow_package_id, workflow_package_key,
+                    workflow_package_workflow_key, status, input, started_at, finished_at
+                ) VALUES (
+                    'workflowPackage', :package_id, :package_key, 1,
+                    :package_id, :package_key, 'advisory_research',
+                    'failed', '{}'::jsonb, NOW() - INTERVAL '1 hour', NOW() - INTERVAL '30 minutes'
+                )
+                RETURNING id
+                """
+            ),
+            {"package_id": package["id"], "package_key": package["key"]},
+        ).scalar_one()
+        conn.execute(
+            text(
+                """
+                INSERT INTO run_steps (run_id, step_index, status, origin)
+                VALUES (:run_id, 1, 'running', 'planned')
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        )
 
     assert fail_inflight_runs(engine) == 1
 
@@ -144,12 +170,23 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"run_id": run_id},
         ).all()
+        historical_steps = conn.execute(
+            text(
+                """
+                SELECT step_index, status, error, finished_at
+                FROM run_steps
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        ).all()
 
     assert run == ("failed", True, True)
     assert steps == [
         (1, "failed", True, True),
         (2, "skipped", True, True),
     ]
+    assert historical_steps == [(1, "running", None, None)]
 
 
 def test_startup_recovery_keeps_running_run_with_active_scheduler_lease(
