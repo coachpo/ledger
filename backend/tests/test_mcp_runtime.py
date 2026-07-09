@@ -340,6 +340,12 @@ def test_mcp_security_blocks_ssrf_redirects_shells_and_truncates_output() -> Non
         validate_stdio_command(("bash", "-c", "echo $TOKEN"), allowed_commands={"bash"})
     with pytest.raises(McpSecurityError):
         validate_stdio_command(("python", "-c", "print('x')"), allowed_commands={"python"})
+    with pytest.raises(McpSecurityError):
+        validate_stdio_command(("/tmp/evil/python", "module.py"), allowed_commands={"python"})
+    assert validate_stdio_command(("python", "module.py"), allowed_commands={"python"}) == (
+        "python",
+        "module.py",
+    )
     with pytest.raises(McpSecurityError, match="secret-bearing query"):
         validate_http_sse_url(
             "https://safe.example/mcp?exaApiKey=secret-token",

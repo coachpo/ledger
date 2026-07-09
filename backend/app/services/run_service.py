@@ -1206,6 +1206,7 @@ class RunService:
         executed_tokens = 0
 
         for step in plan.steps:
+            # ponytail: cancellation is checked at step boundaries; add intra-step cancellation if wide fan-out steps need it.
             if self._stop_if_cancel_requested(
                 run,
                 lease_owner=lease_owner,
@@ -1326,6 +1327,7 @@ class RunService:
             .execution_options(populate_existing=True)
         )
 
+    # ponytail: finalize can win a late cancel race; add terminal-state arbitration if strict cancel precedence matters.
     def _finalize_run_failed(
         self,
         run: Run,

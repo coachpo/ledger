@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+import anyio
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
+from starlette.responses import Response
 
+from app.core.auth import BearerTokenMiddleware
 from app.core.config import reset_settings_cache
 from app.main import create_app
 
@@ -55,6 +59,33 @@ def test_api_runs_accepts_matching_bearer_token(token_client: TestClient) -> Non
 
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+def test_api_runs_rejects_non_ascii_bearer_token() -> None:
+    middleware = BearerTokenMiddleware(lambda scope, receive, send: None, token="test-token")
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/runs",
+            "raw_path": b"/api/runs",
+            "query_string": b"",
+            "root_path": "",
+            "headers": [(b"authorization", b"Bearer tok\xe9n")],
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+        }
+    )
+
+    async def call_next(_request: Request) -> Response:
+        return Response("ok")
+
+    response = anyio.run(middleware.dispatch, request, call_next)
+
+    assert response.status_code == 401
+    assert response.body == b'{"detail":"Unauthorized"}'
 
 
 def test_health_is_exempt_from_bearer_token(token_client: TestClient) -> None:
