@@ -82,7 +82,7 @@ Production runs as three container roles:
 
 The scheduler container is required in production. Launches only enqueue runs; without the scheduler worker those runs stay `queued` forever. Multiple scheduler replicas are safe because coordination uses a PostgreSQL advisory lock, so only one worker owns a lease slot at a time.
 
-See [docker/compose.production.example.yml](/home/qing/Documents/projects/ledger/docker/compose.production.example.yml) for the supported split-image example.
+See [docker/compose.production.example.yml](docker/compose.production.example.yml) for the supported split-image example.
 
 ## Runtime Configuration
 

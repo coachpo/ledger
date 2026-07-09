@@ -18,6 +18,8 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       AGENT_PLATFORM_ENCRYPTION_KEY: ${AGENT_PLATFORM_ENCRYPTION_KEY}
     # No HTTP healthcheck: worker exposes none. pg advisory lock makes replicas safe.
+    healthcheck:
+      disable: true
     restart: unless-stopped
 
   frontend:
