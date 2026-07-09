@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -812,6 +814,45 @@ def test_run_scheduler_locked_settings_defaults_and_lease_owner_format(
     assert scheduler_lease_owner(hostname="test-host", pid=1234, slot=2) == (
         "scheduler:test-host:1234:2"
     )
+
+
+def test_run_scheduler_waits_for_global_advisory_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StopScheduler(Exception):
+        pass
+
+    attempts: list[bool] = []
+    sleeps: list[float] = []
+
+    @contextmanager
+    def fake_scheduler_lock(self: RunSchedulerWorker) -> Iterator[bool]:
+        del self
+        acquired = bool(attempts)
+        attempts.append(acquired)
+        yield acquired
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    def stop_run_loop(self: RunSchedulerWorker) -> None:
+        del self
+        raise StopScheduler
+
+    monkeypatch.setattr(RunSchedulerWorker, "_scheduler_lock", fake_scheduler_lock)
+    monkeypatch.setattr(RunSchedulerWorker, "_run_loop", stop_run_loop)
+    monkeypatch.setattr(time, "sleep", fake_sleep)
+
+    worker = RunSchedulerWorker(
+        session_factory=cast(sessionmaker[Session], object()),
+        settings=Settings.model_validate({"RUN_SCHEDULER_POLL_INTERVAL_SECONDS": 0.25}),
+    )
+
+    with pytest.raises(StopScheduler):
+        worker.run_forever()
+
+    assert attempts == [False, True]
+    assert sleeps == [0.25]
 
 
 def test_workflow_package_launch_enqueues_without_request_worker(

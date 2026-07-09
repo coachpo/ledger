@@ -25,10 +25,17 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         authorization = request.headers.get("Authorization", "")
-        if not compare_digest(authorization, self.expected_authorization):
+        if not _safe_compare_digest(authorization, self.expected_authorization):
             return JSONResponse(
                 {"detail": "Unauthorized"},
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
 
         return await call_next(request)
+
+
+def _safe_compare_digest(left: str, right: str) -> bool:
+    try:
+        return compare_digest(left, right)
+    except TypeError:
+        return False

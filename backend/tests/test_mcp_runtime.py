@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from typing import cast
 
 import httpx
@@ -158,6 +159,25 @@ def test_mcp_runtime_resolves_package_private_exa_tool(
     assert "sk-live-secret" not in output_payload
     assert "json-secret-value" not in output_payload
     assert "[REDACTED]" in output_payload
+
+
+def test_mcp_runtime_disabled_with_package_private_refs_exposes_no_tools(
+    session_factory: sessionmaker[Session],
+) -> None:
+    client = _FakeMcpToolClient({"content": "unused"})
+    dispatcher = McpRuntimeResolver(session_factory).build_dispatcher(
+        mcp_server_refs=[_package_private_exa_ref()],
+        client=cast(McpToolClient, client),
+        enabled=False,
+    )
+
+    assert dispatcher.get_openai_tools() == []
+    assert dispatcher.list_execution_descriptors() == ()
+    assert dispatcher.list_tool_declarations() == ()
+    with pytest.raises(RuntimeToolError) as exc_info:
+        dispatcher.dispatch(name="mcp_exa_web_search_exa", arguments_json="{}")
+    assert exc_info.value.code == "mcp_tool_call_unsupported"
+    assert client.calls == []
 
 
 def test_mcp_runtime_rejects_package_private_exa_without_descriptor(
@@ -321,6 +341,19 @@ def test_mcp_security_blocks_ssrf_redirects_shells_and_truncates_output() -> Non
         validate_stdio_command(("bash", "-c", "echo $TOKEN"), allowed_commands={"bash"})
     with pytest.raises(McpSecurityError):
         validate_stdio_command(("python", "-c", "print('x')"), allowed_commands={"python"})
+    with pytest.raises(McpSecurityError):
+        validate_stdio_command(("/tmp/evil/python", "module.py"), allowed_commands={"python"})
+    assert validate_stdio_command(("python", "module.py"), allowed_commands={"python"}) == (
+        "python",
+        "module.py",
+    )
+    python_path = shutil.which("python") or shutil.which("python3")
+    assert python_path is not None
+    python_executable = python_path.rsplit("/", 1)[-1]
+    assert validate_stdio_command(
+        (python_path, "module.py"),
+        allowed_commands={python_executable},
+    ) == (python_path, "module.py")
     with pytest.raises(McpSecurityError, match="secret-bearing query"):
         validate_http_sse_url(
             "https://safe.example/mcp?exaApiKey=secret-token",

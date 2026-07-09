@@ -24,7 +24,7 @@ Workflow Packages are the only executable authoring root. Package manifests use 
 
 Model Connections are global encrypted provider bindings. Tools are read-only server-declared metadata from `/api/tools`; packages reference canonical owner-qualified tool keys through local capability profiles. Package exports omit secret-bearing private MCP `env`, `headers`, and `query` values along with database ids, run history, package secret binding rows, and raw secret values.
 
-Scheduled Tasks use structured recurrence and IANA timezones to materialize due fires into ordinary queued runs. Runs store immutable executable snapshots, queue/progress state, invocation evidence, operation evidence, retry/failure metadata, trace ids when configured, final output, and rerun lineage.
+Scheduled Tasks use structured recurrence and IANA timezones to materialize due fires into ordinary queued runs. Runs store immutable executable snapshots, queue/progress state, invocation evidence, operation evidence, retry/failure metadata, trace ids when configured, final output, and rerun lineage. `POST /api/runs/{id}/cancel` cancels queued runs immediately; running runs stop cooperatively at step boundaries.
 
 ## Prerequisites
 
@@ -72,16 +72,33 @@ CI publishes supported backend and frontend images from `backend/Dockerfile` and
 
 Published images include Docker Buildx provenance and SBOM attestations on non-PR pushes. The root combined image is not a production artifact and refuses `SIGNALDECK_RUNTIME_MODE=production`, `prod`, or `staging`.
 
+### Split deployment topology
+
+Production runs as three container roles:
+
+- `backend` serves the FastAPI HTTP API.
+- `scheduler` runs `python -m app.workers.run_scheduler` from the same backend image.
+- `frontend` serves the browser app and proxies `/api` traffic to the backend.
+
+The scheduler container is required in production. Launches only enqueue runs; without the scheduler worker those runs stay `queued` forever. Multiple scheduler replicas are safe because coordination uses a PostgreSQL advisory lock, so only one worker owns a lease slot at a time.
+
+The example compose requires `SIGNALDECK_IMAGE_TAG`; pin it to an immutable published tag (a release tag once one exists, or an image digest/sha tag from the Docker Images workflow) rather than a mutable `latest` tag. It also requires `SIGNALDECK_API_TOKEN`; deployments that rely only on an authenticated reverse proxy should remove that environment entry deliberately.
+
+See [docker/compose.production.example.yml](docker/compose.production.example.yml) for the supported split-image example.
+
 ## Runtime Configuration
 
 - `SIGNALDECK_RUNTIME_MODE` defaults to `local`; production images set it to `production`.
-- `DATABASE_URL` is required in production and should point at managed PostgreSQL.
+- `DATABASE_URL` is required in production and should point at managed PostgreSQL 16+. Provider-style `postgresql://` and `postgres://` URLs are accepted and normalized to the `postgresql+psycopg://` driver automatically; the `pgvector` extension is not required.
 - `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection and package-secret values; production rejects the local placeholder.
 - `SIGNALDECK_API_TOKEN` enables bearer-token protection.
 - `PUBLIC_BASE_URL` is the externally reachable app origin when absolute links are needed.
-- `CORS_ALLOWED_ORIGINS` should list allowed browser origins.
-- `RUN_SCHEDULER=true|false` controls the scheduler worker, default `true`.
-- `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention.
+- `CORS_ALLOWED_ORIGINS` should list allowed browser origins for separate-origin frontend deployments; same-origin reverse-proxy deployments do not need CORS.
+- `MCP_RUNTIME_ENABLED` defaults to `false`. In the split production topology set it on the `scheduler` container — the scheduler executes runs, so MCP settings on the API container alone have no effect.
+- `MCP_RUNTIME_TIMEOUT` controls MCP runtime request timeouts in seconds and defaults to `5`.
+- `BACKEND_UPSTREAM` (frontend image only) is the `host:port` the bundled nginx proxies `/api/` to; the image default `127.0.0.1:8000` only works when backend and frontend share a network namespace, so compose deployments set it to `backend:8000`.
+- `RUN_SCHEDULER=true|false` only affects the root local/demo image entrypoint; production deployments run the scheduler as a separate container.
+- `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention and is disabled unless set.
 
 ## Security
 
@@ -96,6 +113,8 @@ Use a libpq-style PostgreSQL URL for database tools:
 pg_dump "$POSTGRES_URL" > signaldeck.sql
 psql "$POSTGRES_URL" < signaldeck.sql
 ```
+
+**Back up `AGENT_PLATFORM_ENCRYPTION_KEY` with every `pg_dump`. SignalDeck currently uses a single-key Fernet encryption model; losing that key makes stored model-connection and package-secret values undecryptable, API reads can return 500, there is no rotation or re-encryption tool yet, and the only recovery path is re-entering every secret. Generate a high-entropy key with `openssl rand -base64 32`.**
 
 ## Schema Changes
 
@@ -119,7 +138,7 @@ SignalDeck has no migration framework; schema changes require rebuilding the dat
 
 - `ci.yml` runs version sync, backend quality, frontend quality, and frontend E2E.
 - Backend CI installs with `uv sync --frozen`; frontend CI installs with `pnpm install --frozen-lockfile`.
-- `docker-images.yml` builds and publishes backend/frontend linux/arm64 images for GitHub Container Registry with SBOM/provenance metadata on non-PR pushes.
+- `docker-images.yml` builds and publishes backend/frontend linux/amd64 and linux/arm64 images for GitHub Container Registry with SBOM/provenance metadata on non-PR pushes.
 
 ## Versioning
 

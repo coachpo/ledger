@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import re
+import shutil
 import socket
 from collections.abc import Iterable, Sequence
 from urllib.parse import parse_qsl, urlparse
@@ -66,6 +68,7 @@ def validate_http_sse_url(
     addresses = _resolve_host_addresses(host, resolved_hosts=resolved_hosts)
     if not addresses:
         raise McpSecurityError("MCP HTTP/SSE host did not resolve")
+    # ponytail: DNS can rebind after validation, pin resolved IPs before multi-tenant use.
     for address in addresses:
         _validate_public_ip_address(address)
     return url
@@ -89,12 +92,17 @@ def validate_stdio_command(
     normalized = tuple(str(part).strip() for part in command if str(part).strip())
     if not normalized:
         raise McpSecurityError("MCP stdio command cannot be empty")
-    executable = normalized[0].rsplit("/", 1)[-1]
+    raw_executable = normalized[0]
+    executable = raw_executable.rsplit("/", 1)[-1]
     allowed = {item.strip() for item in allowed_commands if item.strip()}
     if executable in _SHELL_EXECUTABLES:
         raise McpSecurityError("MCP stdio shell executables are not allowed")
     if executable not in allowed:
         raise McpSecurityError("MCP stdio executable is not allowlisted")
+    if "/" in raw_executable:
+        expected = shutil.which(executable)
+        if expected is None or os.path.realpath(raw_executable) != os.path.realpath(expected):
+            raise McpSecurityError("MCP stdio executable is not allowlisted")
     if any(part in {"-c", "/c"} for part in normalized[1:]):
         raise McpSecurityError("MCP stdio inline shell commands are not allowed")
     return normalized

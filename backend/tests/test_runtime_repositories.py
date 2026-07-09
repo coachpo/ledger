@@ -1200,16 +1200,17 @@ def _build_deletable_run(
     return run
 
 
-def test_delete_runs_older_than_prunes_only_terminal_runs_by_created_at(
+def test_delete_runs_older_than_prunes_only_terminal_runs_by_finished_at(
     session_factory: sessionmaker[Session],
 ) -> None:
     with session_factory() as session:
         old_created_at = utcnow() - timedelta(days=14)
-        recent_created_at = utcnow()
+        recent_finished_at = utcnow()
         succeeded = _build_deletable_run(
             target_id=9301,
             target_key="retention_old_succeeded",
         )
+        succeeded.finished_at = old_created_at
         running = _build_deletable_run(
             target_id=9302,
             target_key="retention_old_running",
@@ -1227,17 +1228,41 @@ def test_delete_runs_older_than_prunes_only_terminal_runs_by_created_at(
             target_id=9304,
             target_key="retention_recent_succeeded",
         )
-        session.add_all([succeeded, running, cancelled, recent_succeeded])
+        recent_succeeded.finished_at = recent_finished_at
+        just_finished = _build_deletable_run(
+            target_id=9305,
+            target_key="retention_just_finished",
+        )
+        just_finished.created_at = old_created_at
+        just_finished.finished_at = recent_finished_at
+        missing_finished = _build_deletable_run(
+            target_id=9306,
+            target_key="retention_missing_finished",
+        )
+        missing_finished.created_at = old_created_at
+        missing_finished.finished_at = None
+        session.add_all(
+            [
+                succeeded,
+                running,
+                cancelled,
+                recent_succeeded,
+                just_finished,
+                missing_finished,
+            ]
+        )
         session.flush()
         succeeded.created_at = old_created_at
         running.created_at = old_created_at
         cancelled.created_at = old_created_at
-        recent_succeeded.created_at = recent_created_at
+        recent_succeeded.created_at = old_created_at
         session.commit()
         succeeded_id = succeeded.id
         running_id = running.id
         cancelled_id = cancelled.id
         recent_succeeded_id = recent_succeeded.id
+        just_finished_id = just_finished.id
+        missing_finished_id = missing_finished.id
 
         deleted_count = RunRepository(session).delete_runs_older_than(7)
         session.commit()
@@ -1248,6 +1273,8 @@ def test_delete_runs_older_than_prunes_only_terminal_runs_by_created_at(
         assert session.get(Run, cancelled_id) is None
         assert session.get(Run, running_id) is not None
         assert session.get(Run, recent_succeeded_id) is not None
+        assert session.get(Run, just_finished_id) is not None
+        assert session.get(Run, missing_finished_id) is not None
 
 
 def test_run_delete_cascades_steps_and_invocations(

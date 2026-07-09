@@ -108,16 +108,123 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"package_id": package["id"], "package_key": package["key"]},
         ).scalar_one()
+        recovered_steps = (
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO run_steps (run_id, step_index, status, origin)
+                    VALUES
+                        (:run_id, 1, 'running', 'planned'),
+                        (:run_id, 2, 'pending', 'planned')
+                    RETURNING step_index, id
+                    """
+                ),
+                {"run_id": run_id},
+            )
+            .mappings()
+            .all()
+        )
+        recovered_step_ids = {row["step_index"]: row["id"] for row in recovered_steps}
         conn.execute(
             text(
                 """
-                INSERT INTO run_steps (run_id, step_index, status, origin)
-                VALUES
-                    (:run_id, 1, 'running', 'planned'),
-                    (:run_id, 2, 'pending', 'planned')
+                INSERT INTO run_agent_invocations (
+                    run_step_id, run_id, step_index, slot, agent_id, agent_key,
+                    agent_version, output_schema_id, output_schema_version, status
+                ) VALUES
+                    (
+                        :running_step_id, :run_id, 1, 'decision', 1, 'running_agent',
+                        1, 1, 1, 'running'
+                    ),
+                    (
+                        :pending_step_id, :run_id, 2, 'summary', 1, 'pending_agent',
+                        1, 1, 1, 'pending'
+                    )
                 """
             ),
-            {"run_id": run_id},
+            {
+                "running_step_id": recovered_step_ids[1],
+                "pending_step_id": recovered_step_ids[2],
+                "run_id": run_id,
+            },
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO run_operation_invocations (
+                    run_step_id, run_id, step_index, slot, operation_key, operation_kind,
+                    output_schema_id, output_schema_version, status
+                ) VALUES
+                    (
+                        :running_step_id, :run_id, 1, 'fetch', 'running_http', 'http',
+                        1, 1, 'running'
+                    ),
+                    (
+                        :pending_step_id, :run_id, 2, 'audit', 'pending_http', 'http',
+                        1, 1, 'pending'
+                    )
+                """
+            ),
+            {
+                "running_step_id": recovered_step_ids[1],
+                "pending_step_id": recovered_step_ids[2],
+                "run_id": run_id,
+            },
+        )
+        historical_failed_run_id = conn.execute(
+            text(
+                """
+                INSERT INTO runs (
+                    target_kind, target_id, target_key, target_version,
+                    workflow_package_id, workflow_package_key,
+                    workflow_package_workflow_key, status, input, started_at, finished_at
+                ) VALUES (
+                    'workflowPackage', :package_id, :package_key, 1,
+                    :package_id, :package_key, 'advisory_research',
+                    'failed', '{}'::jsonb, NOW() - INTERVAL '1 hour', NOW() - INTERVAL '30 minutes'
+                )
+                RETURNING id
+                """
+            ),
+            {"package_id": package["id"], "package_key": package["key"]},
+        ).scalar_one()
+        historical_step_id = conn.execute(
+            text(
+                """
+                INSERT INTO run_steps (run_id, step_index, status, origin)
+                VALUES (:run_id, 1, 'running', 'planned')
+                RETURNING id
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        ).scalar_one()
+        conn.execute(
+            text(
+                """
+                INSERT INTO run_agent_invocations (
+                    run_step_id, run_id, step_index, slot, agent_id, agent_key,
+                    agent_version, output_schema_id, output_schema_version, status
+                ) VALUES (
+                    :run_step_id, :run_id, 1, 'decision', 1, 'historical_agent',
+                    1, 1, 1, 'running'
+                )
+                """
+            ),
+            {"run_step_id": historical_step_id, "run_id": historical_failed_run_id},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO run_operation_invocations (
+                    run_step_id, run_id, step_index, slot, operation_key, operation_kind,
+                    output_schema_id, output_schema_version, status
+                ) VALUES (
+                    :run_step_id, :run_id, 1, 'fetch', 'historical_http', 'http',
+                    1, 1, 'running'
+                )
+                """
+            ),
+            {"run_step_id": historical_step_id, "run_id": historical_failed_run_id},
         )
 
     assert fail_inflight_runs(engine) == 1
@@ -144,12 +251,75 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"run_id": run_id},
         ).all()
+        agent_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message IS NOT NULL, finished_at IS NOT NULL
+                FROM run_agent_invocations
+                WHERE run_id = :run_id
+                ORDER BY step_index, slot
+                """
+            ),
+            {"run_id": run_id},
+        ).all()
+        operation_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message IS NOT NULL, finished_at IS NOT NULL
+                FROM run_operation_invocations
+                WHERE run_id = :run_id
+                ORDER BY step_index, slot
+                """
+            ),
+            {"run_id": run_id},
+        ).all()
+        historical_steps = conn.execute(
+            text(
+                """
+                SELECT step_index, status, error, finished_at
+                FROM run_steps
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        ).all()
+        historical_agent_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message, finished_at
+                FROM run_agent_invocations
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        ).all()
+        historical_operation_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message, finished_at
+                FROM run_operation_invocations
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        ).all()
 
     assert run == ("failed", True, True)
     assert steps == [
         (1, "failed", True, True),
         (2, "skipped", True, True),
     ]
+    assert agent_invocations == [
+        ("decision", "failed", "startup_recovery", True, True),
+        ("summary", "skipped", "startup_recovery", True, True),
+    ]
+    assert operation_invocations == [
+        ("fetch", "failed", "startup_recovery", True, True),
+        ("audit", "skipped", "startup_recovery", True, True),
+    ]
+    assert historical_steps == [(1, "running", None, None)]
+    assert historical_agent_invocations == [("decision", "running", None, None, None)]
+    assert historical_operation_invocations == [("fetch", "running", None, None, None)]
 
 
 def test_startup_recovery_keeps_running_run_with_active_scheduler_lease(
@@ -414,3 +584,23 @@ def test_init_db_releases_advisory_lock_on_bootstrap_failure(
         "create_all:True",
         "unlock",
     ]
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [
+        ("postgresql://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
+        ("postgres://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
+        ("postgresql+psycopg://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
+    ],
+)
+def test_normalize_database_url_pins_psycopg_driver(given: str, expected: str) -> None:
+    from app.db.engine import _normalize_database_url
+
+    assert _normalize_database_url(given) == expected
+
+
+def test_get_engine_accepts_provider_style_url(database_url: str) -> None:
+    bare_url = database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+    engine = get_engine(bare_url)
+    assert engine.dialect.driver == "psycopg"

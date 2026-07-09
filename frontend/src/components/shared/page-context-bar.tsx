@@ -26,7 +26,7 @@ const rootClassByDensity: Record<PageContextBarDensity, string> = {
 function PageContextTitle({ children }: { children: ReactNode }) {
   return (
     <h1
-      className="shrink-0 text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-[1.75rem]"
+      className="min-w-0 text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-[1.75rem]"
       data-slot="page-context-title"
     >
       {children}

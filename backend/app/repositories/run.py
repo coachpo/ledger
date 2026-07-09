@@ -165,7 +165,8 @@ class RunRepository(BaseRepository[Run]):
         runs = self._list(
             select(self.model).where(
                 self.model.status.in_(_TERMINAL_RUN_STATUSES),
-                self.model.created_at < cutoff,
+                self.model.finished_at.is_not(None),
+                self.model.finished_at < cutoff,
             )
         )
         for run in runs:

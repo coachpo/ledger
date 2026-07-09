@@ -147,11 +147,17 @@ test.describe("Reports", () => {
 
     const downloadButton = page.getByRole("button", { name: /download/i });
     await expect(downloadButton).toBeVisible();
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
+    const [downloadFromClick] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/reports/${generatedSlug}/download`) &&
+          response.status() === 200,
+      ),
       downloadButton.click(),
     ]);
-    expect(download.suggestedFilename()).toBe(`${generatedSlug}.md`);
+    expect(downloadFromClick.headers()["content-disposition"]).toContain(
+      `${generatedSlug}.md`,
+    );
 
     const downloadResponse = await request.get(
       `${API_BASE}/reports/${generatedSlug}/download`,

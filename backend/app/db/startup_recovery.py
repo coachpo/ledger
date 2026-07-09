@@ -2,8 +2,9 @@
 # ruff: noqa: E501
 from __future__ import annotations
 
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.sql.elements import BindParameter
 
 _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE = (
     "Run marked as failed during startup recovery because the previous process exited while "
@@ -39,10 +40,15 @@ def fail_inflight_runs(engine: Engine) -> int:
                 WHERE """
                 + _STALE_RUNNING_RUN_PREDICATE
                 + """
+                RETURNING id
                 """
             ),
             {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
         )
+        recovered_run_ids = list(run_result.scalars())
+        if not recovered_run_ids:
+            return 0
+        run_ids_param: BindParameter[object] = bindparam("run_ids", expanding=True)
         if "run_steps" in table_names:
             connection.execute(
                 text(
@@ -52,13 +58,14 @@ def fail_inflight_runs(engine: Engine) -> int:
                         error = COALESCE(NULLIF(step.error, ''), :restart_failure_message),
                         finished_at = COALESCE(step.finished_at, NOW()),
                         updated_at = NOW()
-                    FROM runs AS run
-                    WHERE step.run_id = run.id
-                      AND run.status = 'failed'
+                    WHERE step.run_id IN :run_ids
                       AND step.status = 'running'
                     """
-                ),
-                {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
+                ).bindparams(run_ids_param),
+                {
+                    "restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE,
+                    "run_ids": recovered_run_ids,
+                },
             )
             connection.execute(
                 text(
@@ -68,13 +75,14 @@ def fail_inflight_runs(engine: Engine) -> int:
                         error = COALESCE(NULLIF(step.error, ''), :pending_skip_message),
                         finished_at = COALESCE(step.finished_at, NOW()),
                         updated_at = NOW()
-                    FROM runs AS run
-                    WHERE step.run_id = run.id
-                      AND run.status = 'failed'
+                    WHERE step.run_id IN :run_ids
                       AND step.status = 'pending'
                     """
-                ),
-                {"pending_skip_message": _AGENT_PLATFORM_PENDING_SKIP_MESSAGE},
+                ).bindparams(run_ids_param),
+                {
+                    "pending_skip_message": _AGENT_PLATFORM_PENDING_SKIP_MESSAGE,
+                    "run_ids": recovered_run_ids,
+                },
             )
         if "run_agent_invocations" in table_names:
             connection.execute(
@@ -92,13 +100,14 @@ def fail_inflight_runs(engine: Engine) -> int:
                         ),
                         finished_at = COALESCE(invocation.finished_at, NOW()),
                         updated_at = NOW()
-                    FROM runs AS run
-                    WHERE invocation.run_id = run.id
-                      AND run.status = 'failed'
+                    WHERE invocation.run_id IN :run_ids
                       AND invocation.status = 'running'
                     """
-                ),
-                {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
+                ).bindparams(run_ids_param),
+                {
+                    "restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE,
+                    "run_ids": recovered_run_ids,
+                },
             )
             connection.execute(
                 text(
@@ -115,13 +124,14 @@ def fail_inflight_runs(engine: Engine) -> int:
                         ),
                         finished_at = COALESCE(invocation.finished_at, NOW()),
                         updated_at = NOW()
-                    FROM runs AS run
-                    WHERE invocation.run_id = run.id
-                      AND run.status = 'failed'
+                    WHERE invocation.run_id IN :run_ids
                       AND invocation.status = 'pending'
                     """
-                ),
-                {"pending_skip_message": _AGENT_PLATFORM_PENDING_SKIP_MESSAGE},
+                ).bindparams(run_ids_param),
+                {
+                    "pending_skip_message": _AGENT_PLATFORM_PENDING_SKIP_MESSAGE,
+                    "run_ids": recovered_run_ids,
+                },
             )
         if "run_operation_invocations" in table_names:
             connection.execute(
@@ -139,13 +149,14 @@ def fail_inflight_runs(engine: Engine) -> int:
                         ),
                         finished_at = COALESCE(operation.finished_at, NOW()),
                         updated_at = NOW()
-                    FROM runs AS run
-                    WHERE operation.run_id = run.id
-                      AND run.status = 'failed'
+                    WHERE operation.run_id IN :run_ids
                       AND operation.status = 'running'
                     """
-                ),
-                {"restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE},
+                ).bindparams(run_ids_param),
+                {
+                    "restart_failure_message": _AGENT_PLATFORM_RESTART_FAILURE_MESSAGE,
+                    "run_ids": recovered_run_ids,
+                },
             )
             connection.execute(
                 text(
@@ -162,15 +173,16 @@ def fail_inflight_runs(engine: Engine) -> int:
                         ),
                         finished_at = COALESCE(operation.finished_at, NOW()),
                         updated_at = NOW()
-                    FROM runs AS run
-                    WHERE operation.run_id = run.id
-                      AND run.status = 'failed'
+                    WHERE operation.run_id IN :run_ids
                       AND operation.status = 'pending'
                     """
-                ),
-                {"pending_skip_message": _AGENT_PLATFORM_PENDING_SKIP_MESSAGE},
+                ).bindparams(run_ids_param),
+                {
+                    "pending_skip_message": _AGENT_PLATFORM_PENDING_SKIP_MESSAGE,
+                    "run_ids": recovered_run_ids,
+                },
             )
-    return max(run_result.rowcount, 0)
+    return len(recovered_run_ids)
 
 
 __all__ = ["fail_inflight_runs"]

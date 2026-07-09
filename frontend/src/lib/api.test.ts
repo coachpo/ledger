@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TextTemplateRead, TextTemplateWriteInput } from "./types/text-template";
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
 const ORIGINAL_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const ORIGINAL_DEV = import.meta.env.DEV;
 const ORIGINAL_FETCH = globalThis.fetch;
 
 function createFetchMock() {
@@ -30,9 +30,16 @@ function textResponse(
   });
 }
 
-async function loadApiModule(baseUrl: string = "") {
+async function loadApiModule({
+  baseUrl = "",
+  dev = true,
+}: {
+  baseUrl?: string;
+  dev?: boolean;
+} = {}) {
   vi.resetModules();
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", baseUrl);
+  Reflect.set(import.meta.env, "DEV", dev);
   const [
     apiClient,
     modelConnectionsApi,
@@ -91,6 +98,7 @@ afterEach(() => {
   localStorage.clear();
   globalThis.fetch = ORIGINAL_FETCH;
   Reflect.set(import.meta.env, "VITE_API_BASE_URL", ORIGINAL_API_BASE_URL);
+  Reflect.set(import.meta.env, "DEV", ORIGINAL_DEV);
 });
 
 describe("api client", () => {
@@ -101,7 +109,7 @@ describe("api client", () => {
     await expect(listTemplates()).resolves.toEqual([templateFixture]);
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe(`${DEFAULT_API_BASE_URL}/templates`);
+    expect(url).toBe("http://127.0.0.1:8000/api/v1/templates");
     expect(init?.method).toBe("GET");
     expect(init?.body).toBeUndefined();
     expect(new Headers(init?.headers).get("Accept")).toBe("application/json");
@@ -147,7 +155,7 @@ describe("api client", () => {
     );
 
     const { init, url } = getLastFetchCall(fetchMock);
-    expect(url).toBe(`${DEFAULT_API_BASE_URL}/templates`);
+    expect(url).toBe("http://127.0.0.1:8000/api/v1/templates");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify(templateInput));
     expect(new Headers(init?.headers).get("Accept")).toBe("application/json");
@@ -268,9 +276,9 @@ describe("api client", () => {
   });
 
   it("derives v1 and platform URLs from a configured versioned base", async () => {
-    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule(
-      "https://signaldeck.example.com/api/v2/",
-    );
+    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule({
+      baseUrl: "https://signaldeck.example.com/api/v2/",
+    });
 
     expect(buildApiUrl("/templates")).toBe(
       "https://signaldeck.example.com/api/v1/templates",
@@ -281,9 +289,9 @@ describe("api client", () => {
   });
 
   it("routes platform modules through the unversioned api base", async () => {
-    const { listModelConnections } = await loadApiModule(
-      "https://signaldeck.example.com/api/v1/",
-    );
+    const { listModelConnections } = await loadApiModule({
+      baseUrl: "https://signaldeck.example.com/api/v1/",
+    });
     fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }, 200));
 
     await expect(listModelConnections()).resolves.toEqual({ items: [] });
@@ -293,9 +301,9 @@ describe("api client", () => {
   });
 
   it("encodes v1 path segments against the derived base URL", async () => {
-    const { getTemplate } = await loadApiModule(
-      "https://signaldeck.example.com/api/",
-    );
+    const { getTemplate } = await loadApiModule({
+      baseUrl: "https://signaldeck.example.com/api/",
+    });
     fetchMock.mockResolvedValueOnce(
       jsonResponse(templateFixture, 200),
     );
@@ -355,5 +363,28 @@ describe("api client", () => {
         value: originalRevokeObjectUrl,
       });
     }
+  });
+
+  it("defaults to same-origin /api/v1 outside dev when the env base is empty", async () => {
+    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule({
+      dev: false,
+    });
+
+    expect(buildApiUrl("/templates")).toBe("/api/v1/templates");
+    expect(buildPlatformApiUrl("/reports")).toBe("/api/reports");
+  });
+
+  it("keeps explicit VITE_API_BASE_URL behavior unchanged", async () => {
+    const { buildApiUrl, buildPlatformApiUrl } = await loadApiModule({
+      baseUrl: "https://signaldeck.example.com/root/",
+      dev: false,
+    });
+
+    expect(buildApiUrl("/templates")).toBe(
+      "https://signaldeck.example.com/root/api/v1/templates",
+    );
+    expect(buildPlatformApiUrl("/reports")).toBe(
+      "https://signaldeck.example.com/root/api/reports",
+    );
   });
 });

@@ -57,19 +57,23 @@ class RunSchedulerWorker:
         return f"scheduler:{self.hostname}:{self.pid}"
 
     def run_forever(self) -> None:
-        with self._scheduler_lock() as acquired:
-            if not acquired:
+        reported_lock_wait = False
+        while True:
+            with self._scheduler_lock() as acquired:
+                if acquired:
+                    logger.info(
+                        "SignalDeck run scheduler worker %s started (max_active_runs=%d, "
+                        "max_active_per_package=%d)",
+                        self.worker_id,
+                        self.settings.run_scheduler_max_active_runs,
+                        self.settings.run_scheduler_max_active_per_package,
+                    )
+                    self._run_loop()
+                    return
+            if not reported_lock_wait:
                 logger.warning("Another SignalDeck run scheduler worker already holds the lock")
-                return
-
-            logger.info(
-                "SignalDeck run scheduler worker %s started (max_active_runs=%d, "
-                "max_active_per_package=%d)",
-                self.worker_id,
-                self.settings.run_scheduler_max_active_runs,
-                self.settings.run_scheduler_max_active_per_package,
-            )
-            self._run_loop()
+                reported_lock_wait = True
+            time.sleep(self.settings.run_scheduler_poll_interval_seconds)
 
     def run_once(self) -> bool:
         self._recover_stale_leases()
