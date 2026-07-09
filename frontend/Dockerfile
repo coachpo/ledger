@@ -3,8 +3,7 @@ FROM node:26-alpine AS base
 WORKDIR /app
 
 RUN apk add --no-cache libc6-compat curl \
-    && corepack enable \
-    && corepack prepare pnpm@10.30.1 --activate
+    && npm install -g pnpm@10.30.1
 
 FROM base AS build
 
