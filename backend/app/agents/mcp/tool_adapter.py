@@ -320,7 +320,7 @@ def _descriptor_redaction_policy(value: object) -> ExecutionToolRedactionPolicy:
         NATIVE_RUNTIME_REDACTION_POLICY,
         MCP_RUNTIME_REDACTION_POLICY,
     }:
-        return cast(ExecutionToolRedactionPolicy, value)
+        return value
     raise McpToolAdapterError("Tool descriptor redactionPolicy is invalid")
 
 

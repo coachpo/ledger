@@ -114,7 +114,7 @@ def _parse_moneyness(value: object) -> OptionsMoneyness:
     normalized = value.strip().lower()
     if normalized not in OPTIONS_MONEYNESS_VALUES:
         raise _invalid(f"moneyness must use: {', '.join(OPTIONS_MONEYNESS_VALUES)}.")
-    return cast(OptionsMoneyness, normalized)
+    return normalized
 
 
 def _parse_optional_integer(value: object, field_name: str) -> int | None:
