@@ -5,14 +5,14 @@ description = "FastAPI backend for SignalDeck"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-  "fastapi>=0.115,<1.0",
+  "fastapi>=0.139.0,<1.0",
   "httpx>=0.27,<1.0",
   "openai>=1.0,<2.0",
   "psycopg[binary]>=3.3.4,<4.0",
-  "pydantic-settings>=2.3,<3.0",
-  "python-multipart>=0.0.9,<1.0",
-  "ruamel.yaml>=0.18.16,<0.19.0",
-  "sqlalchemy>=2.0,<3.0",
+  "pydantic-settings>=2.14.2,<3.0",
+  "python-multipart>=0.0.32,<1.0",
+  "ruamel.yaml>=0.19.1,<0.20.0",
+  "sqlalchemy>=2.0.51,<3.0",
   "uvicorn[standard]>=0.30,<1.0",
   "logfire[fastapi]>=4.37.0",
   "cryptography>=43",
@@ -24,7 +24,7 @@ dev = [
   "isort>=5.13,<6.0",
   "mypy>=1.11,<2.0",
   "pytest>=9.1.1,<10.0",
-  "ruff>=0.6,<1.0",
+  "ruff>=0.15.20,<1.0",
 ]
 
 [tool.uv]
