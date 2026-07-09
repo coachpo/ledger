@@ -72,6 +72,18 @@ CI publishes supported backend and frontend images from `backend/Dockerfile` and
 
 Published images include Docker Buildx provenance and SBOM attestations on non-PR pushes. The root combined image is not a production artifact and refuses `SIGNALDECK_RUNTIME_MODE=production`, `prod`, or `staging`.
 
+### Split deployment topology
+
+Production runs as three container roles:
+
+- `backend` serves the FastAPI HTTP API.
+- `scheduler` runs `python -m app.workers.run_scheduler` from the same backend image.
+- `frontend` serves the browser app and proxies `/api` traffic to the backend.
+
+The scheduler container is required in production. Launches only enqueue runs; without the scheduler worker those runs stay `queued` forever. Multiple scheduler replicas are safe because coordination uses a PostgreSQL advisory lock, so only one worker owns a lease slot at a time.
+
+See [docker/compose.production.example.yml](/home/qing/Documents/projects/ledger/docker/compose.production.example.yml) for the supported split-image example.
+
 ## Runtime Configuration
 
 - `SIGNALDECK_RUNTIME_MODE` defaults to `local`; production images set it to `production`.
@@ -80,7 +92,7 @@ Published images include Docker Buildx provenance and SBOM attestations on non-P
 - `SIGNALDECK_API_TOKEN` enables bearer-token protection.
 - `PUBLIC_BASE_URL` is the externally reachable app origin when absolute links are needed.
 - `CORS_ALLOWED_ORIGINS` should list allowed browser origins.
-- `RUN_SCHEDULER=true|false` controls the scheduler worker, default `true`.
+- `RUN_SCHEDULER=true|false` only affects the root local/demo image entrypoint; production deployments run the scheduler as a separate container.
 - `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention.
 
 ## Security
