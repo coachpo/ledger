@@ -76,6 +76,6 @@ docker compose -f ../docker-compose.yml down -v
 - Schema changes require a database reset until data must survive upgrades.
 - Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs`, sets `QUOTE_PROVIDER_BACKEND=deterministic` by default, and pairs with a built frontend preview on `4173`.
 - The frontend E2E helper defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
-- `docs/` has live product, platform, API, data-model, test, and runtime-input references.
+- `docs/` has concise product and data-model docs, extension-writing guidance, and retained migration plans.
 - Root workflows check `backend/VERSION` against `backend/pyproject.toml` and build linux/arm64 backend and frontend GHCR images.
 - For repo-wide setup, validation, and frontend wiring, see the root `README.md`.
