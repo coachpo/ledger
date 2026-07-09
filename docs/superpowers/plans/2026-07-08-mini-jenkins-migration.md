@@ -598,6 +598,27 @@ def base_manifest(**overrides: str) -> str:
 
 ---
 
+## Phase 6.5 — 验收新发现（2026-07-08 中期核验补充，做完 P6 后插入执行）
+
+中期验收（Phase 0-5.2 落地后）发现的计划外问题，按严重度：
+
+### Task 6.5.1: fail_inflight_runs 改为 lease 感知
+`app/db/startup_recovery.py` 的 `fail_inflight_runs` 在**每个进程**启动时把所有 `running` 状态的 run 标记失败（行为继承自 main，非本分支引入）。拆分部署下，backend API 副本重启会误杀 scheduler 正在执行的 run。修复：只把 **lease 已过期**（`lease_expires_at < now()` 或 `lease_owner IS NULL`）的 running run 标失败；持有效 lease 的 run 不动。补一条测试：活 lease 的 running run 在 `fail_inflight_runs` 后仍为 running。
+- [ ] 失败测试 → 实现 → 全量校验 → Commit `fix(db): startup recovery only fails runs with expired leases`
+
+### Task 6.5.2: 组合镜像双进程并发 init_db 竞态
+组合镜像里 backend 与 scheduler worker 同时启动、并发跑 `create_all`+seed，有翻车窗口。修复（一行式）：`init_db` 全程包在 `pg_advisory_lock`（专用 lock id）里。
+- [ ] 实现 → 全量校验 → Commit `fix(db): serialize init_db with advisory lock`
+
+### Task 6.5.3: 小项清扫（合并为一个 commit）
+- `_sanitize_mcp_server` 中 `env/headers/query` 空 dict 分支不可达（allowlist 已提前 continue），删。[app/services/workflow_package_export.py]
+- registry 唯一性断言补齐 `runtime_tool_specs` 与 `package_private_mcp_tool_keys` 的 key 冲突检查。[app/extensions/registry.py]
+- `PORTFOLIO_CURRENCY` 常量仍被 market_data_service 用于 USD 归一化——改名 `DEFAULT_CURRENCY`。[app/core/constants.py]
+- 预置包 seed 的 `ON CONFLICT DO UPDATE` 会在每次重启覆盖用户对同 key 包的修改——预置包语义定为"托管只读"，在 `app/db/seed.py` 顶部注释声明，并在 `docs/writing-extensions.md` 提一句；不改行为。
+- [ ] 实现 → 全量校验 → Commit `chore: acceptance-review cleanups`
+
+> **执行者注意：** 分支尖端（5.2 后、5.3 前）e2e 必红（9 个失败，Reports/Templates UI 因前端仍 gate 在已删除的 GET /api/extensions 上不可达）。这是计划内的中间态，**Task 5.3 是当前最高优先级**——完成后 e2e 应恢复全绿，再继续 P6。
+
 ## Phase 10 —（可选，默认不排期）manifest 编译管线合并
 
 `parser → compiler → PackageExecutionPlanBuilder`（24 个中间 dataclass）合并为 parser → 单趟 plan 构建。收益 ~1,500 行；风险：核心执行引擎重写。**仅当 Phase 8 后的行为级测试套件全绿且团队仍觉得管线维护痛时再做**。做法：以 `test_workflow_package_execution_plan.py` + runtime_api 行为测试为安全网，把 `package_execution_plan_builder.py` 的输出类型作为 compiler 的直接产物，删除中间 `packageDefinition`/`compiledPlan` 双表示。此处不展开步骤——届时按 writing-plans 流程单独出计划。
