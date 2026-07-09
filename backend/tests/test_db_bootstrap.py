@@ -136,14 +136,43 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"package_id": package["id"], "package_key": package["key"]},
         ).scalar_one()
-        conn.execute(
+        historical_step_id = conn.execute(
             text(
                 """
                 INSERT INTO run_steps (run_id, step_index, status, origin)
                 VALUES (:run_id, 1, 'running', 'planned')
+                RETURNING id
                 """
             ),
             {"run_id": historical_failed_run_id},
+        ).scalar_one()
+        conn.execute(
+            text(
+                """
+                INSERT INTO run_agent_invocations (
+                    run_step_id, run_id, step_index, slot, agent_id, agent_key,
+                    agent_version, output_schema_id, output_schema_version, status
+                ) VALUES (
+                    :run_step_id, :run_id, 1, 'decision', 1, 'historical_agent',
+                    1, 1, 1, 'running'
+                )
+                """
+            ),
+            {"run_step_id": historical_step_id, "run_id": historical_failed_run_id},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO run_operation_invocations (
+                    run_step_id, run_id, step_index, slot, operation_key, operation_kind,
+                    output_schema_id, output_schema_version, status
+                ) VALUES (
+                    :run_step_id, :run_id, 1, 'fetch', 'historical_http', 'http',
+                    1, 1, 'running'
+                )
+                """
+            ),
+            {"run_step_id": historical_step_id, "run_id": historical_failed_run_id},
         )
 
     assert fail_inflight_runs(engine) == 1
@@ -180,6 +209,26 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
             ),
             {"run_id": historical_failed_run_id},
         ).all()
+        historical_agent_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message, finished_at
+                FROM run_agent_invocations
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        ).all()
+        historical_operation_invocations = conn.execute(
+            text(
+                """
+                SELECT slot, status, error_code, error_message, finished_at
+                FROM run_operation_invocations
+                WHERE run_id = :run_id
+                """
+            ),
+            {"run_id": historical_failed_run_id},
+        ).all()
 
     assert run == ("failed", True, True)
     assert steps == [
@@ -187,6 +236,8 @@ def test_startup_recovery_fails_inflight_run_and_steps(database_url: str) -> Non
         (2, "skipped", True, True),
     ]
     assert historical_steps == [(1, "running", None, None)]
+    assert historical_agent_invocations == [("decision", "running", None, None, None)]
+    assert historical_operation_invocations == [("fetch", "running", None, None, None)]
 
 
 def test_startup_recovery_keeps_running_run_with_active_scheduler_lease(

@@ -166,6 +166,26 @@ async function startHangingProvider() {
   };
 }
 
+async function waitWithTimeout<T>(
+  promise: Promise<T>,
+  milliseconds: number,
+  message: string,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 async function expectSharedDialogShell(page: Page) {
   const dialog = page.getByRole("dialog");
   await expect(
@@ -232,69 +252,78 @@ async function seedQueuedRun(request: APIRequestContext) {
   const modelKey = `e2e_runs_cancel_model_${suffix}`;
 
   const hangingProvider = await startHangingProvider();
-  await seedModelConnection(request, modelKey, {
-    baseUrl: hangingProvider.baseUrl,
-    timeoutSeconds: 30,
-  });
-  const createResponse = await request.post(
-    `${PLATFORM_API_BASE}/workflow-packages`,
-    {
-      data: {
-        manifestSource: packageManifest(packageKey, modelKey),
+  try {
+    await seedModelConnection(request, modelKey, {
+      baseUrl: hangingProvider.baseUrl,
+      timeoutSeconds: 30,
+    });
+    const createResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages`,
+      {
+        data: {
+          manifestSource: packageManifest(packageKey, modelKey),
+        },
       },
-    },
-  );
-  expect(createResponse.status()).toBe(201);
-  const created = await createResponse.json();
+    );
+    expect(createResponse.status()).toBe(201);
+    const created = await createResponse.json();
 
-  const firstLaunchResponse = await request.post(
-    `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
-    { data: { workflowKey: "monitor_flow", parameters: { ticker: "MSFT" } } },
-  );
-  expect(firstLaunchResponse.status()).toBe(201);
-  const firstRunId = Number((await firstLaunchResponse.json()).id);
+    const firstLaunchResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
+      { data: { workflowKey: "monitor_flow", parameters: { ticker: "MSFT" } } },
+    );
+    expect(firstLaunchResponse.status()).toBe(201);
+    const firstRunId = Number((await firstLaunchResponse.json()).id);
 
-  await hangingProvider.waitForFirstRequest();
-  await expect
-    .poll(
-      async () => {
-        const response = await request.get(`${PLATFORM_API_BASE}/runs/${firstRunId}`);
-        expect(response.ok()).toBeTruthy();
-        return (await response.json()).status;
+    await waitWithTimeout(
+      hangingProvider.waitForFirstRequest(),
+      15_000,
+      "Timed out waiting for the blocking run to reach the hanging provider.",
+    );
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(`${PLATFORM_API_BASE}/runs/${firstRunId}`);
+          expect(response.ok()).toBeTruthy();
+          return (await response.json()).status;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe("running");
+
+    const secondLaunchResponse = await request.post(
+      `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
+      { data: { workflowKey: "monitor_flow", parameters: { ticker: "AAPL" } } },
+    );
+    expect(secondLaunchResponse.status()).toBe(201);
+    const queuedRunId = Number((await secondLaunchResponse.json()).id);
+
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(`${PLATFORM_API_BASE}/runs/${queuedRunId}`);
+          expect(response.ok()).toBeTruthy();
+          return (await response.json()).status;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe("queued");
+
+    const queuedDetailResponse = await request.get(`${PLATFORM_API_BASE}/runs/${queuedRunId}`);
+    expect(queuedDetailResponse.ok()).toBeTruthy();
+    const queuedDetail = await queuedDetailResponse.json();
+
+    return {
+      cleanup: async () => {
+        await hangingProvider.close();
       },
-      { timeout: 15_000 },
-    )
-    .toBe("running");
-
-  const secondLaunchResponse = await request.post(
-    `${PLATFORM_API_BASE}/workflow-packages/${created.id}/launches`,
-    { data: { workflowKey: "monitor_flow", parameters: { ticker: "AAPL" } } },
-  );
-  expect(secondLaunchResponse.status()).toBe(201);
-  const queuedRunId = Number((await secondLaunchResponse.json()).id);
-
-  await expect
-    .poll(
-      async () => {
-        const response = await request.get(`${PLATFORM_API_BASE}/runs/${queuedRunId}`);
-        expect(response.ok()).toBeTruthy();
-        return (await response.json()).status;
-      },
-      { timeout: 15_000 },
-    )
-    .toBe("queued");
-
-  const queuedDetailResponse = await request.get(`${PLATFORM_API_BASE}/runs/${queuedRunId}`);
-  expect(queuedDetailResponse.ok()).toBeTruthy();
-  const queuedDetail = await queuedDetailResponse.json();
-
-  return {
-    cleanup: async () => {
-      await hangingProvider.close();
-    },
-    runId: queuedRunId,
-    targetKey: String(queuedDetail.targetKey),
-  };
+      runId: queuedRunId,
+      targetKey: String(queuedDetail.targetKey),
+    };
+  } catch (error) {
+    await hangingProvider.close();
+    throw error;
+  }
 }
 
 test.describe("Runs inventory monitor", () => {

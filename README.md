@@ -82,6 +82,8 @@ Production runs as three container roles:
 
 The scheduler container is required in production. Launches only enqueue runs; without the scheduler worker those runs stay `queued` forever. Multiple scheduler replicas are safe because coordination uses a PostgreSQL advisory lock, so only one worker owns a lease slot at a time.
 
+The example compose requires `SIGNALDECK_IMAGE_TAG`; set it to a release tag such as `v1.2.3` rather than a mutable `latest` tag. It also requires `SIGNALDECK_API_TOKEN`; deployments that rely only on an authenticated reverse proxy should remove that environment entry deliberately.
+
 See [docker/compose.production.example.yml](docker/compose.production.example.yml) for the supported split-image example.
 
 ## Runtime Configuration
