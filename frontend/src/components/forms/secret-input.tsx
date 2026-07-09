@@ -1,4 +1,4 @@
-import { useEffect, useState, type InputHTMLAttributes } from "react";
+import { useState, type InputHTMLAttributes } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,8 @@ export function SecretInput({
   value,
   ...props
 }: SecretInputProps) {
-  const [revealed, setRevealed] = useState(false);
-
-  useEffect(() => {
-    if (!value) {
-      setRevealed(false);
-    }
-  }, [value]);
+  const [revealedValue, setRevealedValue] = useState<string | null>(null);
+  const revealed = value.length > 0 && revealedValue === value;
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -40,7 +35,9 @@ export function SecretInput({
           type="button"
           variant="ghost"
           className="h-auto px-0 text-xs text-muted-foreground"
-          onClick={() => setRevealed((current) => !current)}
+          onClick={() =>
+            setRevealedValue((current) => (current === value ? null : value))
+          }
         >
           {revealed ? <EyeOff data-icon="inline-start" /> : <Eye data-icon="inline-start" />}
           {revealed ? "Hide" : "Reveal"}

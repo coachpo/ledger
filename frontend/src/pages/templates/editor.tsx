@@ -144,8 +144,11 @@ export function TemplateEditorPage() {
   const navigate = useNavigate();
   const isEditing = Boolean(templateId);
 
-  const [name, setName] = useState("");
-  const [content, setContent] = useState("");
+  const [templateDraft, setTemplateDraft] = useState<{
+    content: string;
+    identity: string | null;
+    name: string;
+  }>(() => ({ content: "", identity: isEditing ? null : "new", name: "" }));
   const [generateOpen, setGenerateOpen] = useState(false);
   const [placeholdersOpen, setPlaceholdersOpen] = useState(true);
   const [runtimeInputsOpen, setRuntimeInputsOpen] = useState(false);
@@ -167,6 +170,26 @@ export function TemplateEditorPage() {
   const { mutate: compileInline, ...compileMutation } = useCompileInline();
   const compileReportMutation = useCompileReport();
 
+  const templateIdentity = template
+    ? `${template.id}:${template.updatedAt}`
+    : null;
+  if (!isEditing && templateDraft.identity !== "new") {
+    setTemplateDraft({ content: "", identity: "new", name: "" });
+  } else if (template && templateDraft.identity !== templateIdentity) {
+    setTemplateDraft({
+      content: template.content,
+      identity: templateIdentity,
+      name: template.name,
+    });
+  }
+
+  const name = templateDraft.name;
+  const content = templateDraft.content;
+  const setName = (nextName: string) =>
+    setTemplateDraft((current) => ({ ...current, name: nextName }));
+  const setContent = (nextContent: string) =>
+    setTemplateDraft((current) => ({ ...current, content: nextContent }));
+
   const debouncedContent = useDebounce(content, 500);
   const runtimeInputs = useMemo(
     () => buildRuntimeInputs(runtimeInputRows),
@@ -178,13 +201,6 @@ export function TemplateEditorPage() {
   );
   const debouncedRuntimeInputs = useDebounce(runtimeInputs, 500);
   const handleClose = () => navigate("/templates");
-
-  useEffect(() => {
-    if (template) {
-      setName(template.name);
-      setContent(template.content);
-    }
-  }, [template]);
 
   useEffect(() => {
     if (debouncedContent) {

@@ -1,5 +1,5 @@
 import { AlertCircle, CalendarClock, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -233,9 +233,21 @@ export function ScheduledTaskEditorPage() {
     () => (manifestQuery.data ? getWorkflowOptions(manifestQuery.data, selectedWorkflowKey || null) : []),
     [manifestQuery.data, selectedWorkflowKey],
   );
+  const resolvedWorkflowKey =
+    !selectedPackageId ||
+    manifestQuery.isPending ||
+    manifestQuery.isError ||
+    !manifestQuery.data
+      ? selectedWorkflowKey
+      : workflowOptions.length === 1
+        ? (workflowOptions[0]?.key ?? "")
+        : selectedWorkflowKey &&
+            workflowOptions.some((option) => option.key === selectedWorkflowKey)
+          ? selectedWorkflowKey
+          : "";
   const selectedWorkflowOption = useMemo(
-    () => workflowOptions.find((option) => option.key === selectedWorkflowKey) ?? null,
-    [selectedWorkflowKey, workflowOptions],
+    () => workflowOptions.find((option) => option.key === resolvedWorkflowKey) ?? null,
+    [resolvedWorkflowKey, workflowOptions],
   );
   const packageListError =
     workflowPackagesQuery.error instanceof Error
@@ -258,7 +270,7 @@ export function ScheduledTaskEditorPage() {
     workflowOptions.length === 0;
   const canSubmitTarget =
     Boolean(selectedPackageId) &&
-    Boolean(selectedWorkflowKey) &&
+    Boolean(resolvedWorkflowKey) &&
     !manifestQuery.isPending &&
     !manifestQuery.isError &&
     !hasZeroWorkflowPackage;
@@ -272,34 +284,12 @@ export function ScheduledTaskEditorPage() {
           ? "No workflows available"
           : "Select workflow...";
 
-  useEffect(() => {
-    if (!selectedPackageId || manifestQuery.isPending || manifestQuery.isError || !manifestQuery.data) {
-      return;
-    }
-
-    if (workflowOptions.length === 1) {
-      const onlyWorkflowKey = workflowOptions[0]?.key ?? "";
-      if (onlyWorkflowKey && selectedWorkflowKey !== onlyWorkflowKey) {
-        updateDraft({ workflowKey: onlyWorkflowKey });
-      }
-      return;
-    }
-
-    if (selectedWorkflowKey && !workflowOptions.some((option) => option.key === selectedWorkflowKey)) {
-      updateDraft({ workflowKey: "" });
-    }
-  }, [
-    manifestQuery.data,
-    manifestQuery.isError,
-    manifestQuery.isPending,
-    selectedPackageId,
-    selectedWorkflowKey,
-    workflowOptions,
-  ]);
-
   const previewCurrentDraft = async () => {
     try {
-      const payload = buildCreatePayload(draft);
+      const payload = buildCreatePayload({
+        ...draft,
+        workflowKey: resolvedWorkflowKey,
+      });
       const result = await previewSchedule.mutateAsync({
         inputTemplate: payload.inputTemplate,
         packageId: payload.packageId,
@@ -318,7 +308,9 @@ export function ScheduledTaskEditorPage() {
 
   const saveSchedule = async () => {
     try {
-      const created = await createSchedule.mutateAsync(buildCreatePayload(draft));
+      const created = await createSchedule.mutateAsync(
+        buildCreatePayload({ ...draft, workflowKey: resolvedWorkflowKey }),
+      );
       toast.success("Scheduled task saved");
       navigate(`/scheduled-tasks/${created.id}`);
     } catch (error) {
@@ -360,7 +352,7 @@ export function ScheduledTaskEditorPage() {
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="schedule-workflow-select">Workflow</Label>
-            <Select disabled={workflowSelectorDisabled} value={selectedWorkflowKey} onValueChange={(workflowKey) => updateDraft({ workflowKey })}>
+            <Select disabled={workflowSelectorDisabled} value={resolvedWorkflowKey} onValueChange={(workflowKey) => updateDraft({ workflowKey })}>
               <SelectTrigger aria-label="Workflow" data-testid="schedule-workflow-select" id="schedule-workflow-select">
                 <SelectValue placeholder={workflowPlaceholder} />
               </SelectTrigger>

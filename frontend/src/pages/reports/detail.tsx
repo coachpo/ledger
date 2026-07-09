@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, Download, Loader2, Pencil, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -22,14 +22,19 @@ export function ReportDetailPage() {
   const updateMutation = useUpdateReport();
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState("");
+  const [editState, setEditState] = useState<{
+    content: string;
+    slug: string | null;
+  }>({ content: "", slug: null });
   const [isDownloading, setIsDownloading] = useState(false);
 
-  useEffect(() => {
-    if (report) {
-      setEditContent(report.content);
-    }
-  }, [report]);
+  if (report && editState.slug !== report.slug) {
+    setEditState({ content: report.content, slug: report.slug });
+  }
+
+  const editContent = editState.content;
+  const setEditContent = (content: string) =>
+    setEditState((current) => ({ ...current, content }));
 
   const handleSave = async () => {
     if (!slug || !report) return;

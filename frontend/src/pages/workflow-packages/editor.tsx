@@ -1,5 +1,5 @@
 import { FileCheck2, PlayCircle, Save } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -131,43 +131,30 @@ export function WorkflowPackageEditorPage() {
     return packageDraftFromManifestSource(manifestQuery.data.manifestSource);
   }, [isNew, manifestQuery.data]);
 
-  useEffect(() => {
-    if (isNew) {
-      if (initializedManifestIdentity !== "new") {
-        setDraft(createWorkflowPackageDraft());
-        setIssues([]);
-        setDiagnosticTarget(null);
-        setInitializedManifestIdentity("new");
-        setIsDirty(false);
-      }
-      return;
-    }
-    if (
-      !manifestQuery.data ||
-      !parsedManifest ||
-      parsedManifest.errors.length > 0
-    ) {
-      return;
-    }
-    const nextIdentity = manifestIdentity(manifestQuery.data);
-    if (
-      initializedManifestIdentity === nextIdentity ||
-      (isDirty && initializedManifestIdentity !== null)
-    ) {
-      return;
-    }
-    setDraft(parsedManifest.draft);
+  if (isNew && initializedManifestIdentity !== "new") {
+    setDraft(createWorkflowPackageDraft());
     setIssues([]);
     setDiagnosticTarget(null);
-    setInitializedManifestIdentity(nextIdentity);
+    setInitializedManifestIdentity("new");
     setIsDirty(false);
-  }, [
-    initializedManifestIdentity,
-    isDirty,
-    isNew,
-    manifestQuery.data,
-    parsedManifest,
-  ]);
+  } else if (
+    !isNew &&
+    manifestQuery.data &&
+    parsedManifest &&
+    parsedManifest.errors.length === 0
+  ) {
+    const nextIdentity = manifestIdentity(manifestQuery.data);
+    if (
+      initializedManifestIdentity !== nextIdentity &&
+      (!isDirty || initializedManifestIdentity === null)
+    ) {
+      setDraft(parsedManifest.draft);
+      setIssues([]);
+      setDiagnosticTarget(null);
+      setInitializedManifestIdentity(nextIdentity);
+      setIsDirty(false);
+    }
+  }
 
   const headerDescription =
     workflowPackage?.description ||

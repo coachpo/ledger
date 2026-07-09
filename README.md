@@ -6,7 +6,7 @@ SignalDeck is a self-hosted mini-Jenkins for LLM agents: YAML Workflow Packages 
 
 - `backend/` — FastAPI, SQLAlchemy, Pydantic, PostgreSQL-backed API and tests
 - `frontend/` — React 19, Vite, TanStack Query, Vitest, and Playwright app
-- `docs/` — concise product, data-model, and static extension guidance
+- `docs/` — concise product, development, data-model, and static extension guidance
 - `demo/` — grounded Workflow Package YAML examples
 - `.github/workflows/` — root CI and Docker image workflows
 - `start.sh` — local Docker Compose launcher for the root combined stack
@@ -151,4 +151,4 @@ SignalDeck has no migration framework; schema changes require rebuilding the dat
 
 - `backend/README.md` covers backend-specific development details.
 - `AGENTS.md` is the repository-wide agent guide.
-- `docs/product.md`, `docs/data-model.md`, and `docs/writing-extensions.md` cover the shipped product shape, persistence shape, and static extension contract.
+- `docs/product.md`, `docs/development.md`, `docs/data-model.md`, and `docs/writing-extensions.md` cover the shipped product shape, repo toolchain, persistence shape, and static extension contract.

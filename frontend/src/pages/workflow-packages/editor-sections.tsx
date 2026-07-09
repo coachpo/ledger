@@ -764,6 +764,8 @@ export function AgentsTab(props: {
   const { diagnosticTarget, draft, issues, modelConnectionOptions, onChange } =
     props;
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [dismissedDiagnosticTarget, setDismissedDiagnosticTarget] =
+    useState<DiagnosticTarget>(null);
   const outputSchemaKeys = draft.spec.outputSchemas
     .map((schema) => schema.key)
     .filter(Boolean);
@@ -773,20 +775,23 @@ export function AgentsTab(props: {
   const mcpServerKeys = draft.spec.mcpServers
     .map((server) => server.key)
     .filter(Boolean);
+  const diagnosticField =
+    diagnosticTarget?.tab === "agents" ? diagnosticTarget.field : null;
+  const diagnosticEditingIndex =
+    diagnosticField && diagnosticTarget !== dismissedDiagnosticTarget
+      ? agentIndexFromPath(diagnosticField)
+      : null;
+  const activeEditingIndex =
+    diagnosticEditingIndex !== null &&
+    draft.spec.agents[diagnosticEditingIndex]
+      ? diagnosticEditingIndex
+      : editingIndex;
   const editingAgent =
-    editingIndex === null ? null : (draft.spec.agents[editingIndex] ?? null);
+    activeEditingIndex === null
+      ? null
+      : (draft.spec.agents[activeEditingIndex] ?? null);
   const updateAgents = (agents: PackageAgentDraft[]) =>
     onChange({ ...draft, spec: { ...draft.spec, agents } });
-
-  useEffect(() => {
-    if (diagnosticTarget?.tab !== "agents") {
-      return;
-    }
-    const nextIndex = agentIndexFromPath(diagnosticTarget.field);
-    if (nextIndex !== null && draft.spec.agents[nextIndex]) {
-      setEditingIndex(nextIndex);
-    }
-  }, [diagnosticTarget, draft.spec.agents]);
 
   return (
     <AuthoringSection
@@ -875,21 +880,24 @@ export function AgentsTab(props: {
       </div>
       <AgentSheet
         agent={editingAgent}
-        agentIndex={editingIndex}
+        agentIndex={activeEditingIndex}
         capabilityProfileKeys={capabilityProfileKeys}
         issues={issues}
         mcpServerKeys={mcpServerKeys}
         modelConnectionOptions={modelConnectionOptions}
-        open={editingIndex !== null}
+        open={activeEditingIndex !== null}
         outputSchemaKeys={outputSchemaKeys}
-        targetField={
-          diagnosticTarget?.tab === "agents" ? diagnosticTarget.field : null
-        }
-        onOpenChange={(open) => (!open ? setEditingIndex(null) : undefined)}
+        targetField={diagnosticEditingIndex !== null ? diagnosticField : null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingIndex(null);
+            setDismissedDiagnosticTarget(diagnosticTarget);
+          }
+        }}
         onChange={(agent) =>
-          editingIndex !== null
+          activeEditingIndex !== null
             ? updateAgents(
-                updateArrayItem(draft.spec.agents, editingIndex, () => agent),
+                updateArrayItem(draft.spec.agents, activeEditingIndex, () => agent),
               )
             : undefined
         }
@@ -1676,20 +1684,34 @@ export function WorkflowYamlTab({
   issues: readonly WorkflowPackageEditorIssue[];
   onChange: (draft: WorkflowPackageDraft) => void;
 }) {
-  const [workflowYaml, setWorkflowYaml] = useState(() =>
-    workflowPackageWorkflowsToYaml(draft.spec.workflows),
+  const workflowYamlSource = workflowPackageWorkflowsToYaml(
+    draft.spec.workflows,
   );
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
-
-  useEffect(() => {
-    setWorkflowYaml(workflowPackageWorkflowsToYaml(draft.spec.workflows));
-    setParseErrors([]);
-  }, [draft.spec.workflows]);
+  const [workflowYamlState, setWorkflowYamlState] = useState<{
+    errors: string[];
+    source: string;
+    value: string;
+  }>(() => ({
+    errors: [],
+    source: workflowYamlSource,
+    value: workflowYamlSource,
+  }));
+  const workflowYaml =
+    workflowYamlState.source === workflowYamlSource
+      ? workflowYamlState.value
+      : workflowYamlSource;
+  const parseErrors =
+    workflowYamlState.source === workflowYamlSource
+      ? workflowYamlState.errors
+      : [];
 
   const updateWorkflowYaml = (value: string) => {
-    setWorkflowYaml(value);
     const parsed = workflowPackageWorkflowsFromYaml(value);
-    setParseErrors(parsed.errors);
+    setWorkflowYamlState({
+      errors: parsed.errors,
+      source: workflowYamlSource,
+      value,
+    });
     if (parsed.errors.length === 0) {
       onChange({
         ...draft,
@@ -1910,14 +1932,16 @@ export function ExportsTab(props: {
     () => workflowPackageDraftToManifestSource(draft),
     [draft],
   );
-  const [exportPreview, setExportPreview] = useState(generatedManifestSource);
+  const [exportPreviewResult, setExportPreviewResult] = useState<{
+    packageId: string;
+    text: string;
+  } | null>(null);
   const [isDownloadingExport, setIsDownloadingExport] = useState(false);
-
-  useEffect(() => {
-    if (!packageId) {
-      setExportPreview(generatedManifestSource);
-    }
-  }, [packageId, generatedManifestSource]);
+  const exportPreview = !packageId
+    ? generatedManifestSource
+    : exportPreviewResult?.packageId === packageId
+      ? exportPreviewResult.text
+      : "Loading package export preview...";
 
   useEffect(() => {
     if (!packageId) {
@@ -1926,16 +1950,15 @@ export function ExportsTab(props: {
 
     let active = true;
     const controller = new AbortController();
-    setExportPreview("Loading package export preview...");
     void exportWorkflowPackageSource(packageId, controller.signal)
       .then((text) => {
         if (active) {
-          setExportPreview(text);
+          setExportPreviewResult({ packageId, text });
         }
       })
       .catch((error) => {
         if (active) {
-          setExportPreview(generatedManifestSource);
+          setExportPreviewResult({ packageId, text: generatedManifestSource });
           toast.error(
             error instanceof Error
               ? error.message

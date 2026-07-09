@@ -19,8 +19,6 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      // ponytail: new-in-v7 rule with 16 pre-existing violations; refactor effects separately, then re-enable
-      "react-hooks/set-state-in-effect": "warn",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },

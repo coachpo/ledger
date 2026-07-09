@@ -1251,10 +1251,6 @@ function ScheduleConfigurationEditor({
     scheduleDraftFromRead(schedule),
   );
 
-  useEffect(() => {
-    setDraft(scheduleDraftFromRead(schedule));
-  }, [schedule]);
-
   const browserTimeZone = useMemo(() => resolveBrowserTimeZone(), []);
   const timeZoneOptions = useMemo(
     () =>
@@ -2591,6 +2587,7 @@ function ScheduleTabs({
           title="Schedule configuration"
         >
           <ScheduleConfigurationEditor
+            key={`${schedule.id}:${schedule.updatedAt}`}
             disabled={false}
             isSaving={mutationPending}
             schedule={schedule}

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { CheckCircle2, PlugZap, Radar, Save, XCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
@@ -480,31 +480,62 @@ function buildUpdatePayload(
 
 export function ModelConnectionsEditorPage() {
   const { modelConnectionId } = useParams<{ modelConnectionId: string }>();
-  const navigate = useNavigate();
   const isEditing = Boolean(modelConnectionId);
   const connectionQuery = useModelConnection(modelConnectionId);
+
+  if (isEditing && connectionQuery.isPending) {
+    return (
+      <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
+        Loading model connection details...
+      </div>
+    );
+  }
+
+  if (isEditing && connectionQuery.isError) {
+    return (
+      <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
+        {connectionQuery.error instanceof Error
+          ? connectionQuery.error.message
+          : "Model connection not found."}
+      </div>
+    );
+  }
+
+  const editorKey = connectionQuery.data
+    ? `existing:${connectionQuery.data.id}:${connectionQuery.data.updatedAt}`
+    : "new";
+
+  return (
+    <ModelConnectionsEditorForm
+      key={editorKey}
+      connection={connectionQuery.data}
+      modelConnectionId={modelConnectionId}
+    />
+  );
+}
+
+function ModelConnectionsEditorForm({
+  connection,
+  modelConnectionId,
+}: {
+  connection: ModelConnectionRead | undefined;
+  modelConnectionId: string | undefined;
+}) {
+  const navigate = useNavigate();
+  const isEditing = Boolean(modelConnectionId);
   const createMutation = useCreateModelConnection();
   const updateMutation = useUpdateModelConnection();
   const testConnectionMutation = useTestModelConnection(modelConnectionId);
   const probeCapabilitiesMutation =
     useProbeModelConnectionCapabilities(modelConnectionId);
-  const [values, setValues] =
-    useState<ModelConnectionEditorValues>(initialValues);
+  const [values, setValues] = useState<ModelConnectionEditorValues>(() =>
+    connection ? buildValuesFromConnection(connection) : initialValues,
+  );
   const [connectionFeedback, setConnectionFeedback] =
     useState<ConnectionFeedback | null>(null);
   const [probeFeedback, setProbeFeedback] = useState<ConnectionFeedback | null>(
     null,
   );
-
-  useEffect(() => {
-    if (!connectionQuery.data) {
-      return;
-    }
-
-    setValues(buildValuesFromConnection(connectionQuery.data));
-    setConnectionFeedback(null);
-    setProbeFeedback(null);
-  }, [connectionQuery.data]);
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isBusy =
@@ -641,29 +672,11 @@ export function ModelConnectionsEditorPage() {
     }
   };
 
-  if (isEditing && connectionQuery.isPending) {
-    return (
-      <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
-        Loading model connection details...
-      </div>
-    );
-  }
-
-  if (isEditing && connectionQuery.isError) {
-    return (
-      <div className="flex h-full items-center p-4 text-sm text-muted-foreground">
-        {connectionQuery.error instanceof Error
-          ? connectionQuery.error.message
-          : "Model connection not found."}
-      </div>
-    );
-  }
-
   const apiKeyHelpText = isEditing
     ? "Leave blank to keep the current key."
     : "Optional; add or rotate it later.";
   const connectionEvidenceItems = buildConnectionEvidenceItems({
-    connection: connectionQuery.data,
+    connection,
     connectionFeedback,
     probeFeedback,
     values,

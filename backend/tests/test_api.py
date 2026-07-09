@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from httpx import Response
 from pydantic import ValidationError
@@ -314,7 +313,7 @@ def _set_model_connection_probe_cache(
 def test_agent_platform_routes_mount_package_first_api(
     app: FastAPI,
 ) -> None:
-    route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
+    route_paths = set(app.openapi()["paths"])
 
     assert {
         "/api/workflow-packages",
@@ -331,7 +330,7 @@ def test_agent_platform_routes_mount_package_first_api(
 def test_finance_workspace_product_routes_remain_mounted_for_templates_and_reports(
     app: FastAPI,
 ) -> None:
-    route_paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
+    route_paths = set(app.openapi()["paths"])
 
     assert {
         "/api/v1/templates",

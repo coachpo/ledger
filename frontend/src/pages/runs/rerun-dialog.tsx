@@ -1,5 +1,5 @@
 import { AlertCircle, Loader2, RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useCreateRunRerun, useRunRerunDraft } from "@/hooks/use-runs";
@@ -156,13 +156,30 @@ export function RunRerunDialog({
   const navigate = useNavigate();
   const draftQuery = useRunRerunDraft(runId, { enabled: open });
   const createRerun = useCreateRunRerun();
-  const [draftSourceRunId, setDraftSourceRunId] = useState<number | null>(null);
-  const [parametersText, setParametersText] = useState("");
-  const [apiError, setApiError] = useState<string | null>(null);
+  const draftSource = draftQuery.data
+    ? `${draftQuery.data.sourceRunId}:${JSON.stringify(draftQuery.data.parameters)}`
+    : null;
+  const [parametersState, setParametersState] = useState({
+    source: null as string | null,
+    text: "",
+  });
+  const [apiErrorState, setApiErrorState] = useState<{
+    message: string | null;
+    source: string | null;
+  }>({ message: null, source: null });
+  const parametersText =
+    draftQuery.data && parametersState.source !== draftSource
+      ? formatJsonEditorValue(draftQuery.data.parameters)
+      : parametersState.text;
+  const apiError =
+    apiErrorState.source === draftSource ? apiErrorState.message : null;
+  const setApiError = (message: string | null) =>
+    setApiErrorState({ message, source: draftSource });
+  const setParametersText = (text: string) =>
+    setParametersState({ source: draftSource, text });
   const resetLocalState = () => {
-    setDraftSourceRunId(null);
-    setParametersText("");
-    setApiError(null);
+    setParametersState({ source: null, text: "" });
+    setApiErrorState({ message: null, source: null });
   };
 
   const closeDialog = () => {
@@ -170,19 +187,6 @@ export function RunRerunDialog({
     onClose();
   };
 
-  useEffect(() => {
-    if (!open || !draftQuery.data) {
-      return;
-    }
-
-    if (draftSourceRunId === draftQuery.data.sourceRunId) {
-      return;
-    }
-
-    setDraftSourceRunId(draftQuery.data.sourceRunId);
-    setParametersText(formatJsonEditorValue(draftQuery.data.parameters));
-    setApiError(null);
-  }, [draftQuery.data, draftSourceRunId, open]);
   const parametersValidation = useMemo(
     () => parseJsonRecord(parametersText || "{}", "Root run parameters JSON"),
     [parametersText],
@@ -210,8 +214,10 @@ export function RunRerunDialog({
       return;
     }
 
-    setDraftSourceRunId(draftQuery.data.sourceRunId);
-    setParametersText(formatJsonEditorValue(draftQuery.data.parameters));
+    setParametersState({
+      source: draftSource,
+      text: formatJsonEditorValue(draftQuery.data.parameters),
+    });
     setApiError(null);
   };
   const constraintItems = draftQuery.data

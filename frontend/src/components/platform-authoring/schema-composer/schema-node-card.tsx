@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import {
@@ -104,26 +104,36 @@ export function SchemaNodeCard({
   renderNode,
 }: SchemaNodeCardProps) {
   const nodeDefaultText = formatDefaultValueText(node);
-  const [literalDraft, setLiteralDraft] = useState<LiteralDraft>(() => createDefaultLiteralDraft(node));
-  const [defaultText, setDefaultText] = useState(nodeDefaultText);
+  const literalDraftSource =
+    node.kind === "literal" ? JSON.stringify(node.value) : "";
+  const [literalDraftState, setLiteralDraftState] = useState<{
+    draft: LiteralDraft;
+    source: string;
+  }>(() => ({
+    draft: createDefaultLiteralDraft(node),
+    source: literalDraftSource,
+  }));
+  const defaultTextSource = `${node.kind}:${nodeDefaultText}`;
+  const [defaultTextState, setDefaultTextState] = useState({
+    source: defaultTextSource,
+    text: nodeDefaultText,
+  });
+  const literalDraft =
+    literalDraftState.source === literalDraftSource
+      ? literalDraftState.draft
+      : createDefaultLiteralDraft(node);
+  const defaultText =
+    defaultTextState.source === defaultTextSource
+      ? defaultTextState.text
+      : nodeDefaultText;
   const defaultTextResult = useMemo(
     () => parseSchemaDefaultValueText(node, defaultText),
     [defaultText, node],
   );
   const defaultIssue = defaultTextResult.issues[0];
 
-  useEffect(() => {
-    if (node.kind === "literal") {
-      setLiteralDraft(createLiteralValueDraft(node));
-    }
-  }, [node]);
-
-  useEffect(() => {
-    setDefaultText(nodeDefaultText);
-  }, [node.kind, nodeDefaultText]);
-
   const handleDefaultTextChange = (value: string) => {
-    setDefaultText(value);
+    setDefaultTextState({ source: defaultTextSource, text: value });
     const result = parseSchemaDefaultValueText(node, value);
 
     if (result.issues.length > 0) {
@@ -253,7 +263,10 @@ export function SchemaNodeCard({
                     kind: value,
                     value: value === "boolean" ? "true" : literalDraft.value,
                   };
-                  setLiteralDraft(nextDraft);
+                  setLiteralDraftState({
+                    draft: nextDraft,
+                    source: literalDraftSource,
+                  });
                   onChange({ ...node, value: parsePrimitiveInput(nextDraft.value, nextDraft.kind) });
                 }}
               >
@@ -276,7 +289,10 @@ export function SchemaNodeCard({
                 value={literalDraft.value}
                 onChange={(event) => {
                   const nextDraft = { ...literalDraft, value: event.target.value };
-                  setLiteralDraft(nextDraft);
+                  setLiteralDraftState({
+                    draft: nextDraft,
+                    source: literalDraftSource,
+                  });
                   onChange({ ...node, value: parsePrimitiveInput(nextDraft.value, nextDraft.kind) });
                 }}
               />

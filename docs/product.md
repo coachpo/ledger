@@ -153,6 +153,17 @@ bundled package seeds, and stale-run recovery instead of Alembic migrations.
 Run retention is disabled unless `SIGNALDECK_RUN_RETENTION_DAYS` is set and
 prunes terminal runs by `finished_at`.
 
+Development validation targets Python 3.13 and Node 24 because that is what CI
+uses. Production Dockerfiles currently build on Python 3.14 and Node 26. Both
+the root local/demo image and frontend production image install
+`pnpm@10.30.1` with `npm install -g pnpm@10.30.1`; do not reintroduce
+`corepack enable` for Node 26 images.
+
+FastAPI is temporarily capped at `<0.137` until Logfire allows
+`opentelemetry-sdk>=1.43` and `opentelemetry-instrumentation-fastapi>=0.64b0`.
+The cap protects 405/partial-route-match requests from a runtime crash in older
+OpenTelemetry FastAPI instrumentation.
+
 When `SIGNALDECK_API_TOKEN` is set, all non-`OPTIONS` paths except `/health`
 and `/ready` require `Authorization: Bearer <token>`. Deploy behind that token
 or an authenticated reverse proxy, use HTTPS, and keep PostgreSQL private.
@@ -163,7 +174,10 @@ package-secret values undecryptable.
 ## Validation
 
 CI is the test plan: version sync, backend quality, frontend quality, frontend
-E2E, and Docker image publishing. Local full validation is:
+E2E, and Docker image publishing. `docker-images.yml` builds only
+`backend/Dockerfile` and `frontend/Dockerfile`; the root local/demo Dockerfile
+must be checked with a local `docker build .` when it changes. Local full
+validation is:
 
 ```bash
 (cd backend && uv sync)
