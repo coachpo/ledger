@@ -23,7 +23,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  "black>=24.8,<25.0",
+  "black>=26.5.1,<27.0",
   "isort>=5.13,<6.0",
   "mypy>=2.2.0,<3.0",
   "pytest>=9.1.1,<10.0",
