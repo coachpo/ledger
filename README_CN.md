@@ -4,8 +4,6 @@
 
 SignalDeck 是一个自托管的 LLM agent 流水线运行器——可以理解为迷你 Jenkins,只不过任务不是构建脚本,而是多 agent 工作流。它面向所有想用 YAML 定义 agent 流水线、手动或定时运行、并在事后清楚看到发生了什么的人。
 
-(本仓库名为 `ledger`,其中的产品叫 SignalDeck。)
-
 ## 工作方式
 
 - 编写一个 **Workflow Package**(工作流包):用一个 YAML 文件描述整条流水线——输入、参与的 agent、它们可以调用的工具,以及步骤之间如何连接(sequence、fan-out、loop、普通 HTTP 调用)。
@@ -21,8 +19,8 @@ SignalDeck 是一个自托管的 LLM agent 流水线运行器——可以理解�
 你需要带 Compose v2 的 Docker,以及一个 LLM 提供商的 API key。
 
 ```bash
-git clone https://github.com/coachpo/ledger.git
-cd ledger
+git clone https://github.com/coachpo/signaldeck.git
+cd signaldeck
 ./start.sh
 ```
 
