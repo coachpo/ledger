@@ -1,154 +1,91 @@
 # SignalDeck
 
-SignalDeck is a self-hosted mini-Jenkins for LLM agents: YAML Workflow Packages define multi-agent pipelines, manual or scheduled launches enqueue runs, and operators inspect execution evidence, outputs, templates, and reports from one FastAPI + React/Vite stack.
+SignalDeck is a self-hosted pipeline runner for LLM agents — a mini-Jenkins where the jobs are multi-agent workflows instead of build scripts. It is for anyone who wants to define agent pipelines in YAML, run them manually or on a schedule, and see exactly what happened afterwards.
 
-## Repository Layout
+(The repository is named `ledger`; the product inside is SignalDeck.)
 
-- `backend/` — FastAPI, SQLAlchemy, Pydantic, PostgreSQL-backed API and tests
-- `frontend/` — React 19, Vite, TanStack Query, Vitest, and Playwright app
-- `docs/` — concise product, development, data-model, and static extension guidance
-- `demo/` — grounded Workflow Package YAML examples
-- `.github/workflows/` — root CI and Docker image workflows
-- `start.sh` — local Docker Compose launcher for the root combined stack
+## How it works
 
-## What Ships
+- You write a **Workflow Package**: one YAML file describing a pipeline — its inputs, the agents involved, the tools they may call, and how the steps connect (sequence, fan-out, loop, plain HTTP calls).
+- You add a **Model Connection**: a saved LLM provider binding (endpoint, model, API key, encrypted at rest) that packages reference by name.
+- You launch runs from the web UI, or attach a **Scheduled Task**: a recurrence rule (interval, daily, weekly, or monthly, timezone-aware) that fires runs automatically.
+- Every run keeps evidence: step status, each agent invocation with its resolved input and output, HTTP calls, token usage, retries, failures, and the final result. Runs execute from an immutable snapshot of the package, so what you inspect is what actually ran.
+- Outputs can become **Reports**: markdown snapshots generated from templates, editable and downloadable from the UI.
 
-- Browser routes for Templates, Reports, Workflow Packages, Scheduled Tasks, Model Connections, and Runs
-- `/api/v1/templates` and `/api/v1/reports` from the static `signaldeck.finance` backend extension
-- `/api/workflow-packages`, `/api/schedules`, `/api/model-connections`, `/api/tools`, and `/api/runs`
-- Static runtime-tool extensions: `signaldeck.finance` for finance workspace/tools and `signaldeck.digital_oracle` for Digital Oracle tools
+The stack is a FastAPI + PostgreSQL backend and a React/Vite frontend.
 
-## Workflow Runner Contract
+## Quick start
 
-Workflow Packages are the only executable authoring root. Package manifests use `signaldeck.workflowPackage/v1` YAML and keep agents, output schemas, capability profiles, private MCP configs, HTTP operation nodes, and workflow graphs package-private.
-
-Model Connections are global encrypted provider bindings. Tools are read-only server-declared metadata from `/api/tools`; packages reference canonical owner-qualified tool keys through local capability profiles. Package exports omit secret-bearing private MCP `env`, `headers`, and `query` values along with database ids, run history, package secret binding rows, and raw secret values.
-
-Scheduled Tasks use structured recurrence and IANA timezones to materialize due fires into ordinary queued runs. Runs store immutable executable snapshots, queue/progress state, invocation evidence, operation evidence, retry/failure metadata, trace ids when configured, final output, and rerun lineage. `POST /api/runs/{id}/cancel` cancels queued runs immediately; running runs stop cooperatively at step boundaries.
-
-## Prerequisites
-
-- Docker with `docker compose` for the containerized local stack
-- Python 3.13+, Node 24+, pnpm 10+, and uv for validation commands
-- An LLM provider key for live model-backed execution
-
-## Run The Full Stack Locally
+You need Docker with Compose v2, and an API key for an LLM provider.
 
 ```bash
+git clone https://github.com/coachpo/ledger.git
+cd ledger
 ./start.sh
 ```
 
-`start.sh` is the source of truth for the local/demo stack. It builds the root combined image, starts PostgreSQL/pgvector plus the app container, runs Nginx, FastAPI, and the scheduler worker inside the app container, and publishes only `http://localhost:${APP_PORT:-8080}`.
+This builds the combined local image, starts PostgreSQL and the app, and serves everything at `http://localhost:8080` (override with `APP_PORT`). Stop with `Ctrl+C`; tear down with `docker compose down` (add `-v` to also drop the database).
 
-Open:
+First run:
 
-- App: `http://localhost:${APP_PORT:-8080}`
-- Health: `http://localhost:${APP_PORT:-8080}/health`
-- Readiness: `http://localhost:${APP_PORT:-8080}/ready`
+1. Open `http://localhost:8080`, go to **Model Connections**, and add your LLM provider and API key.
+2. Two demo packages are seeded at startup. Open **Workflow Packages**, pick one — *Digital Oracle Researcher* is the simpler of the two — and launch a run.
+3. Watch it under **Runs** and drill into the step-by-step evidence.
 
-Stop with `Ctrl+C`, or run:
+The YAML sources for both demo packages live in [`demo/`](demo/); they double as reference examples for writing your own. If you prefer plain Compose over the launcher, `docker compose up --build --remove-orphans` does the same thing.
 
-```bash
-docker compose -f docker-compose.yml down
-docker compose -f docker-compose.yml down -v
-```
+## Deploying for real
 
-## Direct Compose
+The root image is local/demo only and refuses to start in production mode. CI publishes split images instead:
 
-```bash
-docker compose -f docker-compose.yml up --build --remove-orphans
-docker compose -f docker-compose.yml down
-docker compose -f docker-compose.yml down -v
-```
+- `ghcr.io/<owner>/signaldeck-backend` — the API; the same image started with `python -m app.workers.run_scheduler` is the scheduler worker
+- `ghcr.io/<owner>/signaldeck-frontend` — the browser app, with nginx proxying `/api` to the backend
 
-The root Dockerfile and root Compose stack are local/demo only. They keep PostgreSQL and the backend private to Docker networking by default and expose the app through Nginx.
+Production runs three containers: backend, scheduler, frontend. The scheduler is not optional — launches only enqueue runs, and without a scheduler worker they stay `queued` forever. Multiple scheduler replicas are safe; coordination uses a PostgreSQL advisory lock.
 
-## Production Images
+Start from [`docker/compose.production.example.yml`](docker/compose.production.example.yml). Pin `SIGNALDECK_IMAGE_TAG` to an immutable tag or digest, and set:
 
-CI publishes supported backend and frontend images from `backend/Dockerfile` and `frontend/Dockerfile`:
+- `DATABASE_URL` — managed PostgreSQL 16+.
+- `AGENT_PLATFORM_ENCRYPTION_KEY` — encrypts stored API keys and package secrets. **Back this key up alongside every database dump.** It is a single Fernet key with no rotation tool yet; if you lose it, every stored secret has to be re-entered. `openssl rand -base64 32` generates a good one.
+- `SIGNALDECK_API_TOKEN` — bearer-token protection for the whole API. SignalDeck is single-user software with no login system, so either set this or put the app behind an authenticated reverse proxy (oauth2-proxy, Tailscale, and similar).
+- `MCP_RUNTIME_ENABLED` — set it on the *scheduler* container if your packages use MCP tools. It defaults to off, and setting it on the API container alone does nothing, because the scheduler is what executes runs.
 
-- `ghcr.io/<owner>/signaldeck-backend`
-- `ghcr.io/<owner>/signaldeck-frontend`
+Two more things worth knowing before you commit data to it:
 
-Published images include Docker Buildx provenance and SBOM attestations on non-PR pushes. The root combined image is not a production artifact and refuses `SIGNALDECK_RUNTIME_MODE=production`, `prod`, or `staging`.
+- There is no migration framework. The schema is created with SQLAlchemy `create_all`, and schema-changing upgrades mean rebuilding the database.
+- Run history grows unbounded unless you set `SIGNALDECK_RUN_RETENTION_DAYS`.
 
-### Split deployment topology
+Back up with ordinary PostgreSQL tooling (`pg_dump` / `psql`), plus the encryption key above.
 
-Production runs as three container roles:
+## Development
 
-- `backend` serves the FastAPI HTTP API.
-- `scheduler` runs `python -m app.workers.run_scheduler` from the same backend image.
-- `frontend` serves the browser app and proxies `/api` traffic to the backend.
-
-The scheduler container is required in production. Launches only enqueue runs; without the scheduler worker those runs stay `queued` forever. Multiple scheduler replicas are safe because coordination uses a PostgreSQL advisory lock, so only one worker owns a lease slot at a time.
-
-The example compose requires `SIGNALDECK_IMAGE_TAG`; pin it to an immutable published tag (a release tag once one exists, or an image digest/sha tag from the Docker Images workflow) rather than a mutable `latest` tag. It also requires `SIGNALDECK_API_TOKEN`; deployments that rely only on an authenticated reverse proxy should remove that environment entry deliberately.
-
-See [docker/compose.production.example.yml](docker/compose.production.example.yml) for the supported split-image example.
-
-## Runtime Configuration
-
-- `SIGNALDECK_RUNTIME_MODE` defaults to `local`; production images set it to `production`.
-- `DATABASE_URL` is required in production and should point at managed PostgreSQL 16+. Provider-style `postgresql://` and `postgres://` URLs are accepted and normalized to the `postgresql+psycopg://` driver automatically; the `pgvector` extension is not required.
-- `AGENT_PLATFORM_ENCRYPTION_KEY` protects stored model-connection and package-secret values; production rejects the local placeholder.
-- `SIGNALDECK_API_TOKEN` enables bearer-token protection.
-- `PUBLIC_BASE_URL` is the externally reachable app origin when absolute links are needed.
-- `CORS_ALLOWED_ORIGINS` should list allowed browser origins for separate-origin frontend deployments; same-origin reverse-proxy deployments do not need CORS.
-- `MCP_RUNTIME_ENABLED` defaults to `false`. In the split production topology set it on the `scheduler` container — the scheduler executes runs, so MCP settings on the API container alone have no effect.
-- `MCP_RUNTIME_TIMEOUT` controls MCP runtime request timeouts in seconds and defaults to `5`.
-- `BACKEND_UPSTREAM` (frontend image only) is the `host:port` the bundled nginx proxies `/api/` to; the image default `127.0.0.1:8000` only works when backend and frontend share a network namespace, so compose deployments set it to `backend:8000`.
-- `RUN_SCHEDULER=true|false` only affects the root local/demo image entrypoint; production deployments run the scheduler as a separate container.
-- `SIGNALDECK_RUN_RETENTION_DAYS` controls run-history retention and is disabled unless set.
-
-## Security
-
-Set `SIGNALDECK_API_TOKEN` and send `Authorization: Bearer <token>`, or place SignalDeck behind an authenticated reverse proxy such as oauth2-proxy, Tailscale, or another access gateway.
-Use HTTPS, managed PostgreSQL, backups, and non-placeholder secret values before exposing the app outside a trusted network.
-
-## Backup
-
-Use a libpq-style PostgreSQL URL for database tools:
-
-```bash
-pg_dump "$POSTGRES_URL" > signaldeck.sql
-psql "$POSTGRES_URL" < signaldeck.sql
-```
-
-**Back up `AGENT_PLATFORM_ENCRYPTION_KEY` with every `pg_dump`. SignalDeck currently uses a single-key Fernet encryption model; losing that key makes stored model-connection and package-secret values undecryptable, API reads can return 500, there is no rotation or re-encryption tool yet, and the only recovery path is re-entering every secret. Generate a high-entropy key with `openssl rand -base64 32`.**
-
-## Schema Changes
-
-SignalDeck has no migration framework; schema changes require rebuilding the database.
-
-## Validation
+Backend: FastAPI, SQLAlchemy, Pydantic on PostgreSQL, managed with uv (Python 3.13+). Frontend: React 19, Vite, TanStack Query, tested with Vitest and Playwright (Node 24+, pnpm 10+).
 
 ```bash
 # Backend
-(cd backend && uv run ruff check app tests && uv run black --check app tests && uv run isort --check-only app tests && uv run mypy app && uv run pytest)
+(cd backend && uv sync)
+(cd backend && uv run ruff check app tests && uv run mypy app && uv run pytest)
 
 # Frontend
-(cd frontend && pnpm lint)
-(cd frontend && pnpm typecheck)
-(cd frontend && pnpm build)
-(cd frontend && pnpm test:run)
-(cd frontend && pnpm exec playwright install --with-deps chromium && pnpm test:e2e)
+(cd frontend && pnpm install)
+(cd frontend && pnpm lint && pnpm typecheck && pnpm test:run)
 ```
 
-## CI/CD Workflows
+CI runs the full gate (formatting, types, unit tests, Playwright E2E, Docker image builds); `docs/development.md` has the exact commands and toolchain pins.
 
-- `ci.yml` runs version sync, backend quality, frontend quality, and frontend E2E.
-- Backend CI installs with `uv sync --frozen`; frontend CI installs with `pnpm install --frozen-lockfile`.
-- `docker-images.yml` builds and publishes backend/frontend linux/amd64 and linux/arm64 images for GitHub Container Registry with SBOM/provenance metadata on non-PR pushes.
+## Repository layout
 
-## Versioning
+- `backend/` — API, scheduler worker, and tests
+- `frontend/` — web UI
+- `demo/` — example Workflow Package YAML
+- `docs/` — product shape, data model, development, and extension guide
+- `docker/` — production compose example and root-image support files
 
-- `backend/pyproject.toml` is the backend package version surface.
-- `frontend/package.json` is the frontend package version surface.
-- `backend/VERSION` must mirror the backend package version.
-- `frontend/VERSION` must mirror the frontend package version.
+## Design notes
 
-## More Detail
+A few deliberate choices, condensed from `docs/`:
 
-- `backend/README.md` covers backend-specific development details.
-- `AGENTS.md` is the repository-wide agent guide.
-- `docs/product.md`, `docs/development.md`, `docs/data-model.md`, and `docs/writing-extensions.md` cover the shipped product shape, repo toolchain, persistence shape, and static extension contract.
+- Trusted single-user app. No accounts, RBAC, or multi-tenancy; access control is the bearer token or your reverse proxy.
+- Workflow Packages are self-contained. Agents, output schemas, capability profiles (the package-local lists naming which server-declared tools a package may use), and private MCP configs live inside the package rather than in shared global tables.
+- Tool integrations are static Python extensions compiled into the backend: `signaldeck.finance` (market data, news, sentiment, and report tools) and `signaldeck.digital_oracle` (prediction markets, SEC filings, macro, and derivatives tools). There is no plugin marketplace; adding tools means adding code — see `docs/writing-extensions.md`.
+- Secrets never leave the server. API keys and package secrets are encrypted at rest, and package exports and run provenance strip secret-bearing values, database ids, and run history.
