@@ -4,8 +4,6 @@ English | [简体中文](README_CN.md)
 
 SignalDeck is a self-hosted pipeline runner for LLM agents — a mini-Jenkins where the jobs are multi-agent workflows instead of build scripts. It is for anyone who wants to define agent pipelines in YAML, run them manually or on a schedule, and see exactly what happened afterwards.
 
-(The repository is named `ledger`; the product inside is SignalDeck.)
-
 ## How it works
 
 - You write a **Workflow Package**: one YAML file describing a pipeline — its inputs, the agents involved, the tools they may call, and how the steps connect (sequence, fan-out, loop, plain HTTP calls).
@@ -21,8 +19,8 @@ The stack is a FastAPI + PostgreSQL backend and a React/Vite frontend.
 You need Docker with Compose v2, and an API key for an LLM provider.
 
 ```bash
-git clone https://github.com/coachpo/ledger.git
-cd ledger
+git clone https://github.com/coachpo/signaldeck.git
+cd signaldeck
 ./start.sh
 ```
 
