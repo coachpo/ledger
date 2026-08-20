@@ -21,7 +21,7 @@ Prefer clean current architecture over compatibility shims, legacy stubs, or spe
 | --- | --- |
 | `backend/` | FastAPI, SQLAlchemy, runtime tools, static extensions, scheduler worker, pytest. |
 | `frontend/` | React 19, Vite 8, TanStack Query, shadcn/Radix UI, Vitest, Playwright. |
-| `docs/` | Product, data model, development, and extension-writing docs. |
+| `docs/` | Canonical product, architecture, development, data-model, and extension-writing docs. |
 | `demo/` | Grounded Workflow Package YAML examples. |
 | `.github/workflows/` | CI gates and split backend/frontend Docker image publishing. |
 | `start.sh`, `Dockerfile`, `docker-compose.yml` | Local/demo combined stack only. |
@@ -69,6 +69,7 @@ Prefer clean current architecture over compatibility shims, legacy stubs, or spe
 
 ## Conventions
 
+- Before changing code, read the applicable canonical docs linked in the managed navigation block, then apply the nearest subtree guide.
 - Backend JSON is camelCase externally and snake_case internally; `CamelModel` owns aliases and request validation.
 - Error envelopes are `{code, message, details[]}` and unsafe error detail keys are filtered before browser reads.
 - Money, quantities, and market values cross the API as strings.
@@ -113,3 +114,27 @@ docker compose -f docker-compose.yml down -v
 
 `start.sh` is the authoritative local/demo launcher and exposes only `http://localhost:${APP_PORT:-8080}`.
 Set `SIGNALDECK_API_TOKEN` or use an authenticated reverse proxy before exposing SignalDeck outside a trusted network.
+
+<!-- write-project-docs:document-navigation:start -->
+## 项目文档导航
+
+执行相关任务前，根据任务范围读取以下权威文档：
+
+- [项目状态](STATUS.md)
+- [文档索引](docs/README.md)
+- [产品说明](docs/产品说明.md)
+- [架构说明](docs/架构说明.md)
+- [开发规范](docs/开发规范.md)
+- [源代码规模与职责规则](docs/源代码规模与职责规则.md)
+- [贡献指南](CONTRIBUTING.md)
+
+实现、审查或验证工程变更时，结合 `STATUS.md` 和产品说明理解当前事实与交付意图，并读取贡献指南中实际存在的[当前迭代策略](CONTRIBUTING.md#当前迭代策略)。只消费与任务相关的本轮必做项、不可降低边界和重新推导条件；不要把明确暂缓或未被当前风险触发的事项自行扩大为工作。用户的新要求、活动 Goal、可达风险、硬性项目规则/不变量或有证据支持的审查发现一旦触发相关工作，暂缓描述不得压制它。该派生策略不扩大用户授权，MVP 快速验证开关也不定义或覆盖它；源事实变化或摘要漂移时不得沿用旧策略。
+
+## 项目文档内容边界
+
+本项目不需要为完善文档而引入流程或行政管理。
+
+- 除非用户明确要求并提供可验证依据，不新增审批、汇报、会议、排期、人员治理、发布治理、提交管理、业务 KPI/SLO 或类似内容。
+- 不为上述主题创建文档、章节、占位符或“待确认”项。
+- 已有且经验证的开发、测试、构建和部署命令仍按对应权威文档记录；本区块不改变产品、架构或工程事实。
+<!-- write-project-docs:document-navigation:end -->

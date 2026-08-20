@@ -1,67 +1,66 @@
-# SignalDeck Design System
+# SignalDeck 设计系统
 
-## Purpose
+## 目的
 
-SignalDeck is a dense management UI for workflow packages, scheduled runs, model connections, reports, templates, and finance workspace surfaces. The design system keeps those screens consistent without changing product behavior. The current visual language is Apple-inspired management UI: neutral canvases, grouped surfaces, soft elevation, precise spacing, compact typography, and visible focus.
+SignalDeck 是一个用于 Workflow Package、Scheduled Task、Run、Model Connection、Report、Template 和 finance workspace 的高密度管理界面。设计系统在不改变产品行为的前提下保持这些页面一致。当前视觉语言是受 Apple 启发的管理 UI：中性画布、分组 surface、柔和 elevation、精确间距、紧凑排版和清晰 focus。
 
-## System Layers
+## 系统层次
 
-- `src/styles/theme.css` is the token source of truth. Use semantic Tailwind classes and the `--ui-*` tokens for custom surfaces, spacing, layout, shadows, motion, z-index, control sizing, and state values.
-- `src/components/ui` contains shadcn/Radix primitives. Keep these presentational and free of route or API logic.
-- `src/components/shared` contains reusable SignalDeck UI: page shells, toolbars, state panels, status chrome, table frames, dialogs, and management-list helpers.
-- Feature folders and pages own domain copy, route params, hooks, mutations, toasts, navigation, and validation behavior.
+- `src/styles/theme.css` 是 token source of truth。自定义 surface、间距、布局、shadow、motion、z-index、control sizing 和状态值使用 semantic Tailwind class 与 `--ui-*` token。
+- `src/components/ui` 包含 shadcn/Radix primitive，保持 presentational，不放 route 或 API logic。
+- `src/components/shared` 包含可复用 SignalDeck UI：page shell、toolbar、state panel、status chrome、table frame、dialog 和 management-list helper。
+- feature folder 与 page 拥有 domain copy、route params、hooks、mutation、toast、navigation 和 validation behavior。
 
-## Tokens
+## Token
 
-Use the existing semantic tokens for product color: `background`, `foreground`, `card`, `muted`, `accent`, `primary`, `destructive`, `border`, `positive`, `negative`, charts, and sidebar colors. Use `text-positive` and `text-negative` only for clear financial deltas.
+产品颜色使用现有 semantic token：`background`、`foreground`、`card`、`muted`、`accent`、`primary`、`destructive`、`border`、`positive`、`negative`、chart 和 sidebar colors。`text-positive` 与 `text-negative` 只用于清晰的金融变动。
 
-Use `bg-ui-canvas`, `bg-ui-surface`, `bg-ui-surface-elevated`, `bg-ui-surface-grouped`, `bg-ui-surface-inset`, `bg-ui-surface-chrome`, `border-ui-separator`, `text-ui-text-secondary`, `text-ui-text-tertiary`, `bg-ui-accent-soft`, and `shadow-ui-*` for the renovated surface model. These map to `--ui-*` tokens and keep light/dark behavior aligned.
+翻新的 surface model 使用 `bg-ui-canvas`、`bg-ui-surface`、`bg-ui-surface-elevated`、`bg-ui-surface-grouped`、`bg-ui-surface-inset`、`bg-ui-surface-chrome`、`border-ui-separator`、`text-ui-text-secondary`、`text-ui-text-tertiary`、`bg-ui-accent-soft` 和 `shadow-ui-*`。它们映射到 `--ui-*` token，保持 light/dark 行为一致。
 
-Use `--ui-space-*`, `--ui-shadow-*`, `--ui-z-*`, `--ui-motion-*`, `--ui-breakpoint-*`, `--ui-layout-*`, and `--ui-size-*` when a component needs a value that Tailwind semantic utilities do not already cover. Do not create another token file.
+组件需要 Tailwind semantic utility 没有的值时使用 `--ui-space-*`、`--ui-shadow-*`、`--ui-z-*`、`--ui-motion-*`、`--ui-breakpoint-*`、`--ui-layout-*` 和 `--ui-size-*`。不要创建第二个 token 文件。
 
-## Layout Rules
+## 布局规则
 
-- `Layout` owns the app shell, sidebar, breadcrumb, scroll mode, full-height mode, and route width.
-- Inventory routes use `InventoryPageShell` with `PageContextBar`, `ResourceToolbar`, optional `ResourceFilterBar`, and route-owned content.
-- Full-height editors and consoles use `WorkspacePageShell`.
-- Inspectable source/detail flows use `SplitInspectorLayout` or `SheetInspectorLayout`.
-- Avoid nested page shells and route-local top-level layout wrappers.
+- `Layout` 负责 app shell、sidebar、breadcrumb、scroll mode、full-height mode 和 route width。
+- inventory route 使用 `InventoryPageShell`、`PageContextBar`、`ResourceToolbar`、可选 `ResourceFilterBar` 和 route-owned content。
+- full-height editor 与 console 使用 `WorkspacePageShell`。
+- 可检查的 source/detail flow 使用 `SplitInspectorLayout` 或 `SheetInspectorLayout`。
+- 避免嵌套 page shell 和 route-local top-level layout wrapper。
 
-## Component Rules
+## 组件规则
 
-- Buttons use `Button`; icon buttons need accessible labels.
-- Icons inside buttons use `data-icon` where practical.
-- Destructive confirmations use `ConfirmDeleteDialog`.
-- Selected-count delete/clear bars use `ResourceBulkActionsBar`.
-- Row overflow menus use `ResourceActionsMenu`; callers still own menu items, callbacks, navigation, and destructive variants.
-- Selectable management tables use `ResourceSelectionCheckbox` for select-all and row checkboxes.
-- Ordinary selectable resource lists use `useResourceSelectionState` for selected ids, selected items, selected count, all/some selection, and clear selection.
-- Inventory search uses `ResourceToolbar.search`.
-- Active filters use `ResourceFilterBar`.
-- Route-level empty/error/loading states use `InventoryStatePanel`; inline notices use `InlineStatePanel`; card-like empty states use `EmptyStatePanel`. These are solid grouped/elevated surfaces, not dashed containers.
-- Tables use `ResourceTableFrame` around route-owned table markup; routes own columns, sorting, and pagination behavior.
-- Status uses `ResourceStatusBadge` and `ResourceStatusStrip`, not route-local colored spans.
+- Button 使用 `Button`；icon button 必须有 accessible label。
+- button 内的 icon 尽量使用 `data-icon`。
+- destructive confirmation 使用 `ConfirmDeleteDialog`。
+- selected-count delete/clear bar 使用 `ResourceBulkActionsBar`。
+- row overflow menu 使用 `ResourceActionsMenu`；调用方仍拥有 menu item、callback、navigation 和 destructive variant。
+- selectable management table 使用 `ResourceSelectionCheckbox`。
+- 普通 resource list 使用 `useResourceSelectionState` 管理 selected ids、selected items、selected count、全选/部分选择和 clear selection。
+- inventory search 使用 `ResourceToolbar.search`，active filter 使用 `ResourceFilterBar`。
+- route-level empty/error/loading 使用 `InventoryStatePanel`；inline notice 使用 `InlineStatePanel`；card-like empty state 使用 `EmptyStatePanel`。这些是 solid grouped/elevated surface，不使用 dashed container。
+- table 使用 `ResourceTableFrame` 包裹 route-owned table markup；route 自己负责 columns、sorting 和 pagination。
+- status 使用 `ResourceStatusBadge` 和 `ResourceStatusStrip`，不要在 route 中直接拼 colored span。
 
-## Forms And Dialogs
+## 表单与对话框
 
-Forms keep submit handlers, mutations, navigation, and toasts in the page or owning feature component. Shared form shells receive values, callbacks, labels, descriptions, and validation messages.
+submit handler、mutation、navigation 和 toast 留在 page 或 owning feature component。shared form shell 接收 values、callback、label、description 和 validation message。
 
-Use `EntityDialogShell` for create/edit dialogs with a form body and footer. Confirmation-only destructive flows use `ConfirmDeleteDialog`.
+创建/编辑 dialog 使用 `EntityDialogShell`；只有确认动作的 destructive flow 使用 `ConfirmDeleteDialog`。
 
-## Styling Rules
+## 样式规则
 
-- Prefer semantic classes and renovated surface tokens: `bg-ui-canvas`, `bg-card/95`, `bg-ui-surface-grouped`, `bg-ui-surface-inset`, `text-foreground`, `text-muted-foreground`, `border-border/70`, `shadow-ui-xs`, `shadow-ui-md`, and `text-destructive`.
-- Prefer `flex` or `grid` with `gap-*`; do not add new `space-x-*` or `space-y-*` patterns.
-- Prefer `size-*` for square controls.
-- Do not introduce new UI libraries, styling frameworks, route-local themes, or decorative variants.
-- Keep management screens compact, readable, and stable at 375px, 768px, 1024px, and 1440px.
-- Do not add new route-local `rounded-md border bg-muted/20`, `bg-muted/30`, dashed empty containers, or one-off `shadow-sm`/`shadow-md` page chrome. Use shared components or `shadow-ui-*` tokens. Dashed strokes are reserved for data visualization affordances such as chart markers.
+- 优先使用 semantic class 和翻新的 surface token：`bg-ui-canvas`、`bg-card/95`、`bg-ui-surface-grouped`、`bg-ui-surface-inset`、`text-foreground`、`text-muted-foreground`、`border-border/70`、`shadow-ui-xs`、`shadow-ui-md` 和 `text-destructive`。
+- 优先使用 `flex` 或 `grid` 配合 `gap-*`；不要新增 `space-x-*` 或 `space-y-*`。
+- 方形 control 优先使用 `size-*`。
+- 不引入新的 UI library、styling framework、route-local theme 或装饰性 variant。
+- 管理页面在 375px、768px、1024px 和 1440px 宽度保持紧凑、可读和稳定。
+- 不新增 route-local `rounded-md border bg-muted/20`、`bg-muted/30`、dashed empty container 或一次性 `shadow-sm`/`shadow-md` page chrome；使用 shared component 或 `shadow-ui-*` token。dashed stroke 只用于 chart marker 等数据可视化 affordance。
 
-## Migration Checklist
+## 迁移检查清单
 
-- Keep route behavior and data flow unchanged.
-- Replace copied page chrome with shared shells first.
-- Replace copied search/filter/bulk/state/table/dialog patterns next.
-- Move only presentational behavior into shared components.
-- Remove obsolete local helpers after all imports are migrated.
-- Run focused tests, then lint, typecheck, unit tests, and build.
+- 保持 route behavior 和 data flow 不变。
+- 先替换复制的 page chrome，再替换 shared shell。
+- 随后替换复制的 search/filter/bulk/state/table/dialog pattern。
+- 只把 presentational behavior 移入 shared component。
+- 所有 import 迁移后删除 obsolete local helper。
+- 先运行 focused test，再运行 lint、typecheck、unit test 和 build。

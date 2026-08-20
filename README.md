@@ -1,22 +1,14 @@
 # SignalDeck
 
-English | [简体中文](README_CN.md)
+SignalDeck 是一个面向 LLM agent 的自托管流水线运行器：用 YAML 定义 Workflow Package，手动或按计划启动多 agent 工作流，并在统一的单用户界面中查看运行证据、输出、模板和报告。
 
-SignalDeck is a self-hosted pipeline runner for LLM agents — a mini-Jenkins where the jobs are multi-agent workflows instead of build scripts. It is for anyone who wants to define agent pipelines in YAML, run them manually or on a schedule, and see exactly what happened afterwards.
+## 当前状态
 
-## How it works
+当前项目用于本地开发调试和个人使用，部署边界是本地内网；在不降低既有正确性、数据完整性和密钥处理边界的前提下，开发与使用便利度优先于额外的安全加固。此处只是派生摘要，完整状态以 [`STATUS.md`](STATUS.md) 为准。
 
-- You write a **Workflow Package**: one YAML file describing a pipeline — its inputs, the agents involved, the tools they may call, and how the steps connect (sequence, fan-out, loop, plain HTTP calls).
-- You add a **Model Connection**: a saved LLM provider binding (endpoint, model, API key, encrypted at rest) that packages reference by name.
-- You launch runs from the web UI, or attach a **Scheduled Task**: a recurrence rule (interval, daily, weekly, or monthly, timezone-aware) that fires runs automatically.
-- Every run keeps evidence: step status, each agent invocation with its resolved input and output, HTTP calls, token usage, retries, failures, and the final result. Runs execute from an immutable snapshot of the package, so what you inspect is what actually ran.
-- Outputs can become **Reports**: markdown snapshots generated from templates, editable and downloadable from the UI.
+## 快速开始
 
-The stack is a FastAPI + PostgreSQL backend and a React/Vite frontend.
-
-## Quick start
-
-You need Docker with Compose v2, and an API key for an LLM provider.
+需要 Docker 和 Docker Compose v2，以及一个 LLM 提供商的 API key。
 
 ```bash
 git clone https://github.com/coachpo/signaldeck.git
@@ -24,68 +16,29 @@ cd signaldeck
 ./start.sh
 ```
 
-This builds the combined local image, starts PostgreSQL and the app, and serves everything at `http://localhost:8080` (override with `APP_PORT`). Stop with `Ctrl+C`; tear down with `docker compose down` (add `-v` to also drop the database).
-
-First run:
-
-1. Open `http://localhost:8080`, go to **Model Connections**, and add your LLM provider and API key.
-2. Two demo packages are seeded at startup. Open **Workflow Packages**, pick one — *Digital Oracle Researcher* is the simpler of the two — and launch a run.
-3. Watch it under **Runs** and drill into the step-by-step evidence.
-
-The YAML sources for both demo packages live in [`demo/`](demo/); they double as reference examples for writing your own. If you prefer plain Compose over the launcher, `docker compose up --build --remove-orphans` does the same thing.
-
-## Deploying for real
-
-The root image is local/demo only and refuses to start in production mode. CI publishes split images instead:
-
-- `ghcr.io/<owner>/signaldeck-backend` — the API; the same image started with `python -m app.workers.run_scheduler` is the scheduler worker
-- `ghcr.io/<owner>/signaldeck-frontend` — the browser app, with nginx proxying `/api` to the backend
-
-Production runs three containers: backend, scheduler, frontend. The scheduler is not optional — launches only enqueue runs, and without a scheduler worker they stay `queued` forever. Multiple scheduler replicas are safe; coordination uses a PostgreSQL advisory lock.
-
-Start from [`docker/compose.production.example.yml`](docker/compose.production.example.yml). Pin `SIGNALDECK_IMAGE_TAG` to an immutable tag or digest, and set:
-
-- `DATABASE_URL` — managed PostgreSQL 16+.
-- `AGENT_PLATFORM_ENCRYPTION_KEY` — encrypts stored API keys and package secrets. **Back this key up alongside every database dump.** It is a single Fernet key with no rotation tool yet; if you lose it, every stored secret has to be re-entered. `openssl rand -base64 32` generates a good one.
-- `SIGNALDECK_API_TOKEN` — bearer-token protection for the whole API. SignalDeck is single-user software with no login system, so either set this or put the app behind an authenticated reverse proxy (oauth2-proxy, Tailscale, and similar).
-- `MCP_RUNTIME_ENABLED` — set it on the *scheduler* container if your packages use MCP tools. It defaults to off, and setting it on the API container alone does nothing, because the scheduler is what executes runs.
-
-Two more things worth knowing before you commit data to it:
-
-- There is no migration framework. The schema is created with SQLAlchemy `create_all`, and schema-changing upgrades mean rebuilding the database.
-- Run history grows unbounded unless you set `SIGNALDECK_RUN_RETENTION_DAYS`.
-
-Back up with ordinary PostgreSQL tooling (`pg_dump` / `psql`), plus the encryption key above.
-
-## Development
-
-Backend: FastAPI, SQLAlchemy, Pydantic on PostgreSQL, managed with uv (Python 3.13+). Frontend: React 19, Vite, TanStack Query, tested with Vitest and Playwright (Node 24+, pnpm 10+).
+启动脚本构建并运行本地/演示组合栈，默认在 `http://localhost:8080` 提供应用；可用 `APP_PORT` 覆盖端口。按 `Ctrl+C` 停止前台进程；需要停止并删除容器时运行：
 
 ```bash
-# Backend
-(cd backend && uv sync)
-(cd backend && uv run ruff check app tests && uv run mypy app && uv run pytest)
-
-# Frontend
-(cd frontend && pnpm install)
-(cd frontend && pnpm lint && pnpm typecheck && pnpm test:run)
+docker compose down
 ```
 
-CI runs the full gate (formatting, types, unit tests, Playwright E2E, Docker image builds); `docs/development.md` has the exact commands and toolchain pins.
+首次打开应用后，在 **Model Connections** 中保存模型提供商配置，再到 **Workflow Packages** 选择预置的演示包并启动运行。运行证据可在 **Runs** 中查看。两个演示包的 YAML 源文件位于 [`demo/`](demo/)。
 
-## Repository layout
+根目录的 `docker-compose.yml`、根 `Dockerfile` 和 `start.sh` 仅用于本地/演示组合栈；拆分的 backend、scheduler、frontend 镜像及生产示例见 [`docker/compose.production.example.yml`](docker/compose.production.example.yml)。
 
-- `backend/` — API, scheduler worker, and tests
-- `frontend/` — web UI
-- `demo/` — example Workflow Package YAML
-- `docs/` — product shape, data model, development, and extension guide
-- `docker/` — production compose example and root-image support files
+## 主要能力
 
-## Design notes
+- Workflow Package：在一个 YAML 包中声明输入、包内 agent、输出 schema、工具能力、私有 MCP、HTTP 操作和工作流图。
+- Scheduled Task：按 interval、daily、weekly 或 monthly 规则和 IANA 时区将到期任务物化为普通运行。
+- Run evidence：保留不可变包快照、输入、步骤、agent/HTTP 操作证据、队列进度、重试、失败信息和最终输出。
+- Model Connections：保存全局模型提供商绑定；API key 只写入、不在读取接口中返回。
+- Templates 与 Reports：生成、编辑、下载模板和 markdown 报告快照。
 
-A few deliberate choices, condensed from `docs/`:
+## 文档
 
-- Trusted single-user app. No accounts, RBAC, or multi-tenancy; access control is the bearer token or your reverse proxy.
-- Workflow Packages are self-contained. Agents, output schemas, capability profiles (the package-local lists naming which server-declared tools a package may use), and private MCP configs live inside the package rather than in shared global tables.
-- Tool integrations are static Python extensions compiled into the backend: `signaldeck.finance` (market data, news, sentiment, and report tools) and `signaldeck.digital_oracle` (prediction markets, SEC filings, macro, and derivatives tools). There is no plugin marketplace; adding tools means adding code — see `docs/writing-extensions.md`.
-- Secrets never leave the server. API keys and package secrets are encrypted at rest, and package exports and run provenance strip secret-bearing values, database ids, and run history.
+- [`docs/README.md`](docs/README.md)：文档索引与权威边界。
+- [`docs/产品说明.md`](docs/产品说明.md)：产品范围、流程、需求和验收。
+- [`docs/架构说明.md`](docs/架构说明.md)：当前组件、数据流、部署边界和架构例外。
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发环境、启动、检查、测试、工作流和完成定义。
+- [`docs/开发规范.md`](docs/开发规范.md)：项目特有的技术和实现规则。
+- [`docs/源代码规模与职责规则.md`](docs/源代码规模与职责规则.md)：通用的规模与职责规则。

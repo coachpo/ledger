@@ -1,63 +1,52 @@
-# Data Model
+# 数据模型
 
-SignalDeck uses PostgreSQL for the mini-Jenkins runtime: finance
-templates/reports, Workflow Package artifacts, schedules, model connections,
-runs, run evidence, and encrypted package secrets. The live schema is created by
-`backend/app/db/` with SQLAlchemy `create_all`; schema changes require rebuilding
-the database.
+SignalDeck 使用 PostgreSQL 保存 mini-Jenkins 运行时数据，包括 finance templates/reports、Workflow Package artifact、schedules、Model Connections、runs、run evidence 和加密的 package secrets。live schema 由 `backend/app/db/` 使用 SQLAlchemy `create_all` 创建；schema 变化需要重建数据库。
 
-## Finance Tables
+## Finance 表
 
-| Table | Role |
+| 表 | 作用 |
 | --- | --- |
-| `text_templates` | Reusable markdown template documents for preserved report workflows. |
-| `reports` | Markdown report snapshots keyed by unique `name` and `slug`, with source and JSON metadata. |
-| `market_quotes` | Rebuildable market quote cache keyed by provider, symbol, and `as_of`. |
-| `symbol_name_cache` | Rebuildable symbol display-name cache. |
+| `text_templates` | 保存报告工作流使用的可复用 markdown 模板。 |
+| `reports` | 保存按唯一 `name` 和 `slug` 标识的 markdown 报告快照、source 和 JSON metadata。 |
+| `market_quotes` | 按 provider、symbol、`as_of` 保存可重建的市场报价缓存。 |
+| `symbol_name_cache` | 保存可重建的 symbol 展示名称缓存。 |
 
-## Platform Tables
+## Platform 表
 
-| Table | Role |
+| 表 | 作用 |
 | --- | --- |
-| `workflow_packages` | Mutable current package per stable key, storing manifest source, package definition, compiled plan, hashes, extension dependency surfaces, and timestamps. |
-| `workflow_package_secret_bindings` | Package-local encrypted secret values keyed by package and binding key; reads expose only presence/timestamps. |
-| `workflow_package_schedules` | Recurring Workflow Package schedule definitions with package/workflow target, enabled or paused status, recurrence, timezone, policies, next fire, input template, and template vars. |
-| `workflow_package_schedule_fires` | Schedule-owned fire rows for scheduled or manual occurrences, rendered parameters, local scheduled fields, status, and skip/error data; linked runs point back through `runs.schedule_fire_id` while the schedule exists. |
-| `model_connections` | Global provider/model bindings with selected `protocol_profile`, endpoint/model settings, encrypted API key, capability/policy/probe/test metadata, and timestamps. |
-| `runs` | Queued and executed Workflow Package runs with lifecycle state, canonical inputs/output, queue/progress data, scheduler lane/lease metadata, cancel metadata, totals, optional trace ids, rerun link, package provenance, schedule provenance, and extension dependencies. |
-| `run_workflow_package_snapshots` | Immutable executable package snapshot per run, including copied package identity, workflow identity, hashes, safe manifest export material, executable compiled plan, launch inputs, non-secret runtime profiles, and preflight summary. |
-| `run_steps` | Planned workflow node status, origin, graph metadata, step-level error text, and timestamps. |
-| `run_agent_invocations` | Agent invocation identity, input mode, wiring, resolved input and input origin, outputs, error code/message/details, token usage, duration, and optional span ids. |
-| `run_operation_invocations` | HTTP operation invocation identity, redacted request metadata, bounded response metadata, outputs, error code/message/details, duration, and optional span ids. |
+| `workflow_packages` | 按 stable key 保存当前 package，包括 manifest source、package definition、compiled plan、hash、扩展依赖面和时间戳。 |
+| `workflow_package_secret_bindings` | 按 package 和 binding key 保存加密的包内 secret；读取只显示存在性和时间戳。 |
+| `workflow_package_schedules` | 保存 Workflow Package schedule 定义，包括 package/workflow target、启用状态、recurrence、timezone、policy、next fire、input template 和 template vars。 |
+| `workflow_package_schedule_fires` | 保存 schedule-owned fire，包括渲染参数、local scheduled 字段、状态、skip/error；schedule 存在时 run 通过 `runs.schedule_fire_id` 关联。 |
+| `model_connections` | 保存全局 provider/model binding、`protocol_profile`、endpoint/model、加密 API key、capability/policy/probe/test metadata 和时间戳。 |
+| `runs` | 保存 queued/执行中的 Workflow Package run，包括生命周期、输入/输出、queue/progress、scheduler lease、cancel、token、trace、rerun link、package/schedule provenance 和 extension dependencies。 |
+| `run_workflow_package_snapshots` | 每个 run 的不可变 executable package snapshot，包括 package/workflow identity、hash、安全 manifest material、compiled plan、launch inputs、非 secret runtime profile 和 preflight summary。 |
+| `run_steps` | 保存 workflow node 的计划、来源、graph metadata、step error 和时间戳。 |
+| `run_agent_invocations` | 保存 agent invocation identity、input mode、wiring、resolved input/origin、output、error、token usage、duration 和可选 span id。 |
+| `run_operation_invocations` | 保存 HTTP operation invocation identity、脱敏 request metadata、有界 response metadata、output、error、duration 和可选 span id。 |
 
-Package-local agents, output schemas, capability profiles, private MCP configs,
-HTTP operation nodes, and workflow graphs are stored inside package artifacts,
-not normalized into global authoring tables. Runs copy executable artifacts into
-run-owned snapshots at launch.
+Package-local agents、output schemas、capability profiles、private MCP configs、HTTP operation nodes 和 workflow graphs 保存在 package artifact 内，而不是拆成全局 authoring 表。run 创建时将可执行 artifact 复制到 run-owned snapshot。
 
-## Integrity Rules
+## 完整性规则
 
-- Backend JSON is camelCase externally and snake_case internally.
-- Money, quantities, and market values cross API boundaries as decimal-safe strings.
-- Error envelopes are `{code, message, details[]}` for API-owned errors.
-- Reports keep immutable `name`, `slug`, `source`, and metadata after creation; only content changes.
-- Report sources are `compiled`, `uploaded`, `external`, and `agent`.
-- Workflow Packages store dependency keys as artifact refs; readiness is evaluated against live Model Connections, installed extension tools, and package secret bindings.
-- Manifest source/package-definition payloads returned by manifest reads, exports, and run provenance omit secret-bearing private MCP `env`, `headers`, and `query`, database ids, run history, package secret binding rows, and raw package secret values; API envelopes can still include package identity such as `packageId` and `packageKey`.
-- Package secret binding values and Model Connection API keys are encrypted at rest and never returned in reads, exports, run details, logs, diagnostics, or metadata.
-- Run provenance redacts package-private MCP `env`, `headers`, and `query` values from compiled-plan reads.
-- Model Connection `protocol_profile` is the persisted runtime selector; backend services own capability evidence, policy columns, probe cache metadata, and reachability-test metadata.
-- Tools are read-only server-declared metadata from static extensions and are referenced by package-local capability profiles.
-- Runs store immutable package provenance, scheduler metadata, run-owned schedule provenance, queue/progress source data, typed failure metadata, bounded `toolCallRetries`, and distinct `providerRetries` for transient provider create-call retries.
-- Run statuses are `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
-- Retention deletes only terminal runs with `finished_at` older than `SIGNALDECK_RUN_RETENTION_DAYS`.
-- HTTP operation request metadata redacts sensitive query names and all secret-backed headers, query fields, and body fields. Response metadata is bounded and redaction-safe.
-- Deleting a schedule deletes schedule-owned fire rows and stops future automation, but existing runs remain readable through run-owned schedule provenance.
-- Deleting a Workflow Package deletes its owned runs.
-- Reruns store only a source-run link and may edit root launch parameters.
+- Backend 对外 JSON 使用 camelCase，内部使用 snake_case。
+- Money、quantity 和 market value 跨 API 边界使用 decimal-safe string。
+- API-owned error envelope 为 `{code, message, details[]}`。
+- Report 创建后的 `name`、`slug`、`source` 和 metadata 保持不变，只有 content 可编辑。
+- Report source 为 `compiled`、`uploaded`、`external` 或 `agent`。
+- Workflow Package 将依赖保存为 artifact ref；readiness 根据 live Model Connection、静态扩展工具和 package secret binding 计算。
+- manifest read、export 和 run provenance 不包含私有 MCP 的 `env`、`headers`、`query`、database id、run history、package secret binding row 或 raw secret；API envelope 可以包含 `packageId`、`packageKey` 等安全 identity。
+- Package secret binding value 和 Model Connection API key 静态加密，不能出现在 reads、exports、run details、logs、diagnostics 或 metadata。
+- Tools 是静态扩展提供的只读 server-declared metadata，由 package-local capability profile 引用。
+- Run 保存 immutable package provenance、scheduler metadata、run-owned schedule provenance、queue/progress、typed failure、`toolCallRetries` 和 provider transient retry metadata。
+- Run status 为 `queued`、`running`、`succeeded`、`failed` 和 `cancelled`。
+- retention 只删除 `finished_at` 早于 `SIGNALDECK_RUN_RETENTION_DAYS` 的终态 run。
+- HTTP operation request metadata 会脱敏敏感 query name，以及所有 secret-backed header、query 和 body 字段；response metadata 有界且可安全脱敏。
+- 删除 schedule 会删除 schedule-owned fire 并停止未来自动化，但现有 run 通过自己的 schedule provenance 保持可读。
+- 删除 Workflow Package 会删除其拥有的 runs。
+- Rerun 只保存 source-run link，并允许编辑 root launch parameters。
 
-## Schema Boundary
+## Schema 边界
 
-Only the tables listed above are part of the shipped data contract. Any removed
-or retired surface stays out of this data-model owner unless live code
-reintroduces it.
+以上表是当前 shipped data contract。已经移除或 retired 的产品面不属于本数据模型，除非 live code 重新引入它们。

@@ -1,50 +1,48 @@
 # SignalDeck Backend
 
-FastAPI backend for SignalDeck’s template/report and current agent-platform surfaces.
+SignalDeck 的 FastAPI backend，提供 Templates/Reports 扩展面和当前 agent-platform 面。
 
-## Local Development
+## 本地开发
 
-For the easiest full-stack path, run `./start.sh` from the repository root. It uses the root `docker-compose.yml`, builds the local/demo-only app image from the current source, and starts both `db` and `app` services inside Docker.
+最简单的全栈路径是在仓库根目录运行 `./start.sh`。它使用根目录 `docker-compose.yml`，从当前源代码构建仅用于本地/演示的应用镜像，并在 Docker 中启动 `db` 与 `app` 服务。
 
-The public app URL is `http://localhost:${APP_PORT:-8080}`. Nginx runs inside the app container and proxies `/health`, `/ready`, `/api/`, and `/api/v1/` to the internal FastAPI backend. The backend, scheduler, and PostgreSQL/pgvector database are not exposed directly on host ports by default.
+应用默认地址为 `http://localhost:${APP_PORT:-8080}`。Nginx 在 app 容器中运行，将 `/health`、`/ready`、`/api/` 和 `/api/v1/` 转发给内部 FastAPI backend。默认不会把 backend、scheduler 或 PostgreSQL/pgvector 直接发布到宿主机端口。
 
-The launcher preserves the root Compose environment controls, including `APP_PORT`, `POSTGRES_PASSWORD`, `AGENT_PLATFORM_ENCRYPTION_KEY`, and `VITE_API_BASE_URL`.
+启动脚本保留根 Compose 的环境变量控制，包括 `APP_PORT`、`POSTGRES_PASSWORD`、`AGENT_PLATFORM_ENCRYPTION_KEY` 和 `VITE_API_BASE_URL`。
 
-If you want to work on the backend test suite directly outside the full local stack:
+如果要在全栈之外直接运行 backend 测试：
 
 ```bash
 uv sync
 uv run pytest
 ```
 
-The backend expects PostgreSQL everywhere. Full-stack local startup gets it from the root Compose `db` service at `db:5432`. Backend tests that run outside Docker can use `TEST_DATABASE_URL` or `DATABASE_URL` for a specific PostgreSQL server, otherwise the test fixture starts or reuses a managed local PostgreSQL container with an available host port.
+backend 始终需要 PostgreSQL。全栈启动从根 Compose 的 `db:5432` 获取数据库；Docker 外运行测试时可使用 `TEST_DATABASE_URL` 或 `DATABASE_URL` 指定 PostgreSQL，否则测试 fixture 会启动或复用一个带可用 host port 的本地 PostgreSQL 容器。
 
 ## Model Connections
 
-Keep `AGENT_PLATFORM_ENCRYPTION_KEY` set so stored model-connection secrets remain encrypted at rest. Local development may use the default placeholder, but `SIGNALDECK_RUNTIME_MODE=production` requires explicit `DATABASE_URL` and non-placeholder `AGENT_PLATFORM_ENCRYPTION_KEY` values.
+保持 `AGENT_PLATFORM_ENCRYPTION_KEY` 设置，使保存的 model-connection secret 静态加密。local/development 可以使用默认 placeholder；`SIGNALDECK_RUNTIME_MODE=production` 要求显式 `DATABASE_URL` 和非 placeholder 的 encryption key。
 
-## Live API Surfaces
+## API 面
 
-- `/health` for process liveness
-- `/ready` for readiness; returns 200 only when the backend can connect to PostgreSQL
-- `/api/v1` for templates and reports
-- `/api/workflow-packages` for package-first authoring, validation, import, export, preflight, launch metadata, and launch creation
-- `/api/schedules` for Scheduled Tasks targeting Workflow Packages, including create, list, detail, patch, delete, preview, run-now, and fire-history reads
-- `/api/model-connections` for global live provider bindings and secret-safe connection testing
-- `/api/tools` for read-only server-declared tool metadata
-- `/api/runs` for global run list/detail, cancel, delete, root-parameter reruns, and immutable run-owned executable snapshot provenance
+- `/health`：进程存活；
+- `/ready`：就绪状态，只有 backend 能连接 PostgreSQL 时返回 200；
+- `/api/v1`：Templates 和 Reports；
+- `/api/workflow-packages`：包 authoring、校验、导入、导出、preflight、launch metadata 和 launch；
+- `/api/schedules`：面向 Workflow Package 的 Scheduled Task；
+- `/api/model-connections`：全局 provider binding 和安全的 connection test；
+- `/api/tools`：只读的 server-declared tool metadata；
+- `/api/runs`：run list/detail、cancel、delete、root-parameter rerun 和 immutable snapshot provenance。
 
-Scheduled Tasks use structured recurrence payloads: `interval` with minutes, hours, or days, `daily` at a local time, `weekly` with unique weekday values, and `monthly` with unique day-of-month values. Schedules require a valid IANA timezone. Daily, weekly, and monthly schedules evaluate local wall-clock occurrences, roll DST spring gaps forward to the next valid minute, and fire DST fall repeated local times once at the earliest valid instant. Monthly invalid dates are skipped. Overlap policy is `skip` or `queue`; misfire policy is `skip` or `catchUpOne`, with `catchUpOne` bounded by `misfireGraceSeconds`.
+Scheduled Task 使用 `interval`、`daily`、`weekly` 或 `monthly` recurrence 和有效 IANA timezone。日、周、月计划按 local wall-clock 计算，DST spring gap 向前移动到下一个有效 minute，DST fall repeated local time 只在最早有效 instant 触发一次；月度无效日期跳过。overlap policy 为 `skip` 或 `queue`，misfire policy 为 `skip` 或 `catchUpOne`，后者受 `misfireGraceSeconds` 限制。
 
-Scheduled input templates are JSON objects only. The renderer allows `schedule`, `fire`, `window`, `lastRun`, and `vars` placeholders, preserves JSON types for exact placeholders, stringifies embedded placeholders, validates the rendered parameters against the package workflow input schema, and fails missing or unsupported expressions before queueing. Unsaved previews use `POST /api/schedules/preview`; saved previews use `POST /api/schedules/{scheduleId}/preview` and are ephemeral. Schedule reads intentionally omit `inputTemplate` and `templateVars`, so clients must save explicit input drafts instead of assuming detail hydration. Run now requires `idempotencyKey` and `scheduledFor`, creates a manual fire through the scheduled-run path, and returns a compact run summary. `DELETE /api/schedules/{scheduleId}` returns 204 with no response body, removes the schedule and fire rows, stops future automation, preserves existing run history, and keeps direct run artifacts readable through run-owned `scheduleProvenance`. Workflow Package deletion semantics are unchanged and still delete package-owned runs.
+Scheduled input template 只能是 JSON object。renderer 支持 `schedule`、`fire`、`window`、`lastRun` 和 `vars` placeholder；完整占位符保留 JSON 类型，嵌入式 placeholder 转为字符串；渲染结果必须通过 package workflow input schema。未保存 preview 使用 `POST /api/schedules/preview`，保存后的 preview 使用 `POST /api/schedules/{scheduleId}/preview`，两者都是 ephemeral。schedule read 会省略 `inputTemplate` 和 `templateVars`，客户端应保存显式 draft。run-now 要求 `idempotencyKey` 与 `scheduledFor`，并通过 scheduled-run path 创建 manual fire。删除 schedule 返回 204，停止未来自动化并保留已有 run 的 `scheduleProvenance`。
 
-Rerun endpoints are `GET /api/runs/{runId}/rerun-draft` and `POST /api/runs/{runId}/reruns`; they work with root launch `parameters`. `POST /api/runs/{runId}/cancel` cancels queued runs immediately and running runs at step boundaries.
+Rerun endpoint 为 `GET /api/runs/{runId}/rerun-draft` 和 `POST /api/runs/{runId}/reruns`；它们使用 root launch `parameters`。`POST /api/runs/{runId}/cancel` 会立即取消 queued run，并在 running run 的 step boundary 协作停止。
 
-## Tests
+## 测试
 
-The test suite creates and drops temporary PostgreSQL databases. Set `TEST_DATABASE_URL` or `DATABASE_URL` to a PostgreSQL connection with permission to connect to `postgres` and create/drop databases when you run `uv run pytest` outside Docker.
-
-Root CI runs backend quality after `uv sync --frozen`, with PostgreSQL supplied as a GitHub Actions service. The repo-level `version-sync` job also checks `backend/VERSION` against `backend/pyproject.toml`.
+测试套件会创建并删除临时 PostgreSQL database。Docker 外运行 `uv run pytest` 时，`TEST_DATABASE_URL` 或 `DATABASE_URL` 必须指向有权限连接 `postgres` 并创建/删除 database 的 PostgreSQL。
 
 ```bash
 uv run ruff check app tests
@@ -56,26 +54,26 @@ uv run pytest
 
 ## Docker Compose
 
-The root `docker-compose.yml` is the local/demo full-stack Compose file. It starts PostgreSQL/pgvector in `db` and the combined Nginx/FastAPI/scheduler image in `app`.
+根目录 `docker-compose.yml` 是本地/演示全栈 Compose 文件，在 `db` 中启动 PostgreSQL/pgvector，在 `app` 中启动组合 Nginx/FastAPI/scheduler。
 
 ```bash
 docker compose -f ../docker-compose.yml up --build --remove-orphans
 ```
 
-From the repository root, prefer `./start.sh`, which runs the same command and streams logs in the foreground. Only the app/Nginx port is published on the host; PostgreSQL stays on the Docker network and FastAPI stays behind Nginx in the app container.
+从仓库根目录优先使用 `./start.sh`；它执行同一命令并在前台输出日志。宿主机只发布 app/Nginx 端口，PostgreSQL 保持在 Docker network，FastAPI 位于 Nginx 后面。
 
-To reset the container-managed PostgreSQL data:
+重置容器管理的 PostgreSQL 数据：
 
 ```bash
 docker compose -f ../docker-compose.yml down -v
 ```
 
-## Notes
+## 备注
 
-- `app/db/session.py` uses `create_all`, bundled package seeds, and startup recovery; there is no live Alembic path.
-- Schema changes require a database reset until data must survive upgrades.
-- Playwright E2E starts a dedicated backend on port `8001` through `frontend/scripts/start-playwright-backend.mjs`, sets `QUOTE_PROVIDER_BACKEND=deterministic` by default, and pairs with a built frontend preview on `4173`.
-- The frontend E2E helper defaults `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`.
-- `docs/` has concise product and data-model docs plus extension-writing guidance.
-- Root workflows check `backend/VERSION` against `backend/pyproject.toml` and build linux/amd64 plus linux/arm64 backend and frontend GHCR images.
-- For repo-wide setup, validation, and frontend wiring, see the root `README.md`.
+- `app/db/session.py` 使用 `create_all`、bundled package seed 和 startup recovery；没有 live Alembic path。
+- schema 变化需要重建数据库，直到项目具备明确的数据升级策略。
+- Playwright E2E 通过 `frontend/scripts/start-playwright-backend.mjs` 在 8001 启动专用 backend，默认使用 `QUOTE_PROVIDER_BACKEND=deterministic`，并和 4173 的 frontend preview 配对。
+- `frontend` E2E helper 默认 `VITE_API_BASE_URL=http://127.0.0.1:8001/api/v1`。
+- `docs/` 包含产品、架构、数据模型和扩展编写文档。
+- 根 workflow 检查 `backend/VERSION` 与 `backend/pyproject.toml`，并构建 linux/amd64 与 linux/arm64 的 backend/frontend GHCR image。
+- 仓库级 setup、验证和 frontend wiring 见根 [`CONTRIBUTING.md`](../CONTRIBUTING.md)。

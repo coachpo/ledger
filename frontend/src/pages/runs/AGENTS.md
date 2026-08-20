@@ -10,7 +10,7 @@ Run routes are evidence-oriented inspection surfaces for queued/running/complete
 | --- | --- | --- |
 | List route | `list.tsx` | Run filters, status, and navigation. |
 | Detail route | `detail.tsx` | Main inspection workspace. |
-| Detail sections | `detail-sections/` | Payload, runtime, evidence, output panes. |
+| Detail helpers and sections | `detail-helpers.ts`, `detail-http-operations.test.tsx`, `detail-sections.exports.test.ts` | Payload, runtime, HTTP evidence, and output inspection helpers/tests. |
 | Tab state | `detail-tabs.ts` | URL-safe tab parsing. |
 | Inspection state | `inspection-state.ts` | Target resolution for step/tool/operation panes. |
 | Rerun dialog | `rerun-dialog.tsx` | Rerun draft edits from frozen snapshot. |

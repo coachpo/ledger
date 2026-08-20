@@ -11,9 +11,9 @@ Services own SignalDeck transactions, orchestration, validation projection, run 
 | Run launch/execution/projection | `run_service.py` | Central hot path for queued runs and evidence. |
 | Queue claiming/leases | `run_queue_service.py` | Uses repository `FOR UPDATE SKIP LOCKED` behavior. |
 | Scheduler materialization | `workflow_package_schedule_service.py` | Recurrence, fire history, run-now, stale package checks. |
-| Manifest parse/compile | `workflow_package_manifest_parser.py`, `workflow_package_compiler.py` | YAML/package contract. |
+| Manifest parse/compile | `workflow_package_manifest_parser.py`, `workflow_package_manifest_compiler.py` | YAML/package contract. |
 | Preflight/diagnostics | `workflow_package_preflight.py` | Browser-visible validation diagnostics. |
-| Execution plans | `workflow_package_execution_plan*.py` | Frozen runtime graph shape. |
+| Execution plans | `execution_plan.py`, `package_execution_plan_builder.py` | Frozen runtime graph shape. |
 | Output schemas | `output_schema_compiler.py` | JSON Schema to runtime node compilation. |
 | OpenAI runtime | `model_gateway_openai.py` | Provider retries, tool calls, tracing metadata. |
 | HTTP operation nodes | `http_operation_execution_service.py` | Request execution and evidence redaction. |

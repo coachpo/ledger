@@ -12,9 +12,9 @@
 | Tool ownership | `ownership.py` | Canonical tool keys and function names. |
 | Runtime dispatch | `runtime_executors.py` | Runtime executor map. |
 | Core service | `service.py` | Provider orchestration and result assembly. |
-| Providers | `providers*.py` | External provider adapters. |
-| Payload/parsing | `payloads*.py`, `parsers*.py` | Family-specific normalization. |
-| Runtime modules | `runtime_*.py` | Tool-specific execution wrappers. |
+| Providers | `runtime_*_providers.py` | External provider adapters for supported data families. |
+| Payload/parsing | `runtime_*_payloads.py`, `runtime_*_parser.py`, `runtime_options_parser.py` | Family-specific normalization and parsing. |
+| Runtime modules | `runtime_*.py` | Tool-specific clients, execution wrappers, and result assembly. |
 
 ## Conventions
 
